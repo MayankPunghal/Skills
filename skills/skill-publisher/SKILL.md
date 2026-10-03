@@ -6,6 +6,8 @@ argument-hint: "<skill folder | SKILL.md | .zip> [--name new-name]"
 
 # Skill publisher
 
+**No argument** (a bare `/skill-publisher`): ask one question, for the skill folder or .zip, and say in one line what happens next (refactor → checks → publish → install; private unless they say it's shareable).
+
 The user gives a path. Everything after that is yours: no questions unless a step below says to stop. The script does the mechanical work; you do the refactor.
 
 ## Contents

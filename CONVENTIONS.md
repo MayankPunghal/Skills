@@ -22,6 +22,7 @@ The rules every skill in this repo follows, picked from Anthropic's [skill autho
 ## Discovery (Claude picks skills itself)
 - Claude reads every skill's `name` + `description` up front and invokes a skill on its own when a request matches (Claude Code, claude.ai, Codex and Cursor all work this way). The description is the whole trigger: lead with what the skill does, then a "Use when …" clause with the words people actually type.
 - Leave model invocation on. Set `disable-model-invocation: true` only for a skill that must never run unless typed (none of ours).
+- **Command-style skills** (several sub-commands) define what the bare `/skill` does: show the current state, the recommended next command and a short menu with plain-words examples, and never start work on its own. They also offer one end-to-end command (`full-run`, `assess-estate`) and list both first in `argument-hint`.
 - Claude Code truncates `description` + `when_to_use` at 1,536 characters in its listing, and drops whole descriptions first when many skills are installed. Shorter descriptions survive.
 
 ## Self-contained skills

@@ -3,7 +3,7 @@ name: migration-assessment
 description: Assesses legacy .NET code bases (one repository or hundreds) for migration and modernization to AWS and Linux, and produces an evidence-backed, client-ready AWS Migration & Modernization Assessment Report with JSON/CSV exports. Inventories the estate, maps each repo with graphify, scans for everything that breaks on Linux or .NET 10 (Windows-only APIs, System.Web, WCF, COM, registry, SQL Server features, config secrets, vulnerable NuGet packages and more), classifies every application with the 7 Rs and estimates effort and timeline. Use when the user mentions migrating, modernizing, porting or assessing .NET Framework / ASP.NET / WCF apps for AWS, Linux, containers, .NET 8/10, the 7 Rs, AWS Transform, MAP or licensing cost reduction, or asks what will break when moving an app off Windows/SQL Server, even if they don't say "assessment".
 version: 1.0.0
 user-invocable: true
-argument-hint: "[assess-estate · discover-estate · map-code-graph · scan-repos · review-findings · classify-applications · estimate-effort · validate-linux-build · write-report · verify-report · calibrate-report · resume] [repo]"
+argument-hint: "[help · assess-estate · discover-estate · map-code-graph · scan-repos · review-findings · classify-applications · estimate-effort · validate-linux-build · write-report · verify-report · calibrate-report · resume] [repo]"
 allowed-tools:
   - Bash(python <skill-base-dir>/scripts/*)
   - Bash(graphify *)
@@ -53,6 +53,10 @@ Assess legacy .NET code bases (one repository or hundreds) for migration and mod
 | — | `assess-estate` | Steps 0–9 in order, resuming from `context.py` | this table |
 | — | `calibrate-report` | Samples in `calibration/samples/` → `extract_sample.py` outlines → `calibration/gap-analysis.md` → edit template, HTML layout, style, narratives, rules, estimation | [calibration.md](references/calibration.md) |
 | — | `resume` | `context.py` → `NEXT` | — |
+
+**Routing:**
+- **No command, `help`, or "where are we?":** run `scripts/context.py`, then reply with the state, the recommended `NEXT`, and the table above as a menu (one line per step). Never start a step from a bare `/migration-assessment`.
+- **"Assess this estate" / "do everything":** `assess-estate`. **An explicit or clearly implied step:** run it. **"Continue":** `resume`.
 
 **How to run scripts:**
 - All scripts live in `<skill-base-dir>/scripts/` and run with the current directory set to the assessment workspace (the folder with `assessment.json`).

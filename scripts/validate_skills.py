@@ -382,6 +382,8 @@ def check_skill(path, folder):
         add("ERROR", f"SKILL.md body is {len(body_lines)} lines (keep under {BODY_MAX_LINES}; move detail to reference files)")
     if len(text.splitlines()) > TOC_THRESHOLD and len(re.findall(r"^## ", body, re.M)) >= 3 and not has_toc(body_lines):
         add("WARN", "SKILL.md is over 100 lines with several sections but no '## Contents' list")
+    if fields.get("argument-hint") and not re.search(r"(?i)no (argument|command)|bare `/|help", body):
+        add("WARN", "command-style skill (argument-hint) doesn't say what a bare /" + folder + " does (show state + menu, start nothing)")
     words = len(re.findall(r"\S+", body))
     if words > BODY_MAX_WORDS:
         add("WARN", f"SKILL.md body is ~{words} words: all of it loads whenever the skill triggers")
