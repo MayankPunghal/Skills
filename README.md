@@ -188,6 +188,7 @@ Hand any skill folder to the publisher in Claude Code:
 skills/<name>/              one folder per skill (SKILL.md + reference/ + scripts/ + assets)
 install.mjs                 the installer (zero dependencies)
 scripts/validate_skills.py  checks every skill against CONVENTIONS.md
+CLAUDE.md                   how an agent updates a skill here (read automatically by Claude Code)
 CONVENTIONS.md              authoring rules, based on Anthropic's skill best practices
 package.json                makes the repo runnable with npx
 ```
