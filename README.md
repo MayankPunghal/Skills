@@ -131,6 +131,7 @@ npx github:MayankPunghal/Skills
 - **Safe to rerun.** Replaced skills are backed up, never deleted. The managed clone is never reset while it holds unpushed work.
 - **Dependencies.** Selecting a skill brings the skills it needs. For example, migration-assessment brings codebase-documenter.
 - **Prerequisites.** These are user-level installs with no admin rights; anything already present is skipped.
+- **Private skills.** The installer also checks an optional private source. Machines with access get those skills in the same menu (tagged *personal*); everyone else sees only the skills in this repo, with no prompt and no error.
 
 ## Supported agents
 
@@ -153,7 +154,7 @@ Hand any skill folder to the publisher in Claude Code:
 1. **Stage.** It makes a clean copy without caches, secrets, zips or `_old/`. Your source is never modified.
 2. **Refactor.** Claude applies [CONVENTIONS.md](CONVENTIONS.md) additively, merging if the skill already exists here.
 3. **Gate.** The validator and secret scan must pass before anything is published.
-4. **Publish.** It commits, pushes and adds a row to the table above.
+4. **Publish.** It commits, pushes and adds a row to the skills table. New skills go to the private source unless you say they're shareable (`--to public`).
 5. **Install.** It installs into every folder your other skills live in, with prerequisites. Other machines get it with `update`.
 
 ## Troubleshooting

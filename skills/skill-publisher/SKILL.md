@@ -1,6 +1,6 @@
 ---
 name: skill-publisher
-description: Publishes a skill folder to Mayank's Skills repo (github.com/MayankPunghal/Skills) in one go. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or "set up" a skill, or to make a skill follow best practices and put it in the repo.
+description: Publishes a skill folder to Mayank's skill collection in one go: the private Skills-Personal repo by default, or the public Skills repo for shareable skills. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or "set up" a skill, or to make a skill follow best practices and put it in the repo.
 argument-hint: "<skill folder | SKILL.md | .zip> [--name new-name]"
 ---
 
@@ -36,7 +36,9 @@ Publish progress:
    - The user's source folder is never changed.
 2. **Refactor** the staged copy only, following the rules below and `~/.mayank-skills/repo/CONVENTIONS.md` (read it once).
 3. **Check:** `… publish_skill.py check <name>`. Fix and rerun until `"ready": true`. WARN lines are judgment calls, so fix the ones the rules cover.
-4. **Publish:** `… publish_skill.py publish <name> --message "Add skill: <name> — <one line>"`. It refuses if checks fail. It adds the README row for a new skill, commits and pushes.
+4. **Publish:** `… publish_skill.py publish <name> [--to personal|public] --message "Add skill: <name> — <one line>"`. It refuses if checks fail. It adds the README row for a new skill, commits and pushes.
+   - **Where it goes:** a skill already in a repo stays there. A new skill goes to **personal** (private Skills-Personal: only the owner's machines get it) unless the user said it's shareable or for colleagues; then use `--to public`. Public means anyone can read it, including its git history, so when in doubt, personal.
+   - `--to` on an existing skill moves it between repos, updating both READMEs.
 5. **Install:** `… publish_skill.py install <name>`. It installs into every folder where the user's other skills live (Claude Code, `.agents`, …) and runs the published skill's `<skill>/scripts/install_prerequisites.py` if it has one. Claude Code hot-reloads skills, so no restart is needed.
 
 ## Refactor rules

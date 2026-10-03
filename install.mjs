@@ -22,6 +22,12 @@ import { spawnSync } from "node:child_process";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = path.join(HERE, "skills");
 const HOME = os.homedir();
+// Optional private source: fetched with git after the public repo. Machines whose Git can't read it (everyone but the
+// owner) skip it silently, with interactive sign-in switched off so nobody is asked to log in to a repo they can't see.
+const PERSONAL_URL = process.env.MAYANK_SKILLS_PERSONAL_URL || "https://github.com/MayankPunghal/Skills-Personal.git"; // env override: tests only
+const PERSONAL_DIR = path.join(HOME, ".mayank-skills", "personal");
+const PERSONAL_SKILLS = path.join(PERSONAL_DIR, "skills");
+let SKILL_INDEX = null; // name -> { dir, source }
 const MANIFEST = path.join(HOME, ".mayank-skills", "manifest.json");
 const BACKUP_ROOT = path.join(HOME, ".mayank-skills", "backup");
 const SKIP = new Set(["__pycache__", ".DS_Store", "node_modules", ".git", ".impeccable", ".pytest_cache", ".venv"]);
@@ -116,16 +122,30 @@ function ask(q, def = "") {
 }
 
 // ---------- skill discovery ----------
+function skillFolders(root, source) {
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(root, d.name, "SKILL.md")))
+    .map((d) => ({ name: d.name, dir: path.join(root, d.name), source }));
+}
+
+/** All installable skills: public ones from this repo, plus personal ones when the private source is present. */
 function readSkills() {
   if (!fs.existsSync(SKILLS_DIR)) { say(red(`No skills folder next to the installer (${SKILLS_DIR}).`)); process.exit(1); }
-  return fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && fs.existsSync(path.join(SKILLS_DIR, d.name, "SKILL.md")))
-    .map((d) => {
-      const text = fs.readFileSync(path.join(SKILLS_DIR, d.name, "SKILL.md"), "utf8");
-      const m = text.match(/^description:\s*(.+)$/m);
-      const desc = (m ? m[1] : "").replace(/^["'>|-]+\s*/, "");
-      return { name: d.name, desc: desc.length > 70 ? desc.slice(0, 67) + "…" : desc };
-    });
+  const byName = new Map();
+  for (const s of [...skillFolders(SKILLS_DIR, "public"), ...skillFolders(PERSONAL_SKILLS, "personal")]) byName.set(s.name, s); // personal wins
+  SKILL_INDEX = Object.fromEntries([...byName.values()].map((s) => [s.name, s]));
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)).map((s) => {
+    const text = fs.readFileSync(path.join(s.dir, "SKILL.md"), "utf8");
+    const m = text.match(/^description:\s*(.+)$/m);
+    const desc = (m ? m[1] : "").replace(/^["'>|-]+\s*/, "");
+    return { name: s.name, source: s.source, desc: desc.length > 70 ? desc.slice(0, 67) + "…" : desc };
+  });
+}
+
+function skillDir(name) {
+  if (!SKILL_INDEX) readSkills();
+  return SKILL_INDEX[name]?.dir ?? path.join(SKILLS_DIR, name);
 }
 
 // ---------- file operations ----------
@@ -171,10 +191,10 @@ function placeSkill(manifest, { name, base, agent, scope, link, stamp }) {
   const target = path.join(base, name);
   const backed = backupExisting(target, stamp);
   fs.mkdirSync(base, { recursive: true });
-  if (link) fs.symlinkSync(path.join(SKILLS_DIR, name), target, "junction");
-  else copyDir(path.join(SKILLS_DIR, name), target);
+  if (link) fs.symlinkSync(skillDir(name), target, "junction");
+  else copyDir(skillDir(name), target);
   manifest.installs = manifest.installs.filter((i) => i.path !== target);
-  manifest.installs.push({ skill: name, agent, scope, path: target, link: !!link, at: new Date().toISOString() });
+  manifest.installs.push({ skill: name, source: SKILL_INDEX?.[name]?.source || "public", agent, scope, path: target, link: !!link, at: new Date().toISOString() });
   say(`${green("✔")} ${name} ${dim("→")} ${target}${backed ? dim(`  (previous version backed up: ${backed})`) : ""}`);
 }
 
@@ -218,7 +238,7 @@ function findPython() {
 }
 
 function skillsWithSetup(names) {
-  return names.filter((n) => fs.existsSync(path.join(SKILLS_DIR, n, ...SETUP_SCRIPT)));
+  return names.filter((n) => fs.existsSync(path.join(skillDir(n), ...SETUP_SCRIPT)));
 }
 
 /** Runs each skill's install_prerequisites.py once (user-level installs, idempotent). Returns true if all succeeded. */
@@ -232,7 +252,7 @@ function runSetup(names, installedPathFor) {
   }
   let ok = true;
   for (const name of names) {
-    const script = path.join(installedPathFor(name) || path.join(SKILLS_DIR, name), ...SETUP_SCRIPT);
+    const script = path.join(installedPathFor(name) || skillDir(name), ...SETUP_SCRIPT);
     say(bold(`\n▸ Prerequisites for ${name}`) + dim(`  (${py.join(" ")} ${script})`));
     const r = spawnSync(py[0], [...py.slice(1), script], { stdio: "inherit" });
     if (r.status === 0) say(green(`✔ ${name} prerequisites ready`));
@@ -251,7 +271,7 @@ async function cmdInstall(flags) {
   let skills;
   if (flags.skills) skills = flags.skills === "all" ? all.map((s) => s.name) : String(flags.skills).split(",");
   else if (yes) skills = all.map((s) => s.name);
-  else skills = await choose("Which skills?", all.map((s) => ({ value: s.name, label: s.name, hint: s.desc })), { multi: true, preselect: all.map((s) => s.name) });
+  else skills = await choose("Which skills?", all.map((s) => ({ value: s.name, label: s.name, hint: (s.source === "personal" ? "personal · " : "") + s.desc })), { multi: true, preselect: all.map((s) => s.name) });
   const unknown = skills.filter((s) => !all.some((a) => a.name === s));
   if (unknown.length) { say(red(`Unknown skill(s): ${unknown.join(", ")}`)); process.exit(1); }
   skills = withDeps(skills);
@@ -313,7 +333,7 @@ async function cmdUpdate(flags) {
     if (!available.includes(it.skill)) { say(yellow(`! ${it.skill} no longer in the repo — left as is at ${it.path}`)); continue; }
     if (!fs.existsSync(path.dirname(it.path))) { say(yellow(`! ${it.path} — folder gone, skipped`)); continue; }
     fs.rmSync(it.path, { recursive: true, force: true });
-    copyDir(path.join(SKILLS_DIR, it.skill), it.path);
+    copyDir(skillDir(it.skill), it.path);
     it.at = new Date().toISOString();
     say(`${green("✔")} ${it.skill} ${dim("→")} ${it.path}`);
     n++;
@@ -398,9 +418,9 @@ function syncAndHandOver(flags) {
     r = git("-C", REPO_DIR, "fetch", "--depth", "1", "-q", "origin", "main");
     if (r.status === 0) {
       // The skill publisher commits here; never throw away uncommitted edits or commits not yet on GitHub.
-      // The publisher leaves PENDING_PUSH beside the clone when a commit couldn't be pushed yet.
+      // The publisher leaves <clone>.pending beside the clone when a commit couldn't be pushed yet.
       const dirty = git("-C", REPO_DIR, "status", "--porcelain").stdout.trim();
-      const pending = fs.existsSync(path.join(HOME, ".mayank-skills", "PENDING_PUSH"));
+      const pending = fs.existsSync(REPO_DIR + ".pending");
       if (dirty || pending) say(yellow(`! ${REPO_DIR} has local work not on GitHub — using it as is (the skill publisher will push it).`));
       else r = git("-C", REPO_DIR, "reset", "--hard", "-q", "origin/main");
     }
@@ -417,8 +437,31 @@ function syncAndHandOver(flags) {
   process.exit(child.status ?? 1);
 }
 
+/** Fetch the private source if this machine's Git can read it. Never prompts; never fails the run. */
+function syncPersonal(flags) {
+  if (flags["no-sync"]) return;
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_ASKPASS: "", SSH_ASKPASS: "" };
+  // 20 s per git call: a reachable GitHub answers in a second or two; this only bounds a hung network
+  const git = (...a) => spawnSync("git", ["-c", "credential.interactive=never", ...a], { encoding: "utf8", env, timeout: 20000 });
+  let r;
+  if (fs.existsSync(path.join(PERSONAL_DIR, ".git"))) {
+    r = git("-C", PERSONAL_DIR, "fetch", "--depth", "1", "-q", "origin", "main");
+    if (r.status === 0) {
+      const dirty = git("-C", PERSONAL_DIR, "status", "--porcelain").stdout?.trim();
+      if (!dirty && !fs.existsSync(PERSONAL_DIR + ".pending")) git("-C", PERSONAL_DIR, "reset", "--hard", "-q", "origin/main");
+    }
+  } else {
+    r = git("clone", "--depth", "1", "-q", PERSONAL_URL, PERSONAL_DIR);
+    if (r.status !== 0) fs.rmSync(PERSONAL_DIR, { recursive: true, force: true }); // no access: leave no trace
+  }
+  if (r.status !== 0 && loadManifest().installs.some((i) => i.source === "personal")) {
+    say(dim("Note: couldn't refresh your personal skills (Skills-Personal); using the last copy. Check that Git is signed in to GitHub."));
+  }
+}
+
 const { cmd, flags } = args();
 syncAndHandOver(flags);
+syncPersonal(flags);
 const run = { install: cmdInstall, update: cmdUpdate, setup: cmdSetup, list: cmdList, uninstall: cmdUninstall }[cmd];
 if (!run || flags.help) {
   say("Usage: npx -y github:MayankPunghal/Skills [install|update|setup|list|uninstall] [--skills=all|a,b] [--agents=claude,codex,cursor,copilot] [--scope=global|project] [--dir=PATH] [--link] [--yes] [--no-setup]");

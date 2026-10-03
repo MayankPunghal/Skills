@@ -62,7 +62,7 @@ The rules every skill in this repo follows, picked from Anthropic's [skill autho
 - Run `python scripts/validate_skills.py` before committing.
 
 ## Adding a new skill
-Easiest: `/skill-publisher <folder>` in Claude Code does all of the below. By hand:
+Easiest: `/skill-publisher <folder>` in Claude Code does all of the below, putting new skills in the private repo unless you say they're shareable. Public means anyone can read the skill and its history. By hand:
 
 1. Copy the folder into `skills/<name>/` (folder name = `name`).
 2. Leave out client data, secrets, caches (`__pycache__`), build zips and generated output.

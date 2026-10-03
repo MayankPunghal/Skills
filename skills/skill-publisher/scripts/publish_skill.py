@@ -2,13 +2,14 @@
 
     python publish_skill.py prepare <skill-folder-or-zip> [--name NAME]
     python publish_skill.py check <name>
-    python publish_skill.py publish <name> [--message "..."]
+    python publish_skill.py publish <name> [--to personal|public] [--message "..."]
     python publish_skill.py install <name>
 
 prepare  brings the managed repo clone (~/.mayank-skills/repo) up to date, copies the skill into a clean staging folder
          (~/.mayank-skills/staging/<name>) without caches/secrets/zips, then prints the scan + validator report.
 check    re-runs the secret scan and the validator on the staged copy (use after every refactor pass).
-publish  refuses while check fails; otherwise copies staging into the repo's skills/, adds a README row, commits, pushes.
+publish  refuses while check fails; otherwise copies staging into the target repo's skills/ (personal by default, or
+         where the skill already lives; --to public for shareable skills), adds a README row, commits, pushes.
 install  installs the published skill on this machine into the same folders as the other skills, with prerequisites.
 
 The source folder is never modified.
@@ -24,9 +25,13 @@ import zipfile
 
 HOME = os.path.expanduser("~")
 ROOT = os.path.join(HOME, ".mayank-skills")
-REPO = os.path.join(ROOT, "repo")
+REPO = os.path.join(ROOT, "repo")          # public Skills repo: also holds CONVENTIONS.md, the validator and the installer
+PERSONAL = os.path.join(ROOT, "personal")  # private Skills-Personal repo: skills only for the owner's machines
+PERSONAL_URL = "https://github.com/MayankPunghal/Skills-Personal.git"
 STAGING = os.path.join(ROOT, "staging")
-PENDING = os.path.join(ROOT, "PENDING_PUSH")  # present while a commit in REPO is not on GitHub yet; the installer won't reset over it
+# <clone>.pending exists while a commit in that clone is not on GitHub yet; the installer won't reset over it
+def pending(repo):
+    return repo + ".pending"
 REPO_URL = "https://github.com/MayankPunghal/Skills.git"
 
 # Never copied into the repo: caches, VCS data, build output, local secrets, superseded copies.
@@ -60,24 +65,52 @@ def run(cmd, cwd=None, check=False):
     return r
 
 
-def sync_repo():
-    """Clone or refresh the managed clone. Local work (uncommitted or unpushed) is kept, never reset away."""
-    if not os.path.isdir(os.path.join(REPO, ".git")):
+def sync_repo(repo=REPO, url=REPO_URL, required=True):
+    """Clone or refresh a managed clone. Local work (uncommitted or unpushed) is kept, never reset away.
+    Returns False when an optional repo (personal) can't be reached."""
+    quiet_env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
+    if not os.path.isdir(os.path.join(repo, ".git")):
         os.makedirs(ROOT, exist_ok=True)
-        say(f"Cloning {REPO_URL} -> {REPO}")
-        run(["git", "clone", "--depth", "1", "-q", REPO_URL, REPO], check=True)
-        return
-    run(["git", "-C", REPO, "fetch", "--depth", "1", "-q", "origin", "main"], check=True)
-    dirty = run(["git", "-C", REPO, "status", "--porcelain"]).stdout.strip()
-    if dirty or os.path.exists(PENDING):
-        say(f"NOTE: {REPO} has local work not on GitHub (uncommitted: {bool(dirty)}, unpushed commit: {os.path.exists(PENDING)}). Keeping it.")
+        say(f"Cloning {url} -> {repo}")
+        r = subprocess.run(["git", "clone", "--depth", "1", "-q", url, repo], capture_output=True, text=True,
+                           env=None if required else quiet_env)
+        if r.returncode != 0:
+            if required:
+                say(f"FAILED: git clone {url}\n{r.stderr.strip()}")
+                sys.exit(1)
+            shutil.rmtree(repo, ignore_errors=True)
+            return False
+        return True
+    r = run(["git", "-C", repo, "fetch", "--depth", "1", "-q", "origin", "main"], check=required)
+    if r.returncode != 0:
+        return False
+    dirty = run(["git", "-C", repo, "status", "--porcelain"]).stdout.strip()
+    if dirty or os.path.exists(pending(repo)):
+        say(f"NOTE: {repo} has local work not on GitHub (uncommitted: {bool(dirty)}, unpushed commit: {os.path.exists(pending(repo))}). Keeping it.")
         if not dirty:
-            r = run(["git", "-C", REPO, "rebase", "-q", "origin/main"])
+            r = run(["git", "-C", repo, "rebase", "-q", "origin/main"])
             if r.returncode != 0:
-                run(["git", "-C", REPO, "rebase", "--abort"])
+                run(["git", "-C", repo, "rebase", "--abort"])
                 say("NOTE: could not rebase the local commit onto GitHub's main; publish will report the push result.")
-        return
-    run(["git", "-C", REPO, "reset", "--hard", "-q", "origin/main"], check=True)
+        return True
+    run(["git", "-C", repo, "reset", "--hard", "-q", "origin/main"], check=True)
+    return True
+
+
+def sync_all():
+    sync_repo()
+    ok = sync_repo(PERSONAL, PERSONAL_URL, required=False)
+    if not ok:
+        say("NOTE: Skills-Personal isn't reachable from this machine (no access or offline): only --to public is possible.")
+    return ok
+
+
+def where(name):
+    """'public' / 'personal' if the skill already lives in that repo, else None."""
+    for label, repo in (("personal", PERSONAL), ("public", REPO)):
+        if os.path.isdir(os.path.join(repo, "skills", name)):
+            return label
+    return None
 
 
 def frontmatter_name(skill_md):
@@ -169,7 +202,7 @@ def cmd_prepare(a):
     if not os.path.exists(src):
         say(f"Not found: {src}")
         sys.exit(1)
-    sync_repo()
+    has_personal = sync_all()
     if zipfile.is_zipfile(src):
         unz = os.path.join(ROOT, "unzip-tmp")
         shutil.rmtree(unz, ignore_errors=True)
@@ -184,16 +217,20 @@ def cmd_prepare(a):
     name = re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-")[:64]
     shutil.rmtree(STAGING, ignore_errors=True)
     skipped = copy_clean(root, os.path.join(STAGING, name))
-    existing = os.path.join(REPO, "skills", name)
+    loc = where(name)
+    existing = os.path.join(PERSONAL if loc == "personal" else REPO, "skills", name)
     say(f"SOURCE   {root}  (left untouched)")
     say(f"STAGED   {os.path.join(STAGING, name)}")
     say(f"NAME     {name}" + (f"   (frontmatter says '{fm}' — set it to '{name}')" if fm and fm != name else ""))
     say(f"REPO     {REPO}   conventions: {os.path.join(REPO, 'CONVENTIONS.md')}")
-    if os.path.isdir(existing):
-        say(f"EXISTING skills/{name} is already in the repo: this is an UPDATE. Merge, never drop what the repo version has.")
+    if loc:
+        say(f"EXISTING skills/{name} is already in the {loc} repo: this is an UPDATE. Merge, never drop what the repo version has.")
         say(f"         repo copy: {existing}")
+        say(f"TARGET   {loc} (publish keeps it where it is; --to moves it)")
     else:
         say("EXISTING no — this is a NEW skill.")
+        say("TARGET   personal by default (private: only your machines). Use --to public only when the user says it is shareable."
+            + ("" if has_personal else "  [personal unavailable here]"))
     if skipped:
         say("SKIPPED  " + ", ".join(skipped[:15]) + (" …" if len(skipped) > 15 else ""))
     report(name)
@@ -207,13 +244,13 @@ def cmd_check(a):
     sys.exit(0 if st["ready"] else 1)
 
 
-def readme_row(name):
+def readme_row(name, repo=REPO):
     """Add the skill to the README skills table (if missing) and keep the skill-count badge right."""
-    readme = os.path.join(REPO, "README.md")
+    readme = os.path.join(repo, "README.md")
     text = open(readme, encoding="utf-8").read()
     changed = False
     if f"(skills/{name}/SKILL.md)" not in text:
-        skill_md = open(os.path.join(REPO, "skills", name, "SKILL.md"), encoding="utf-8").read()
+        skill_md = open(os.path.join(repo, "skills", name, "SKILL.md"), encoding="utf-8").read()
         m = re.search(r"^description:\s*(.+)$", skill_md, re.M)
         desc = (m.group(1) if m else "").strip().strip("\"'")
         first = re.split(r"(?<=\.)\s", desc)[0].replace("|", "/")
@@ -226,7 +263,7 @@ def readme_row(name):
         elif rows:
             text = text.replace(rows[-1], rows[-1] + "\n" + row, 1)
         changed = True
-    count = len([d for d in os.listdir(os.path.join(REPO, "skills")) if os.path.isfile(os.path.join(REPO, "skills", d, "SKILL.md"))])
+    count = len([d for d in os.listdir(os.path.join(repo, "skills")) if os.path.isfile(os.path.join(repo, "skills", d, "SKILL.md"))])
     new = re.sub(r"badge/skills-\d+-", f"badge/skills-{count}-", text)
     if new != text or changed:
         open(readme, "w", encoding="utf-8", newline="\n").write(new)
@@ -242,29 +279,60 @@ def cmd_publish(a):
     if not st["ready"]:
         say("\nNOT PUBLISHED: fix the errors / secrets / large files above, then run publish again.")
         sys.exit(1)
-    sync_repo()
-    dest = os.path.join(REPO, "skills", a.name)
+    has_personal = sync_all()
+    loc = where(a.name)
+    target = a.to or loc or "personal"
+    if target == "personal" and not has_personal:
+        say("NOT PUBLISHED: Skills-Personal isn't reachable here. Sign Git in to GitHub, or use --to public if the skill is shareable.")
+        sys.exit(1)
+    repo = PERSONAL if target == "personal" else REPO
+    if loc and loc != target:
+        say(f"MOVING {a.name} from {loc} to {target}.")
+        old_repo = PERSONAL if loc == "personal" else REPO
+        shutil.rmtree(os.path.join(old_repo, "skills", a.name))
+        readme = os.path.join(old_repo, "README.md")
+        if os.path.exists(readme):
+            lines = open(readme, encoding="utf-8").read().split("\n")
+            open(readme, "w", encoding="utf-8", newline="\n").write(
+                "\n".join(l for l in lines if f"(skills/{a.name}/SKILL.md)" not in l))
+        _fix_badge(old_repo)
+        _commit_push(old_repo, f"Move skill {a.name} to the {target} repo")
+    dest = os.path.join(repo, "skills", a.name)
     is_update = os.path.isdir(dest)
     shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(staged, dest)
-    added_row = readme_row(a.name)
-    run(["git", "-C", REPO, "add", "-A"], check=True)
-    if not run(["git", "-C", REPO, "status", "--porcelain"]).stdout.strip():
-        say("No changes: the repo already has exactly this version.")
-        return
+    added_row = readme_row(a.name, repo)
     msg = a.message or f"{'Update' if is_update else 'Add'} skill: {a.name}"
     body = "\n\nPublished with skill-publisher." + ("\nREADME: added to the skills table." if added_row else "")
-    run(["git", "-C", REPO, "commit", "-q", "-m", msg + body], check=True)
-    r = run(["git", "-C", REPO, "push", "-q", "origin", "HEAD:main"])
+    head = _commit_push(repo, msg + body)
+    if head:
+        say(f"PUBLISHED skills/{a.name} @ {head} -> github.com/MayankPunghal/{'Skills-Personal' if target == 'personal' else 'Skills'} ({target})")
+
+
+def _fix_badge(repo):
+    readme = os.path.join(repo, "README.md")
+    if not os.path.exists(readme):
+        return
+    count = len([d for d in os.listdir(os.path.join(repo, "skills")) if os.path.isfile(os.path.join(repo, "skills", d, "SKILL.md"))])
+    text = open(readme, encoding="utf-8").read()
+    open(readme, "w", encoding="utf-8", newline="\n").write(re.sub(r"badge/skills-\d+-", f"badge/skills-{count}-", text))
+
+
+def _commit_push(repo, msg):
+    run(["git", "-C", repo, "add", "-A"], check=True)
+    if not run(["git", "-C", repo, "status", "--porcelain"]).stdout.strip():
+        say("No changes: the repo already has exactly this version.")
+        return None
+    run(["git", "-C", repo, "commit", "-q", "-m", msg], check=True)
+    r = run(["git", "-C", repo, "push", "-q", "origin", "HEAD:main"])
     if r.returncode != 0:
-        open(PENDING, "w").write(msg)
-        say("COMMITTED locally but the push failed (kept in ~/.mayank-skills/repo; the installer won't discard it):")
+        open(pending(repo), "w").write(msg)
+        say(f"COMMITTED locally but the push failed (kept in {repo}; the installer won't discard it):")
         say(r.stderr.strip())
         sys.exit(1)
-    if os.path.exists(PENDING):
-        os.remove(PENDING)
-    head = run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"]).stdout.strip()
-    say(f"PUBLISHED skills/{a.name} @ {head} -> github.com/MayankPunghal/Skills")
+    if os.path.exists(pending(repo)):
+        os.remove(pending(repo))
+    return run(["git", "-C", repo, "rev-parse", "--short", "HEAD"]).stdout.strip()
 
 
 def cmd_install(a):
@@ -289,6 +357,7 @@ def main():
     p = sub.add_parser("prepare"); p.add_argument("source"); p.add_argument("--name")
     p = sub.add_parser("check"); p.add_argument("name")
     p = sub.add_parser("publish"); p.add_argument("name"); p.add_argument("--message")
+    p.add_argument("--to", choices=["personal", "public"], help="target repo (default: where the skill already is, else personal)")
     p = sub.add_parser("install"); p.add_argument("name")
     a = ap.parse_args()
     if shutil.which("git") is None:
