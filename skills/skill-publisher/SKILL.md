@@ -1,12 +1,14 @@
 ---
 name: skill-publisher
-description: Publishes a skill folder to Mayank's skill collection in one go: the private Skills-Personal repo by default, or the public Skills repo for shareable skills. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or "set up" a skill, or to make a skill follow best practices and put it in the repo.
-argument-hint: "<skill folder | SKILL.md | .zip> [--name new-name]"
+description: Publishes a skill folder to Mayank's skill collection in one go: the private Skills-Personal repo by default, or the public Skills repo for shareable skills. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or "set up" a skill; when they want to change, update or improve one of their existing skills (by name); or to make a skill follow best practices and put it in the repo.
+argument-hint: "<skill folder | .zip | skill name> [changes to make]"
 ---
 
 # Skill publisher
 
 **No argument** (a bare `/skill-publisher`): ask one question, for the skill folder or .zip, and say in one line what happens next (refactor → checks → publish → install; private unless they say it's shareable).
+
+**Changing an existing skill:** the user can give just its name plus the changes ("/skill-publisher ytstudio: add a shorts-first mode", or a change list from another session). `prepare <name>` stages the repo's current copy; make the requested changes in the staged copy (additively, with the same rules as a refactor), then check, publish and install as usual. If the changes were already made in a folder (an installed copy, a studio, another session's output), pass that folder instead and merge.
 
 The user gives a path. Everything after that is yours: no questions unless a step below says to stop. The script does the mechanical work; you do the refactor.
 

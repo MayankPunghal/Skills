@@ -1,6 +1,6 @@
 """Mechanical half of the skill publisher: stage, scan, validate, publish, install. Standard library only.
 
-    python publish_skill.py prepare <skill-folder-or-zip> [--name NAME]
+    python publish_skill.py prepare <skill-folder | zip | skill-name> [--name NAME]   (a name stages the repo copy, to edit it)
     python publish_skill.py check <name>
     python publish_skill.py publish <name> [--to personal|public] [--message "..."]
     python publish_skill.py install <name>
@@ -198,11 +198,17 @@ def report(name):
 
 
 def cmd_prepare(a):
+    has_personal = sync_all()
     src = os.path.abspath(os.path.expanduser(a.source))
     if not os.path.exists(src):
-        say(f"Not found: {src}")
-        sys.exit(1)
-    has_personal = sync_all()
+        # Not a path: treat it as the name of a skill already in the collection and stage the repo copy to edit.
+        name_guess = re.sub(r"[^a-z0-9-]+", "-", a.source.lower()).strip("-")
+        loc = where(name_guess)
+        if not loc:
+            say(f"Not found: {a.source} is neither a folder/zip nor a skill in the collection.")
+            sys.exit(1)
+        src = os.path.join(PERSONAL if loc == "personal" else REPO, "skills", name_guess)
+        say(f"EDITING  the {loc} repo's copy of {name_guess}: apply the requested changes to the STAGED copy, then check and publish.")
     if zipfile.is_zipfile(src):
         unz = os.path.join(ROOT, "unzip-tmp")
         shutil.rmtree(unz, ignore_errors=True)
