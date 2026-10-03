@@ -1,0 +1,59 @@
+{
+ "_doc": "Thresholds and rule sets for the draft 7R classification (classify_apps.py). The reviewer confirms or overrides every application in assessment/decisions.json. See references/seven-rs.md. windows_bound_max_files_to_replace: when all Windows-bound findings sit in at most this many files, they are replaced during the port (Replatform) instead of forcing a rehost.",
+ "windows_bound_rules": [
+  "WIN-COM-INTEROP",
+  "WIN-PINVOKE-WIN32",
+  "INT-OFFICE-INTEROP",
+  "INT-CRYSTAL",
+  "INT-FAX",
+  "API-ENTERPRISESERVICES",
+  "API-WORKFLOW",
+  "API-REMOTING",
+  "WIN-MSMQ",
+  "WCF-BINDING",
+  "PKG-BLOCKER"
+ ],
+ "ui_rewrite_rules": [
+  "WEB-WEBFORMS-UI",
+  "WEB-WEBFORMS-AJAX"
+ ],
+ "desktop_types": [
+  "winforms",
+  "wpf"
+ ],
+ "webforms_retain_thresholds": {
+  "_doc": "Above either threshold the default for a Web Forms app is retain-on-Framework + hybrid shared libraries; below, UI rewrite.",
+  "kloc": 25,
+  "pages": 60
+ },
+ "large_blocker_count_for_rehost": 3,
+ "retain_relevant_categories": [
+  "connectivity",
+  "configuration-secrets",
+  "auth",
+  "state-scale",
+  "hosting",
+  "background",
+  "logging",
+  "integrations",
+  "security",
+  "dependencies",
+  "database",
+  "file-handling",
+  "time-culture",
+  "hypervisor",
+  "packages",
+  "build-delivery",
+  "tests",
+  "parallel-dev"
+ ],
+ "targets": {
+  "linux-container": "{target} on Linux containers - Amazon ECS on AWS Fargate (or EKS) behind an ALB",
+  "linux-worker": "{target} Worker Service on Linux - ECS service / scheduled ECS task (EventBridge Scheduler)",
+  "linux-batch": "{target} console job on Linux - scheduled ECS task (EventBridge Scheduler) or AWS Lambda if short-running",
+  "windows-retain": ".NET Framework 4.8.1 on Windows - Amazon EC2 Windows (IIS) or ECS Windows containers; shared libraries multi-targeted to netstandard2.0",
+  "windows-desktop": ".NET 10 Windows Desktop on user machines (optionally Amazon WorkSpaces / AppStream 2.0); back-end calls repointed to AWS",
+  "database": "see database assessment"
+ },
+ "windows_bound_max_files_to_replace": 10
+}

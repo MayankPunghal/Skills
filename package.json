@@ -1,0 +1,11 @@
+{
+  "name": "mayank-skills",
+  "version": "1.0.0",
+  "description": "Installer for Mayank Punghal's custom Agent Skills (Claude Code, Codex, Cursor, Copilot)",
+  "type": "module",
+  "bin": { "mayank-skills": "install.mjs" },
+  "files": ["install.mjs", "skills/", "README.md", "CONVENTIONS.md"],
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}

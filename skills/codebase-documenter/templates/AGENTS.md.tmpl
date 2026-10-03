@@ -1,0 +1,50 @@
+# AGENTS.md — how to use the {{product}} documentation
+
+This repository (or workspace) contains {{product}} ({{code_name}}) and its complete documentation in `{{docs_dir}}/`. Read this before explaining or changing any part of the system. It applies to every coding agent (Claude Code, Codex, Cursor, Copilot, Gemini …).
+
+## 0. Locate things first
+
+- **Docs root** = the folder containing `{{docs_dir}}/agent/entities.jsonl` (repository root, `repo-kit/` when a shared package was unpacked as is, or search for it).
+- **Source root** = `{{source_root}}` relative to the docs root, or the repository root. If there is no code, answer from the docs with citations and say the answers are not verified against the code.
+- Run `lookup.py` **from the workspace root** by its path (`python <docs root>/{{docs_dir}}/_tools/lookup.py <Name>`); never `cd` into the docs first.
+
+## 1. What exists
+
+| Resource | Path | Use |
+| --- | --- | --- |
+| Page map | `{{docs_dir}}/llms.txt` | One line per page with its purpose: read first |
+| Entity index | `{{docs_dir}}/agent/entities.jsonl` | Every documented item: `kind`, `name`, `file`, `anchor`, `summary` |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--find TEXT] [--src PATH]` | Prints `doc: path:line` and `src: path:line` per match, then the entry; `--find` lists matching source lines |
+| Narrative docs | `{{docs_dir}}/<section>/` | Behaviour, rules, flows, integrations, security |
+| Reference | `{{docs_dir}}/reference/` | Exhaustive generated catalogues with anchors |
+| Research notes | `{{docs_dir}}/_notes/` | Dense verified findings per area |
+| Code graph | `graphify-out/` (if built) | `graphify query / explain / path / affected` |
+
+Kinds: {{kinds}}.
+
+## 2. Lookup order
+
+1. `{{docs_dir}}/llms.txt` → pick pages.
+2. `lookup.py <Name>` for each named item.
+3. Narrative page for behaviour.
+4. Reference entry (`doc:` line) for exact details; `src:` line for the code; `--find` for the exact line to change.
+5. graphify for relationships and impact.
+6. Verify in source before editing.
+
+## 3. Where to start
+
+| Task | Start here |
+| --- | --- |
+{{task_rows}}
+
+## 4. Rules
+
+- Cite every claim as a clickable link copied exactly from the lookup output; never invent a path.
+- Change requests end with *File (link with :line) · What to change · Why*, code files first.
+- Never copy secret values; name the configuration key only. Confidential: {{sensitive}}.
+- **After code changes, update the docs** (from the docs root; set `DOCS_SOURCE_ROOT` to the source root when it differs):
+  1. `graphify update .` (if the graph exists)
+  2. Regenerate the reference with the `codebase-documenter` skill (`build-site`), or rerun the project's generators.
+  3. Edit the affected narrative sources in `{{docs_dir}}/_src/` (link tags such as `[[table:X]]`, `[[proc:X]]`, `[[cls:X]]`).
+  4. `python {{docs_dir}}/_tools/build_docs.py` (0 unresolved) → `python {{docs_dir}}/_tools/gen_agent_index.py` → `python -m mkdocs build` (0 warnings).
+- Don't edit generated files: `{{docs_dir}}/reference/*`, `{{docs_dir}}/agent/*`, `{{docs_dir}}/llms.txt`, `{{docs_dir}}/appendices/coverage.md`.

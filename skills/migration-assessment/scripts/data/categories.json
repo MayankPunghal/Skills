@@ -1,0 +1,236 @@
+{
+ "_doc": "Assessment categories. Every category must end up in the report with findings or an explicit 'checked, none found' line naming what was scanned. order = report order. brief = engagement checklist item it answers. segment = report grouping (segments list); categories are ordered by segment.",
+ "categories": [
+  {
+   "id": "linux-readiness",
+   "title": "Windows-only APIs (Linux readiness)",
+   "brief": "5.1-1; 5.2 Windows-only APIs",
+   "scanned": "C#/VB/markup for registry, Event Log, WMI, performance counters, System.Drawing, COM, P/Invoke, DirectoryServices, MSMQ, Windows services, DPAPI, CNG/CSP, certificate store, ACLs, shelling out to Windows executables",
+   "segment": "linux"
+  },
+  {
+   "id": "file-handling",
+   "title": "File system and path handling",
+   "brief": "5.1-8; 5.2 Storage",
+   "scanned": "drive letters, backslash path literals, MapPath, case mismatches between path literals and files on disk, Windows special folders and %VARS%, local file writes, code pages / Encoding.Default, hard-coded CRLF",
+   "segment": "linux"
+  },
+  {
+   "id": "time-culture",
+   "title": "Time zones and culture",
+   "brief": "5.2 Time zones and culture",
+   "scanned": "Windows time-zone IDs, DateTime.Now usage, hard-coded cultures, web.config globalization, culture-sensitive string comparison",
+   "segment": "linux"
+  },
+  {
+   "id": "inventory",
+   "title": "Inventory and project structure",
+   "brief": "5.2 Inventory; 5.1-1",
+   "scanned": "solutions, project files, target frameworks, project types, package formats, languages, lines of code",
+   "segment": "modernization"
+  },
+  {
+   "id": "api-portability",
+   "title": ".NET Framework technologies unavailable on modern .NET",
+   "brief": "5.2 API portability",
+   "scanned": "AppDomains, Remoting, CAS, EnterpriseServices/COM+, Workflow Foundation, BinaryFormatter, Thread.Abort, CodeDom compilation, reflection-only loading, XSLT script, obsolete WebRequest",
+   "segment": "modernization"
+  },
+  {
+   "id": "web-platform",
+   "title": "ASP.NET (System.Web) dependencies",
+   "brief": "5.2 Front end; 5.1-1",
+   "scanned": "System.Web, HttpContext.Current, Web Forms pages and controls, Global.asax, HTTP modules/handlers, OWIN, MVC child actions, ASMX, Web Site projects, ReportViewer",
+   "segment": "modernization"
+  },
+  {
+   "id": "wcf-desktop",
+   "title": "WCF, WPF, WinForms and other rewrite candidates",
+   "brief": "5.1-6",
+   "scanned": "WCF service contracts and bindings, WCF clients and web references, WinForms, WPF, ClickOnce",
+   "segment": "modernization"
+  },
+  {
+   "id": "modern-on-windows",
+   "title": "Modern .NET still hosted on Windows",
+   "brief": "5.1-10",
+   "scanned": "SDK-style projects on .NET Core/5+ with no Windows-only findings but IIS/Windows hosting artefacts; out-of-support .NET versions",
+   "segment": "modernization"
+  },
+  {
+   "id": "packages",
+   "title": "NuGet packages and third-party libraries",
+   "brief": "5.2 NuGet packages; 5.1-2",
+   "scanned": "packages.config and PackageReference against the package map (Windows-only, deprecated, vulnerable, licence) and, when enabled, api.nuget.org",
+   "segment": "packages"
+  },
+  {
+   "id": "connectivity",
+   "title": "Connectivity and network dependencies",
+   "brief": "5.1-2; 5.1-11",
+   "scanned": "hard-coded IPs and hosts, internal host names, UNC shares, SMTP, FTP, proxies, WCF client endpoints, outbound URLs",
+   "segment": "integrations"
+  },
+  {
+   "id": "integrations",
+   "title": "Email, reporting, printing and other on-prem integrations",
+   "brief": "5.2 Email, reporting, printing",
+   "scanned": "SMTP clients, printing APIs, fax, Office interop, Crystal Reports, SSRS clients, PDF/Excel libraries, SharePoint, Exchange EWS",
+   "segment": "integrations"
+  },
+  {
+   "id": "dependencies",
+   "title": "Upstream and downstream systems",
+   "brief": "5.1-11",
+   "scanned": "aggregated from connection strings, URLs, WCF endpoints, SMTP, file shares, queues",
+   "segment": "integrations"
+  },
+  {
+   "id": "data-access",
+   "title": "Data access layer",
+   "brief": "5.1-3; 5.2 Data layer",
+   "scanned": "EF6/EDMX, System.Data.SqlClient, OLE DB/ODBC, Oracle unmanaged driver, TransactionScope / distributed transactions, SqlDependency, integrated-security connection strings",
+   "segment": "data"
+  },
+  {
+   "id": "database",
+   "title": "SQL Server features vs Amazon RDS for SQL Server and Babelfish",
+   "brief": "5.1-3; 5.2 Data layer",
+   "scanned": "T-SQL in .sql files / SSDT projects: CLR, linked servers, xp_cmdshell, FILESTREAM, Service Broker, MSDTC, SQL Agent jobs, cross-database references, BULK INSERT, full-text, MERGE, hierarchyid, temporal tables, XML methods, EXECUTE AS, Database Mail, replication; SSIS/SSRS/SSAS artefacts",
+   "segment": "data"
+  },
+  {
+   "id": "auth",
+   "title": "Authentication and identity",
+   "brief": "5.1-4",
+   "scanned": "web.config authentication mode, Windows auth / impersonation, Forms auth, Membership/role manager, machineKey, WS-Federation/ADFS, ASP.NET Identity 2, OWIN security, default network credentials",
+   "segment": "security"
+  },
+  {
+   "id": "configuration-secrets",
+   "title": "Configuration and secrets",
+   "brief": "5.2 Configuration and secrets",
+   "scanned": "config transforms, ConfigurationManager usage, connection strings (names, servers, auth type), secret-like settings and literals (values never copied), DPAPI/RSA-protected sections",
+   "segment": "security"
+  },
+  {
+   "id": "security",
+   "title": "Security and compliance",
+   "brief": "5.2 Security and compliance",
+   "scanned": "TLS/SSL versions, certificate validation overrides, weak hashes/ciphers, request validation off, debug compilation, custom errors off, vulnerable packages and front-end libraries, hard-coded credentials",
+   "segment": "security"
+  },
+  {
+   "id": "hosting",
+   "title": "Hosting and IIS dependencies",
+   "brief": "5.2 Hosting",
+   "scanned": "IIS rewrite rules, modules/handlers, httpRuntime limits, session state mode, publish profiles (MSDeploy/IIS), Dockerfiles and base images",
+   "segment": "hosting"
+  },
+  {
+   "id": "state-scale",
+   "title": "State and horizontal scaling",
+   "brief": "5.2 State and scale",
+   "scanned": "in-process session, Application/Cache/MemoryCache state, static mutable fields, in-process timers and background work in web apps, local disk persistence",
+   "segment": "hosting"
+  },
+  {
+   "id": "background",
+   "title": "Background processing and scheduling",
+   "brief": "5.2 Background processing",
+   "scanned": "Windows services, Task Scheduler, Hangfire, Quartz, MSMQ, timers",
+   "segment": "hosting"
+  },
+  {
+   "id": "logging",
+   "title": "Logging, monitoring and health",
+   "brief": "5.2 Logging and monitoring",
+   "scanned": "Event Log, log4net/NLog/Serilog file targets, ELMAH, Trace listeners, health-check endpoints",
+   "segment": "hosting"
+  },
+  {
+   "id": "hypervisor",
+   "title": "Hypervisor and machine-coupling (Proxmox, VMware, Hyper-V)",
+   "brief": "5.1-5",
+   "scanned": "hardware/MAC/BIOS identifiers, machine-name logic, serial/COM/LPT devices, licence dongles, static IPs",
+   "segment": "hosting"
+  },
+  {
+   "id": "build-delivery",
+   "title": "Build and delivery",
+   "brief": "5.2 Build and delivery",
+   "scanned": "legacy project format, packages.config, WebApplication.targets, pre/post-build events, .bat/.ps1 scripts, CI definitions and Windows agents, private NuGet feeds, signing",
+   "segment": "delivery"
+  },
+  {
+   "id": "tests",
+   "title": "Automated tests",
+   "brief": "5.2 Tests",
+   "scanned": "test projects, frameworks, test method counts, UI/Coded UI tests",
+   "segment": "delivery"
+  },
+  {
+   "id": "front-end",
+   "title": "Front end",
+   "brief": "5.2 Front end",
+   "scanned": "jQuery/Bootstrap/AngularJS versions, bundling, Web Forms AJAX controls, ViewState, legacy SignalR, bower/npm",
+   "segment": "delivery"
+  },
+  {
+   "id": "parallel-dev",
+   "title": "Parallel development and merge risk",
+   "brief": "5.2 Parallel development risk",
+   "scanned": "git history: commits, authors and hot files in the activity window",
+   "segment": "delivery"
+  },
+  {
+   "id": "tooling",
+   "title": "Tooling coverage (what tools find vs manual review)",
+   "brief": "5.1-7; 5.1-9",
+   "scanned": "which checks are automated here, what AWS Transform / CAST / analyzers add, Linux build validation results",
+   "segment": "delivery"
+  }
+ ],
+ "segments": [
+  {
+   "id": "linux",
+   "title": "Linux readiness",
+   "description": "Everything that stops the code running on Linux: Windows-only APIs, file system and paths, time zones and culture."
+  },
+  {
+   "id": "modernization",
+   "title": ".NET modernization",
+   "description": "Technologies that do not exist on modern .NET: System.Web / Web Forms, WCF, desktop UI, AppDomains, Remoting, project formats, out-of-support frameworks."
+  },
+  {
+   "id": "packages",
+   "title": "Packages and libraries",
+   "description": "NuGet packages: incompatible, deprecated, vulnerable, licence review, private."
+  },
+  {
+   "id": "integrations",
+   "title": "Third-party APIs and integrations",
+   "description": "External services, on-premises systems, email, file transfer, reporting and other integrations the app depends on."
+  },
+  {
+   "id": "data",
+   "title": "Data and database",
+   "description": "Data-access code and SQL Server features versus Amazon RDS / Babelfish."
+  },
+  {
+   "id": "security",
+   "title": "Identity, configuration and security",
+   "description": "Authentication, secrets, configuration and security posture."
+  },
+  {
+   "id": "hosting",
+   "title": "Hosting and operations",
+   "description": "IIS, state and scaling, background jobs, logging, machine coupling."
+  },
+  {
+   "id": "delivery",
+   "title": "Delivery and quality",
+   "description": "Build, CI/CD, tests, front end, parallel development, tooling."
+  }
+ ]
+}

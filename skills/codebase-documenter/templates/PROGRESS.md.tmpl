@@ -1,0 +1,33 @@
+# Documentation progress — {{product}}
+
+Read this first when resuming (or run `context.py`). Research notes in `_notes/NN-*.md` are verified against code; the site is built from them.
+
+## Working agreement
+- Output: MkDocs site + Markdown; agent layer; packaged zip.
+- Silent work, one final summary. No secrets reproduced. Every claim verified in code.
+
+## Phase 0 — graph
+- [ ] graphify installed, graph built (extract, cluster)
+- [ ] communities named (optional, needs an LLM key) and reviewed
+- [ ] exports (wiki, callflow, tree, report) read; 01-graph.md written
+
+## Phase 1 — survey & research
+- [ ] survey (00-survey.md, areas.json)
+<!-- docs:areas -->
+<!-- /docs:areas -->
+
+## Phase 2 — reference
+- [ ] adapters chosen and configured in codebase-docs.json
+- [ ] pipeline runs clean (0 unresolved)
+
+## Phase 3 — narrative
+- [ ] every scaffold page written (verify_docs.py: 0 TODO markers)
+- [ ] module pages, workflows, integrations, data, security findings, defects, glossary
+
+## Phase 4 — agent layer & package
+- [ ] make-agent-skill (AGENTS.md, project skill, llms.txt, entity index)
+- [ ] verify passes (0 unresolved, 0 warnings, coverage 100 %, no secrets, 0 TODO)
+- [ ] package built and tested with a fresh agent
+
+## Corrections log
+<!-- one line per fact corrected after it was first written: what, where, evidence -->

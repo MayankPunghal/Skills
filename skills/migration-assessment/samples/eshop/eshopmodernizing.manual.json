@@ -1,0 +1,10 @@
+[
+ {"rule": "MAN-DESKTOP-SERVICE-ENDPOINT", "category": "dependencies", "title": "Desktop client calls the WCF catalog service over basicHttpBinding (endpoint in App.config)",
+  "severity": "Medium", "confidence": "Confirmed", "project": "eShopLegacyNTier/src/eShopWinForms/eShopWinForms.csproj",
+  "evidence": [{"file": "eShopLegacyNTier/src/eShopWinForms/App.config", "line": 26, "text": "<endpoint address=\"http://localhost:62314/CatalogService.svc\" binding=\"basicHttpBinding\" …"},
+               {"file": "eShopLegacyNTier/src/eShopWCFService/Web.config", "line": 39, "text": "<endpoint address=\"\" binding=\"basicHttpBinding\" contract=\"eShopWCFService.ICatalogService\"/>"}],
+  "why": "Integration direction: WinForms (user machines) -> WCF service (server). When the service moves to AWS, every installed desktop client needs the new HTTPS endpoint, and the SOAP contract must stay identical (CoreWCF BasicHttpBinding keeps it).",
+  "fix": "Port the service with CoreWCF (basicHttpBinding is supported), publish it behind an ALB with HTTPS, and ship a desktop configuration update (or a DNS name that is repointed at cut-over).",
+  "alt": "Keep a stable DNS name so clients do not need reconfiguration", "effort_key": "small-change",
+  "question": "How are desktop clients deployed and updated (MSI, ClickOnce, manual), and how many are installed?"}
+]

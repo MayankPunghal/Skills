@@ -1,0 +1,300 @@
+{
+ "_doc": "Effort model v2 (hours; days = hours / hours_per_day). Code work is costed as manual-equivalent hours and then multiplied by the AI-assistance factor (AWS Transform for .NET, GitHub Copilot app modernization, coding agents). QA, cut-over, infrastructure and coordination are costed separately and only partly accelerated. Every number is a [low, high] range; 'likely' = low + 40% of the range. Calibrate from your own actuals here, never in code. See references/estimation-model.md.",
+ "version": "2026-10-v3-scenarios",
+ "hours_per_day": 8,
+ "ai_assistance": {
+  "_doc": "Share of manual-equivalent effort that remains when work is tool/agent-assisted. code: AWS Transform for .NET / GitHub Copilot app modernization / coding agents do the mechanical port (AWS cites up to 4x); engineers direct, review and fix. qa: AI-generated characterisation/regression tests and automated runs; sign-off and UAT stay human. ops: IaC/pipeline templates generated and reviewed. db: AWS DMS Schema Conversion (generative AI) / SCT plus agents for T-SQL to PL/pgSQL. Set enabled=false for a manual estimate.",
+  "enabled": true,
+  "code_factor": [0.25, 0.4],
+  "qa_factor": [0.6, 0.8],
+  "ops_factor": [0.7, 0.85],
+  "db_factor": [0.35, 0.5]
+ },
+ "conversion_hours_per_kloc": {
+  "_doc": "Manual-equivalent hours per 1,000 hand-written lines (C#/VB; generated code excluded) to port a project to SDK-style + target .NET; markup has its own rate (markup_hours_per_kloc). Findings marked baseline are inside these rates.",
+  "class-library": [2, 6],
+  "console": [3, 8],
+  "test": [1, 3],
+  "aspnet-mvc": [8, 16],
+  "aspnet-webapi": [6, 12],
+  "aspnet-webforms": [24, 48],
+  "wcf-service": [8, 16],
+  "windows-service": [4, 10],
+  "winforms": [4, 10],
+  "wpf": [4, 10],
+  "aspnet-core": [1, 3],
+  "netcore-other": [0.5, 2],
+  "database": [0, 0],
+  "unknown": [6, 12]
+ },
+ "conversion_fixed_hours": {
+  "_doc": "Manual-equivalent hours per project: project file, packages, build, smoke test.",
+  "default": [2, 6],
+  "aspnet-mvc": [8, 16],
+  "aspnet-webapi": [6, 12],
+  "aspnet-webforms": [16, 32],
+  "wcf-service": [8, 16],
+  "aspnet-core": [2, 6],
+  "test": [1, 3],
+  "database": [0, 0]
+ },
+ "finding_hours": {
+  "_doc": "Manual-equivalent remediation hours per finding: fixed + per extra occurrence, capped. Findings with baseline=true are already inside the conversion rate.",
+  "trivial": {
+   "fixed": [0.5, 1],
+   "per": [0, 0.1],
+   "cap": [2, 4]
+  },
+  "small-change": {
+   "fixed": [2, 6],
+   "per": [0.25, 1],
+   "cap": [16, 32]
+  },
+  "medium-change": {
+   "fixed": [8, 16],
+   "per": [0.5, 2],
+   "cap": [40, 80]
+  },
+  "large-change": {
+   "fixed": [24, 60],
+   "per": [2, 6],
+   "cap": [120, 240]
+  },
+  "per-occurrence-small": {
+   "fixed": [1, 2],
+   "per": [0.25, 0.5],
+   "cap": [16, 32]
+  },
+  "per-file-web": {
+   "fixed": [0, 0],
+   "per": [0, 0],
+   "cap": [0, 0]
+  },
+  "per-file-webforms": {
+   "fixed": [0, 0],
+   "per": [0, 0],
+   "cap": [0, 0]
+  },
+  "per-file-wcf": {
+   "fixed": [0, 0],
+   "per": [0, 0],
+   "cap": [0, 0]
+  },
+  "per-file-desktop": {
+   "fixed": [0, 0],
+   "per": [0, 0],
+   "cap": [0, 0]
+  },
+  "per-report": {
+   "fixed": [8, 16],
+   "per": [3, 6],
+   "cap": [160, 320]
+  },
+  "db-object-small": {
+   "fixed": [1, 3],
+   "per": [0.25, 0.5],
+   "cap": [8, 16]
+  },
+  "db-object-medium": {
+   "fixed": [4, 8],
+   "per": [1, 3],
+   "cap": [40, 80]
+  },
+  "db-object-large": {
+   "fixed": [16, 32],
+   "per": [2, 6],
+   "cap": [80, 160]
+  },
+  "package-replace": {
+   "fixed": [1, 4],
+   "per": [0, 0],
+   "cap": [4, 8]
+  },
+  "package-blocker": {
+   "fixed": [8, 24],
+   "per": [0, 0],
+   "cap": [24, 48]
+  }
+ },
+ "qa_hours": {
+  "_doc": "Testing per application (functional regression, UAT support): fixed + per KLOC; more when the repository has fewer than 2 test methods per KLOC. Scales with functionality, not with code-change speed. Above full_rate_kloc of hand-written code the per-KLOC rate is multiplied by beyond_rate_factor (test effort follows features, not lines).",
+  "fixed": [4, 8],
+  "per_kloc": [2, 5],
+  "no_tests_extra": [0.25, 0.4],
+  "full_rate_kloc": 50,
+  "beyond_rate_factor": 0.4
+ },
+ "operations_hours": {
+  "_doc": "Per deployable application: container image, pipeline, configuration/secrets, cut-over and hypercare. Estate-level foundation (landing zone, networking, CI/CD, observability) once per assessment.",
+  "per_app": [6, 12],
+  "estate_foundation": [24, 56]
+ },
+ "other_r_hours": {
+  "_doc": "Retire / Repurchase / Retain.",
+  "retire": [2, 8],
+  "repurchase": [40, 120],
+  "retain_server": [6, 16],
+  "retain_desktop": [3, 8]
+ },
+ "database_hours": {
+  "_doc": "Per database: schema + data migration and rehearsal (blocker fixes added from findings).",
+  "rds-sqlserver": [8, 24],
+  "babelfish": [24, 60],
+  "ec2-sqlserver": [8, 20],
+  "limited_factor": 0.5
+ },
+ "multipliers": {
+  "_doc": "Applied on top of work-package hours.",
+  "parallel_dev_drift": {
+   "_doc": "by commits per week in the activity window",
+   "quiet": [0.0, 0.03],
+   "active": [0.05, 0.1],
+   "hot": [0.1, 0.15]
+  },
+  "project_management": [0.08, 0.12],
+  "contingency_by_confidence": {
+   "High": [0.1, 0.15],
+   "Medium": [0.15, 0.2],
+   "Low": [0.2, 0.3]
+  }
+ },
+ "activity_thresholds": {
+  "active_commits_per_week": 3,
+  "hot_commits_per_week": 15
+ },
+ "complexity_bands": {
+  "_doc": "likely person-days per work package",
+  "S": 5,
+  "M": 15,
+  "L": 40,
+  "XL": 1000000000.0
+ },
+ "team": {
+  "_doc": "default team for the timeline",
+  "engineers": 3,
+  "days_per_week": 5,
+  "efficiency": 0.8
+ },
+ "timeline": {
+  "_doc": "Weeks.",
+  "mobilise": 1,
+  "landing_zone_and_cicd": 2,
+  "hypercare": 2,
+  "wave_size_apps": 3
+ },
+ "hosting_scenarios": {
+  "_doc": "Client hosting preference applied to every server application (desktop clients and retired apps keep their decision). skip_categories: findings not needed in that scenario.",
+  "modernize": {
+   "label": "Modernize: .NET 10 on Linux containers (ECS Fargate) with managed AWS services",
+   "mode": "decisions",
+   "skip_categories": [],
+   "ops_per_app": [6, 12],
+   "foundation": [24, 56],
+   "qa_scale": 1.0
+  },
+  "linux-lift": {
+   "label": "Lift-and-shift to EC2 Linux: minimal port to .NET 10, same architecture (Kestrel + nginx/systemd, single host or ASG)",
+   "mode": "port",
+   "skip_categories": [
+    "state-scale",
+    "logging",
+    "background",
+    "front-end",
+    "parallel-dev",
+    "modern-on-windows"
+   ],
+   "ops_per_app": [4, 8],
+   "foundation": [16, 40],
+   "qa_scale": 1.0,
+   "blocked_note": "Applications with a Windows-bound blocker (Web Forms, COM, desktop UI ...) cannot run on Linux without a rewrite: they are rehosted on EC2 Windows in this scenario."
+  },
+  "windows-rehost": {
+   "label": "Rehost as-is on EC2 Windows (lift-and-shift, no code port)",
+   "mode": "rehost",
+   "keep_categories": [
+    "connectivity",
+    "configuration-secrets",
+    "dependencies",
+    "integrations",
+    "security",
+    "hypervisor"
+   ],
+   "ops_per_app": [4, 8],
+   "foundation": [16, 32],
+   "qa_scale": 0.5
+  }
+ },
+ "database_scenarios": {
+  "_doc": "Database target applied to every database group.",
+  "rds-sqlserver": "Amazon RDS for SQL Server (lift-and-shift of the database)",
+  "babelfish": "Aurora PostgreSQL with Babelfish (T-SQL kept, SQL Server licence removed)",
+  "postgresql": "Full port to PostgreSQL (Aurora PostgreSQL / RDS PostgreSQL): schema, T-SQL code and data access converted",
+  "dual": "Dual support: the application runs on both SQL Server and PostgreSQL",
+  "ec2-sqlserver": "SQL Server on EC2 (licence retained, full control)"
+ },
+ "postgres": {
+  "_doc": "Manual-equivalent hours for porting SQL Server objects and data access to PostgreSQL (before db_factor).",
+  "object_hours": {
+   "TABLE": [0.5, 1.5],
+   "VIEW": [1, 3],
+   "TYPE": [0.5, 2],
+   "SEQUENCE": [0.25, 0.5],
+   "SYNONYM": [0.25, 0.5],
+   "TRIGGER": [2, 6],
+   "PROCEDURE": {
+    "small": [2, 4],
+    "medium": [4, 10],
+    "large": [10, 24]
+   },
+   "FUNCTION": {
+    "small": [1.5, 3],
+    "medium": [3, 8],
+    "large": [8, 20]
+   }
+  },
+  "construct_hours": {
+   "cursor": [2, 4],
+   "dynamic SQL": [2, 6],
+   "MERGE": [1, 3],
+   "XML": [1, 3],
+   "PIVOT": [1, 2],
+   "OUTPUT clause": [0.5, 1],
+   "APPLY": [0.5, 1],
+   "TRY/CATCH": [0.25, 0.5],
+   "temp table": [0.1, 0.25],
+   "table variable": [0.1, 0.25],
+   "identity functions": [0.25, 0.5],
+   "RAISERROR/THROW": [0.1, 0.25],
+   "transactions": [0.1, 0.25],
+   "TOP": [0.05, 0.1],
+   "table hints": [0.05, 0.1],
+   "string/date functions": [0.02, 0.05]
+  },
+  "code_hours": {
+   "stored_procedure_calls": [0.25, 0.75],
+   "inline_sql_strings": [0.5, 1.5],
+   "tsql_in_strings": [0.5, 1],
+   "sqlclient_usage": [0.1, 0.25],
+   "dapper_calls": [0.1, 0.3],
+   "edmx_function_imports": [0.25, 0.5],
+   "ef6_contexts": [8, 16]
+  },
+  "per_database": {
+   "tooling_setup": [8, 16],
+   "data_migration": [16, 40]
+  },
+  "testing_share": [0.3, 0.45],
+  "dual": {
+   "abstraction_per_app": [40, 100],
+   "ci_matrix": [24, 60],
+   "testing_share": [0.5, 0.8],
+   "note": "Both providers must stay in sync: provider-neutral data access (EF Core with provider-specific migrations, no T-SQL in code), every procedure maintained twice or moved into the application, and every release tested on both databases."
+  }
+ },
+ "markup_hours_per_kloc": {
+  "_doc": "Views / pages (cshtml, aspx, ascx, master, xaml): far less change than C# when the UI stack stays; Web Forms markup is rewritten.",
+  "default": [1.5, 4],
+  "aspnet-webforms": [8, 16],
+  "website": [8, 16]
+ }
+}

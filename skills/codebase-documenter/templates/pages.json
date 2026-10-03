@@ -1,0 +1,67 @@
+{
+  "_comment": "Page scaffold created by init. Each page gets its H1, a purpose line and the outline headings. Order = nav order. Sections follow Diátaxis: explanation (getting-started, architecture, modules, workflows, integrations, data, shared, operations, security), reference (generated) and appendices.",
+  "sections": [
+    {"dir": "", "title": "Home", "pages": [
+      {"file": "index.md", "title": "{{product}} documentation", "purpose": "What {{product}} is, who uses it, the main journeys, and how to read these docs.",
+       "outline": ["What {{product}} does", "Who uses it", "Main journeys", "How this documentation is organised", "Where to start"]}
+    ]},
+    {"dir": "getting-started", "title": "Getting started", "pages": [
+      {"file": "index.md", "title": "Getting started", "purpose": "Entry point for anyone new to {{product}}.", "outline": ["Read this first", "Pages in this section"]},
+      {"file": "about.md", "title": "About this documentation", "purpose": "Scope, sources, conventions, how to search and navigate.", "outline": ["Scope", "How it was produced", "Conventions", "Finding things"]},
+      {"file": "product-overview.md", "title": "Product overview", "purpose": "The product in business terms: capabilities, objects, lifecycle.", "outline": ["Capabilities", "Core business objects", "Lifecycle at a glance", "Key numbers"]},
+      {"file": "users-and-roles.md", "title": "Users and roles", "purpose": "Who uses the system and what each role can do.", "outline": ["User groups", "Roles", "What each role can do", "How roles are assigned"]},
+      {"file": "navigation.md", "title": "Navigating the application", "purpose": "Menus, screens and how users move through the product.", "outline": ["Landing page", "Menu", "Common screens", "Search"]}
+    ]},
+    {"dir": "architecture", "title": "Architecture", "pages": [
+      {"file": "index.md", "title": "Architecture", "purpose": "Overview of the technical architecture (C4: context, containers, components).", "outline": ["At a glance", "Pages in this section"]},
+      {"file": "system-context.md", "title": "System context", "purpose": "C4 level 1: users and external systems around {{product}}.", "outline": ["Context diagram", "Users", "External systems", "Data flows"]},
+      {"file": "solution-structure.md", "title": "Solution structure", "purpose": "C4 level 2: deployable units, projects, folders and their purpose.", "outline": ["Containers", "Projects and folders", "Third-party dependencies"]},
+      {"file": "application-architecture.md", "title": "Application architecture", "purpose": "C4 level 3: layers, components and conventions inside the main application.", "outline": ["Layers", "Component conventions", "Cross-cutting concerns"]},
+      {"file": "request-lifecycle.md", "title": "Request lifecycle", "purpose": "What happens from start-up to a rendered response.", "outline": ["Start-up", "Routing", "Filters and middleware", "Rendering", "Errors"]},
+      {"file": "data-access.md", "title": "Data access", "purpose": "How the code reads and writes data.", "outline": ["Data access technology", "Patterns", "Transactions", "Risks"]},
+      {"file": "front-end.md", "title": "Front end", "purpose": "UI technology, scripts, bundling, client-side behaviour.", "outline": ["Technology", "Page structure", "Scripts", "Validation"]},
+      {"file": "configuration.md", "title": "Configuration & environments", "purpose": "Where configuration lives (key names only, never values) and how environments differ.", "outline": ["Configuration sources", "Key groups", "Environments"]},
+      {"file": "background-jobs.md", "title": "Scheduled & background jobs", "purpose": "Everything that runs without a user: schedulers, queues, long-running jobs.", "outline": ["Triggers", "Jobs", "Long-running user jobs", "Constraints"]}
+    ]},
+    {"dir": "modules", "title": "Business modules", "pages": [
+      {"file": "index.md", "title": "Business modules", "purpose": "One page per functional module, in business language with links into the code.", "outline": ["Module map", "Page structure used"]}
+    ]},
+    {"dir": "workflows", "title": "Workflows", "pages": [
+      {"file": "index.md", "title": "Workflows", "purpose": "End-to-end journeys across modules and systems.", "outline": ["Pages in this section"]},
+      {"file": "end-to-end.md", "title": "End-to-end journey", "purpose": "The main business journey from request to completion.", "outline": ["Swimlane overview", "Stages", "Hand-off data"]},
+      {"file": "state-machines.md", "title": "State machines", "purpose": "Every status set, its transitions and what triggers them.", "outline": ["Status sets", "Transitions", "Automatic transitions"]}
+    ]},
+    {"dir": "integrations", "title": "Integrations", "pages": [
+      {"file": "index.md", "title": "Integrations", "purpose": "Every external system, inbound API and machine endpoint.", "outline": ["Integration map", "Summary table"]},
+      {"file": "inbound-api.md", "title": "Inbound API", "purpose": "Every endpoint other systems call: contract, rules, authentication.", "outline": ["Common contract", "Endpoint catalogue", "Known issues"]},
+      {"file": "machine-endpoints.md", "title": "Machine endpoints & scheduled jobs", "purpose": "Endpoints called by schedulers and every action that runs without login.", "outline": ["How jobs are triggered", "Job endpoints", "Test endpoints", "Complete list of anonymous actions"]}
+    ]},
+    {"dir": "data", "title": "Data", "pages": [
+      {"file": "index.md", "title": "Data", "purpose": "Data stores, model, codes and the database object map.", "outline": ["At a glance", "Pages in this section"]},
+      {"file": "data-model.md", "title": "Data model", "purpose": "Core entities, relationships and patterns.", "outline": ["Core business objects", "Relationships", "Patterns", "Auditing"]},
+      {"file": "databases.md", "title": "Databases", "purpose": "Each data store, cross-database links, triggers, deployment.", "outline": ["Databases", "External links", "Triggers", "Deployment"]},
+      {"file": "codes-and-statuses.md", "title": "Codes & statuses", "purpose": "Every code list and status set, checked against enums and seed data.", "outline": ["Status sets", "Type codes", "Flags"]}
+    ]},
+    {"dir": "shared", "title": "Shared libraries", "pages": [
+      {"file": "index.md", "title": "Shared libraries", "purpose": "Cross-cutting code reused by every module.", "outline": ["Layering", "Pages in this section"]},
+      {"file": "helpers.md", "title": "Base classes & helpers", "purpose": "Base classes and helper utilities.", "outline": ["Base classes", "Helpers"]},
+      {"file": "services.md", "title": "Services map", "purpose": "Every service class and its business page.", "outline": ["Services by area", "Repositories"]}
+    ]},
+    {"dir": "operations", "title": "Operations & quality", "pages": [
+      {"file": "index.md", "title": "Operations & quality", "purpose": "Build, environments, deployment, monitoring and constraints.", "outline": ["Build", "Environments", "Deployment", "Monitoring and logs", "Operational constraints"]},
+      {"file": "testing.md", "title": "Testing", "purpose": "Test projects, coverage and gaps.", "outline": ["Test projects", "Coverage", "Gaps and recommendations"]}
+    ]},
+    {"dir": "security", "title": "Security", "pages": [
+      {"file": "index.md", "title": "Security", "purpose": "Security model at a glance.", "outline": ["Security model", "Surfaces"]},
+      {"file": "authentication.md", "title": "Authentication", "purpose": "How users and systems sign in.", "outline": ["Modes", "Sign-in", "Sign-out", "Sessions"]},
+      {"file": "authorisation.md", "title": "Authorisation", "purpose": "How permissions are decided.", "outline": ["Gate", "Permission model", "Roles", "Anonymous actions"]},
+      {"file": "findings.md", "title": "Security findings", "purpose": "Risk register (SEC-nn): severity, where, impact, recommendation. No secret values.", "outline": ["Summary"]}
+    ]},
+    {"dir": "appendices", "title": "Appendices", "pages": [
+      {"file": "index.md", "title": "Appendices", "purpose": "Glossary, defects, coverage and document control.", "outline": ["Pages in this section"]},
+      {"file": "glossary.md", "title": "Glossary", "purpose": "Business and technical terms. Unknown expansions are marked as such.", "outline": ["Terms"]},
+      {"file": "defects.md", "title": "Defects & technical debt", "purpose": "Functional defects (DEF-nn) and debt (TD-nn), each verified in code.", "outline": ["Defects", "Technical debt"]},
+      {"file": "document-control.md", "title": "Document control", "purpose": "Scope, method, regeneration, conventions, agent access, out of scope.", "outline": ["Document", "How this documentation is produced", "Regenerating", "Conventions", "Agent access", "Out of scope"]}
+    ]}
+  ]
+}

@@ -1,0 +1,84 @@
+{
+ "eshopmodernizing:HV-MACHINE-NAME:eshoplegacymvcsolution-src-eshoplegacymvc-eshoplegacymvc-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Machine name is only written to session in Session_Start (Global.asax.cs:43) for display/diagnostics; no logic branches on it. Behaviour on AWS: shows the container host name.",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:HV-MACHINE-NAME:eshoplegacywebformssolution-src-eshoplegacywebforms-eshoplegacywebforms-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Diagnostic value stored in session only (Global.asax.cs:43).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:HV-MACHINE-NAME:eshopmodernizedmvcsolution-src-eshopmodernizedmvc-eshopmodernizedmvc-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Diagnostic value stored in session only (Global.asax.cs:42).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:HV-MACHINE-NAME:eshopmodernizedwebformssolution-src-eshopmodernizedwebforms-eshopmodernizedwebforms-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Diagnostic value stored in session only (Global.asax.cs:47).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshoplegacymvcsolution-src-eshoplegacymvc-eshoplegacymvc-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Session start time for display only (Global.asax.cs:44); no business rule depends on it.",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshoplegacywebformssolution-src-eshoplegacywebforms-eshoplegacywebforms-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Session start time for display only (Global.asax.cs:44).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshopmodernizedmvcsolution-src-eshopmodernizedmvc-eshopmodernizedmvc-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Session start time for display only (Global.asax.cs:43).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshopmodernizedwebformssolution-src-eshopmodernizedwebforms-eshopmodernizedwebforms-csproj": {
+  "verdict": "adjusted",
+  "severity": "Low",
+  "confidence": "Confirmed",
+  "note": "Session start time for display only (Global.asax.cs:48).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshoplegacyntier-src-eshopwinforms-eshopwinforms-csproj": {
+  "verdict": "confirmed",
+  "note": "Business rule: the desktop client sends the user's local date to CatalogService.GetDiscount (CatalogController.cs:63, CatalogService.svc.cs:28-30), which compares dates only. Unaffected by AWS UTC hosts because the date is taken on the user's machine; keep it date-only when the service moves.",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:TZ-LOCAL-TIME:eshopmodernizedntier-src-eshopwinforms-eshopwinforms-csproj": {
+  "verdict": "confirmed",
+  "note": "Same discount-date rule as the legacy client (CatalogController.cs:63).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ },
+ "eshopmodernizing:API-BINARYFORMATTER:eshoplegacymvcsolution-eshoplegacy-utilities-eshoplegacy-utilities-csproj": {
+  "verdict": "confirmed",
+  "note": "Serializing.SerializeBinary is called by the brands download endpoints (eShopPorted FilesController.cs:28, eShopLegacyMVC Controllers/WebApi/FilesController.cs:29), so the HTTP response body is BinaryFormatter output. BinaryFormatter always throws on .NET 9+: the endpoint must switch to JSON and its consumers must be updated (contract change).",
+  "reviewer": "assessor",
+  "date": "2026-10-02"
+ }
+}

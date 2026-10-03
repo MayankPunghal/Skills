@@ -1,0 +1,10 @@
+## {{product}} documentation
+
+Before explaining, reviewing or changing {{code_name}} code, follow `AGENTS.md`:
+
+- page map `{{docs_dir}}/llms.txt`; index `{{docs_dir}}/agent/entities.jsonl`
+- `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--find TEXT] [--src PATH]` — run from the workspace root; prints clickable `doc:` / `src:` path:line links
+- skill: `.claude/skills/{{skill_name}}` (loads for {{code_name}} tasks; or `/{{skill_name}}`)
+- graphify (if `graphify-out/` exists): `graphify query "<question>"` before grepping; `graphify update .` after code changes
+
+Verify in the source before editing; never copy secret values.

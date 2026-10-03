@@ -1,0 +1,146 @@
+"""Quality gates for the assessment (deterministic). Exit code 1 when any gate fails.
+
+    python <skill>/scripts/verify_report.py [--allow-draft]
+
+Gates
+  1 evidence        every finding has file+line (or package) evidence, and every cited file exists with that many lines
+  2 coverage        every category appears in the report with findings or "Checked, none found."
+  3 review          every Blocker/High finding with confidence "Needs verification" has a reviewer verdict
+  4 decisions       every application has a reviewed 7R decision in assessment/decisions.json (--allow-draft: warning only)
+  5 narratives      no TODO markers left in assessment/narrative/*.md and no missing narrative in the report
+  6 secrets         no secret value from the client's config/code appears in the report or exports
+  7 structure       report sections 1-11 present; estimate, open questions and an up-to-date HTML report present
+"""
+import argparse
+import glob
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+from _common import OUT, data, load_config, read_json, read_text, utf8_stdout
+import _findings as F
+
+SECRET_KEY = re.compile(r"(?i)pass|pwd|secret|token|apikey|api_key|accesskey|credential|privatekey|clientkey|sharedkey|decryptionkey|validationkey")
+LITERAL = re.compile(r"(?i)\b\w*(password|passwd|pwd|secret|apikey|api_key|accesskey|clientsecret|token)\w*\s*(=|:)\s*@?\"([^\"\s]{6,})\"")
+
+
+def secret_values(inv_root):
+    vals = set()
+    for d, dirs, files in os.walk(inv_root):
+        dirs[:] = [x for x in dirs if x.lower() not in {"bin", "obj", "packages", "node_modules", ".git", ".vs"}]
+        for fn in files:
+            low = fn.lower()
+            p = os.path.join(d, fn)
+            try:
+                if low.endswith(".config"):
+                    root = ET.fromstring(read_text(p).encode("utf-8"))
+                    for add in root.iter("add"):
+                        if add.get("key") and SECRET_KEY.search(add.get("key")) and add.get("value"):
+                            vals.add(add.get("value"))
+                        cs = add.get("connectionString") or ""
+                        vals.update(m.strip() for m in re.findall(r"(?i)(?:password|pwd)\s*=\s*([^;\"]+)", cs))
+                    for mk in root.iter("machineKey"):
+                        vals.update(v for k, v in mk.attrib.items() if k.lower().endswith("key"))
+                elif low.endswith((".cs", ".vb")) and os.path.getsize(p) < 2_000_000:
+                    vals.update(m.group(3) for m in LITERAL.finditer(read_text(p)))
+                elif low.startswith("appsettings") and low.endswith(".json"):
+                    vals.update(re.findall(r'(?i)"[^"]*(?:password|secret|token|apikey|key)[^"]*"\s*:\s*"([^"]{6,})"', read_text(p)))
+                    vals.update(m.strip() for m in re.findall(r"(?i)(?:password|pwd)\s*=\s*([^;\"]+)", read_text(p)))
+            except (ET.ParseError, OSError, ValueError):
+                continue
+    return {v for v in vals if len(v) >= 6 and not re.fullmatch(r"(?i)(true|false|\d+|none|null|\*+|\$\(.*\)|#\{.*\}|__\w+__|\{.*\}|changeme|password|secret)", v)
+            and not re.fullmatch(r"(?i)https?://[^?@\s]+", v)}  # a plain endpoint URL is not a secret (credentials/query strings are)
+
+
+def main():
+    utf8_stdout()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--allow-draft", action="store_true")
+    a = ap.parse_args()
+    root, cfg = load_config()
+    os.chdir(root)
+    results = []
+    repos = F.repos(root)
+    findings = []
+    invs = {}
+    for r in repos:
+        inv = F.load_inventory(root, r)
+        if inv:
+            invs[r] = inv
+            findings += F.assign_apps(F.load(root, r), inv)
+    # 1 evidence
+    bad, missing = [], []
+    cache = {}
+    for f in findings:
+        if not F.has_evidence(f):
+            bad.append(f["id"])
+            continue
+        base = invs.get(f["repo"], {}).get("root", "")
+        for e in f.get("evidence", [])[:5]:
+            fp = e.get("file")
+            if not fp or fp in (".git",) or f["rule"].startswith(("PKG-", "SEC-VULN")):
+                continue
+            full = os.path.join(base, fp)
+            if fp not in cache:
+                cache[fp] = len(read_text(full).splitlines()) if os.path.isfile(full) else (-1 if not os.path.isdir(full) else 10 ** 9)
+            n = cache[fp]
+            if n < 0 or (e.get("line") and e["line"] > max(n, 1)):
+                missing.append(f"{f['id']} -> {fp}:{e.get('line')}")
+    results.append(("evidence on every finding", not bad and not missing, f"{len(findings)} findings; without evidence: {len(bad)}; unresolvable citations: {len(missing)}" +
+                    (" (" + "; ".join((bad + missing)[:4]) + ")" if bad or missing else "")))
+    # 2 coverage
+    reports = [p for p in glob.glob(os.path.join(OUT, "report", "*.md"))]
+    report = open(reports[0], encoding="utf-8").read() if reports else ""
+    cats = data("categories.json")["categories"]
+    gaps = []
+    for c in cats:
+        m = re.search(rf"(?m)^### 5\.\d+ {re.escape(c['title'])}\s*$(.*?)(?=^### |^## |\Z)", report, re.S)
+        if not m:
+            gaps.append(f"{c['id']} (missing)")
+        elif c["id"] != "tooling" and "Checked, none found." not in m.group(1) and "| Ref |" not in m.group(1):
+            gaps.append(f"{c['id']} (no findings table / statement)")
+    results.append(("every category reported", bool(report) and not gaps, f"{len(cats)} categories" + (f"; gaps: {', '.join(gaps)}" if gaps else "") + ("" if report else "; report not built")))
+    # 3 review of uncertain high-impact findings
+    unreviewed = [f["id"] for f in findings if f["severity"] in ("Blocker", "High") and f.get("confidence") == "Needs verification" and not f.get("review")]
+    results.append(("uncertain Blocker/High findings reviewed", not unreviewed, f"{len(unreviewed)} unreviewed" + (f": {', '.join(unreviewed[:5])}" if unreviewed else "")))
+    # 4 decisions
+    cls = read_json(os.path.join(OUT, "classification.json"), {"applications": []})
+    draft = [x["name"] for x in cls["applications"] if x.get("decision_source") != "review"]
+    ok4 = not draft or a.allow_draft
+    results.append(("7R decisions reviewed", ok4, f"{len(cls['applications'])} applications; draft (not reviewed): {len(draft)}" + (f" ({', '.join(draft[:6])})" if draft else "") + (" [allowed]" if draft and a.allow_draft else "")))
+    # 5 narratives
+    todo = [os.path.basename(p) for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^TODO:", open(p, encoding="utf-8").read())]
+    missing_n = re.findall(r"_Narrative '([\w-]+)' not written yet\._", report)
+    results.append(("narratives written", not todo and not missing_n, f"TODO in: {', '.join(todo) or 'none'}; missing: {', '.join(missing_n) or 'none'}"))
+    # 6 secrets
+    vals = set()
+    for inv in invs.values():
+        vals |= secret_values(inv["root"])
+    htmls = glob.glob(os.path.join(OUT, "report", "*.html"))
+    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))
+    leaks = []
+    for p in outputs:
+        t = open(p, encoding="utf-8-sig", errors="ignore").read()
+        for v in vals:
+            if v in t and re.search(r"(?<![A-Za-z0-9_])" + re.escape(v) + r"(?![A-Za-z0-9_])", t):
+                leaks.append(os.path.basename(p))
+                break
+    results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))
+    # 7 structure
+    heads = [f"## {i}." for i in range(1, 12)]
+    absent = [h for h in heads if h not in report]
+    est = read_json(os.path.join(OUT, "estimate.json"), {})
+    oq = os.path.join(OUT, "report", "open-questions.csv")
+    stale = bool(htmls) and bool(reports) and os.path.getmtime(htmls[0]) < os.path.getmtime(reports[0]) - 1
+    ok7 = not absent and bool(est.get("totals", {}).get("likely_days")) and os.path.exists(oq) and bool(htmls) and not stale
+    results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
+                    f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
+    w = max(len(n) for n, _, _ in results)
+    for name, ok, detail in results:
+        print(f"{'PASS' if ok else 'FAIL'}  {name:<{w}}  {detail}")
+    sys.exit(0 if all(ok for _, ok, _ in results) else 1)
+
+
+if __name__ == "__main__":
+    main()

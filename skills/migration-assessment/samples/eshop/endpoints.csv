@@ -1,0 +1,4 @@
+﻿repo,host,kind,schemes,occurrences,files
+eshopmodernizing,stackpath.bootstrapcdn.com,external,https,2,eShopLegacyMVCSolution/eShopPorted/Views/Shared/_Layout.cshtml
+eshopmodernizing,login.microsoftonline.com,external,https,2,eShopModernizedMVCSolution/src/eShopModernizedMVC/Web.config; eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Web.config
+eshopmodernizing,database.windows.net,external,https,2,eShopModernizedMVCSolution/src/eShopModernizedMVC/App_Start/SqlAccessTokenProvider.cs; eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/SqlAccessTokenProvider.cs

@@ -1,0 +1,3247 @@
+{
+ "_doc": "Line-based scan rules. types: cs vb markup config sql proj script js ci any. pat: regexes (any match flags the line). requires: file must also match this regex. not: line exclusion. sev: Blocker|High|Medium|Low|Info. conf: Confirmed|Likely|Needs verification. effort: key in estimation.json. baseline: true when the effort is already inside the project-conversion baseline (not added twice). db: impact per database target (blocker|limited|ok). refs: ids in references/sources.md. question: open question for the client when code alone cannot decide.",
+ "rules": [
+  {
+   "id": "WIN-REGISTRY",
+   "cat": "linux-readiness",
+   "title": "Windows registry access",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Win32\\.Registry\\b",
+    "\\bRegistry\\.(LocalMachine|CurrentUser|ClassesRoot|Users|GetValue|SetValue)\\b",
+    "\\bRegistryKey\\b"
+   ],
+   "why": "Microsoft.Win32.Registry throws PlatformNotSupportedException on Linux; there is no registry.",
+   "fix": "Move the values to configuration (appsettings / environment variables) backed by AWS Systems Manager Parameter Store.",
+   "alt": "IConfiguration + Parameter Store / Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2",
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-EVENTLOG",
+   "cat": "linux-readiness",
+   "title": "Windows Event Log",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bnew\\s+EventLog\\b",
+    "\\bEventLog\\.(WriteEntry|CreateEventSource|SourceExists|DeleteEventSource)\\b",
+    "\\bEventLogInstaller\\b",
+    "\\bEventLogEntryType\\b"
+   ],
+   "why": "The Windows Event Log does not exist on Linux (System.Diagnostics.EventLog is Windows-only).",
+   "fix": "Log through Microsoft.Extensions.Logging to stdout and ship to Amazon CloudWatch Logs.",
+   "alt": "ILogger + CloudWatch Logs (Serilog/NLog sinks)",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-WMI",
+   "cat": "linux-readiness",
+   "title": "WMI (System.Management)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.Management\\b",
+    "\\bManagementObjectSearcher\\b",
+    "\\bManagementClass\\b",
+    "\\bManagementObject\\b"
+   ],
+   "why": "WMI is Windows-only; System.Management throws on Linux.",
+   "fix": "Replace with cross-platform APIs (System.Environment, /proc, EC2 instance metadata) or remove.",
+   "alt": "Environment / RuntimeInformation / EC2 IMDS",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-PERFCOUNTER",
+   "cat": "linux-readiness",
+   "title": "Windows performance counters",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bPerformanceCounter(Category|Type|Installer)?\\b"
+   ],
+   "why": "Performance counters are Windows-only.",
+   "fix": "Use EventCounters / System.Diagnostics.Metrics with OpenTelemetry or CloudWatch metrics.",
+   "alt": "System.Diagnostics.Metrics + CloudWatch / OpenTelemetry",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-DRAWING",
+   "cat": "linux-readiness",
+   "title": "System.Drawing / GDI+ imaging",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "requires": "\\bSystem\\.Drawing\\b",
+   "pat": [
+    "\\bnew\\s+Bitmap\\b",
+    "\\bBitmap\\b\\s*\\w*\\s*=",
+    "\\bGraphics\\.(FromImage|FromHwnd|FromHdc)\\b",
+    "\\bImage\\.(FromFile|FromStream)\\b",
+    "\\bnew\\s+Font\\s*\\(",
+    "\\bImageFormat\\.\\w+",
+    "\\bGraphicsPath\\b",
+    "\\bMetafile\\b",
+    "\\b(Private|Installed)FontCollection\\b",
+    "\\bnew\\s+(SolidBrush|Pen|LinearGradientBrush|TextureBrush)\\b",
+    "\\bEncoderParameters?\\b",
+    "\\bImageCodecInfo\\b"
+   ],
+   "why": "System.Drawing.Common is Windows-only since .NET 6 (TypeInitializationException / PlatformNotSupportedException on Linux).",
+   "fix": "Port imaging code to SkiaSharp or ImageSharp; check fonts are installed in the Linux image.",
+   "alt": "SkiaSharp (MIT) / ImageSharp (Six Labors licence) / Aspose.Drawing (commercial)",
+   "effort": "medium-change",
+   "refs": [
+    "S6"
+   ]
+  },
+  {
+   "id": "WIN-COM-INTEROP",
+   "cat": "linux-readiness",
+   "title": "COM interop",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\[ComImport\\]",
+    "\\bMarshal\\.(GetActiveObject|ReleaseComObject|FinalReleaseComObject)\\b",
+    "\\bType\\.GetTypeFromProgID\\b",
+    "\\bCreateObject\\s*\\(",
+    "<COMReference\\b",
+    "Include=\"Interop\\.",
+    "<HintPath>[^<]*\\\\Interop\\.[^<]*\\.dll"
+   ],
+   "why": "COM does not exist on Linux; the component behind it must be replaced or kept on Windows.",
+   "fix": "Identify the COM server, find a managed cross-platform library or service, or isolate it behind an API on a Windows host.",
+   "alt": "Managed library / service API; Windows EC2 sidecar as last resort",
+   "effort": "large-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Which COM components are installed on the current servers, and who owns them?"
+  },
+  {
+   "id": "WIN-PINVOKE-WIN32",
+   "cat": "linux-readiness",
+   "title": "P/Invoke into Windows system DLLs",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\[(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
+    "Declare\\s+(Auto\\s+|Ansi\\s+|Unicode\\s+)?(Function|Sub)\\s+\\w+\\s+Lib\\s+\"(?i:(user32|kernel32|advapi32|gdi32|shell32|netapi32|mpr|winspool))"
+   ],
+   "why": "Calls into Win32 system libraries cannot run on Linux.",
+   "fix": "Replace each call with a managed cross-platform API or remove the feature.",
+   "alt": "Managed BCL equivalents",
+   "effort": "medium-change",
+   "refs": [
+    "S17"
+   ]
+  },
+  {
+   "id": "WIN-PINVOKE-NATIVE",
+   "cat": "linux-readiness",
+   "title": "P/Invoke into other native libraries",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\[(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
+   ],
+   "why": "A native library must exist as a Linux .so build for the same API.",
+   "fix": "Confirm a Linux build of the native library exists (and its licence); otherwise replace.",
+   "alt": "Vendor Linux build or managed replacement",
+   "effort": "medium-change",
+   "refs": [
+    "S17"
+   ],
+   "question": "Do the vendors of these native libraries ship Linux builds?"
+  },
+  {
+   "id": "WIN-DIRSERVICES",
+   "cat": "auth",
+   "title": "System.DirectoryServices (Active Directory via ADSI)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.DirectoryServices(\\.AccountManagement|\\.ActiveDirectory)?\\b(?!\\.Protocols)",
+    "\\bDirectoryEntry\\b",
+    "\\bDirectorySearcher\\b",
+    "\\bPrincipalContext\\b",
+    "\\b(User|Group)Principal\\b"
+   ],
+   "why": "System.DirectoryServices and AccountManagement are Windows-only; only System.DirectoryServices.Protocols (LDAP) is cross-platform.",
+   "fix": "Rewrite directory lookups with System.DirectoryServices.Protocols (LDAP) against AWS Managed Microsoft AD / on-prem AD over VPN, or move to OIDC claims.",
+   "alt": "System.DirectoryServices.Protocols; Novell.Directory.Ldap.NETStandard; IdP claims",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ],
+   "question": "Will Active Directory stay on-premises (VPN / Direct Connect) or move to AWS Managed Microsoft AD?"
+  },
+  {
+   "id": "WIN-MSMQ",
+   "cat": "background",
+   "title": "MSMQ (System.Messaging)",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Messaging\\b",
+    "\\bMessageQueue\\b",
+    "msmqIntegrationBinding",
+    "netMsmqBinding"
+   ],
+   "why": "MSMQ is Windows-only and System.Messaging is not available on modern .NET.",
+   "fix": "Move the queue to Amazon SQS (or Amazon MQ for broker semantics); replace producers and consumers.",
+   "alt": "Amazon SQS / SNS / Amazon MQ; MassTransit or NServiceBus transports",
+   "effort": "large-change",
+   "refs": [
+    "S1"
+   ],
+   "question": "Which systems read or write these MSMQ queues besides this code base?"
+  },
+  {
+   "id": "WIN-SERVICE",
+   "cat": "background",
+   "title": "Windows Service (ServiceBase)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    ":\\s*ServiceBase\\b",
+    "Inherits\\s+(System\\.ServiceProcess\\.)?ServiceBase\\b",
+    "\\bServiceBase\\.Run\\b",
+    "\\b(ProjectInstaller|ServiceProcessInstaller|ServiceInstaller)\\b"
+   ],
+   "why": "Windows services do not exist on Linux.",
+   "fix": "Convert to a .NET Worker Service (BackgroundService) run as a systemd unit, an ECS service, or scheduled ECS task / Lambda.",
+   "alt": ".NET Worker Service + ECS/Fargate or systemd; EventBridge Scheduler for timed work",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-SERVICECONTROLLER",
+   "cat": "linux-readiness",
+   "title": "ServiceController (controls Windows services)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bServiceController\\b"
+   ],
+   "why": "Starting/stopping Windows services is Windows-only.",
+   "fix": "Replace with orchestration-level control (ECS service APIs) or remove.",
+   "alt": "AWS SDK (ECS/Systems Manager)",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-PROTECTEDDATA",
+   "cat": "linux-readiness",
+   "title": "DPAPI (ProtectedData)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bProtectedData\\.(Protect|Unprotect)\\b",
+    "\\bDataProtectionScope\\b"
+   ],
+   "why": "ProtectedData throws PlatformNotSupportedException on Linux, and data protected with machine DPAPI cannot be decrypted elsewhere.",
+   "fix": "Use ASP.NET Core Data Protection with a key ring in S3/Parameter Store protected by AWS KMS; plan re-encryption of stored data.",
+   "alt": "Microsoft.AspNetCore.DataProtection + AWS KMS / Secrets Manager",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Is any stored data encrypted with DPAPI (machine or user scope) that must be readable after migration?"
+  },
+  {
+   "id": "WIN-CNG-CSP",
+   "cat": "linux-readiness",
+   "title": "CNG / CSP key containers",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(CngKey|CngAlgorithm|CngProvider|CngKeyCreationParameters|CspParameters|CspKeyContainerInfo|DSACryptoServiceProvider)\\b"
+   ],
+   "why": "CNG and CSP key containers are Windows-only (PlatformNotSupportedException on Linux).",
+   "fix": "Use RSA.Create()/ECDsa.Create() with keys from AWS KMS, Secrets Manager or PEM files.",
+   "alt": "RSA/ECDsa.Create + AWS KMS",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-CERTSTORE",
+   "cat": "linux-readiness",
+   "title": "Windows certificate store",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bX509Store\\b",
+    "StoreLocation\\.LocalMachine",
+    "storeLocation=\"LocalMachine\"",
+    "findValue=\""
+   ],
+   "why": "Linux has no LocalMachine\\My store; certificates must be loaded from files or a secret store.",
+   "fix": "Load certificates from AWS Secrets Manager / ACM-exported PEM or PFX files; terminate TLS at the ALB with ACM where possible.",
+   "alt": "ACM at the load balancer; X509Certificate2 from Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Which certificates are installed on the servers (TLS, client certs, signing) and where do their private keys live?"
+  },
+  {
+   "id": "WIN-ACL",
+   "cat": "linux-readiness",
+   "title": "Windows file ACLs",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(FileSecurity|DirectorySecurity|FileSystemAccessRule)\\b",
+    "\\.(Get|Set)AccessControl\\("
+   ],
+   "why": "Windows ACL APIs are Windows-only.",
+   "fix": "Remove or replace with POSIX permissions / IAM policies on S3/EFS.",
+   "alt": "IAM / S3 bucket policies / EFS access points",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-SHELL-EXEC",
+   "cat": "linux-readiness",
+   "title": "Runs Windows executables or shells",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "Process\\.Start\\(\\s*@?\"[^\"]*\\.(exe|bat|cmd|ps1|vbs)\"",
+    "FileName\\s*=\\s*@?\"[^\"]*\\.(exe|bat|cmd|ps1|vbs)\"",
+    "\"(cmd|cmd\\.exe|powershell|powershell\\.exe|cscript|wscript)\""
+   ],
+   "why": "Windows executables, batch files and VBScript do not run on Linux.",
+   "fix": "Replace the external tool with a library or a Linux equivalent; PowerShell 7 (pwsh) scripts can run on Linux.",
+   "alt": "Library call / pwsh / container sidecar",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ],
+   "question": "Which external tools are installed on the servers for this application?"
+  },
+  {
+   "id": "WIN-SPEECH-UI",
+   "cat": "linux-readiness",
+   "title": "Windows-only UI/OS libraries in server code",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.Speech\\b",
+    "\\bSystem\\.Windows\\.Forms\\.(Clipboard|MessageBox|SendKeys)\\b",
+    "\\bMicrosoft\\.VisualBasic\\.Devices\\b"
+   ],
+   "why": "These libraries are Windows-only.",
+   "fix": "Remove from server code or replace.",
+   "alt": "",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "API-APPDOMAIN",
+   "cat": "api-portability",
+   "title": "AppDomain creation / unloading",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bAppDomain\\.CreateDomain\\b",
+    "\\.CreateInstanceAndUnwrap\\(",
+    "\\bAppDomainSetup\\b",
+    "\\bAppDomain\\.Unload\\b"
+   ],
+   "why": "Creating or unloading AppDomains throws PlatformNotSupportedException on .NET.",
+   "fix": "Use AssemblyLoadContext for plug-in loading, or separate processes for isolation.",
+   "alt": "AssemblyLoadContext / separate process",
+   "effort": "medium-change",
+   "refs": [
+    "S1",
+    "S2"
+   ]
+  },
+  {
+   "id": "API-REMOTING",
+   "cat": "api-portability",
+   "title": ".NET Remoting",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Runtime\\.Remoting\\b",
+    "\\bRemotingConfiguration\\b",
+    "\\bChannelServices\\b",
+    "<system\\.runtime\\.remoting>"
+   ],
+   "why": ".NET Remoting is not supported on .NET 6+.",
+   "fix": "Replace with HTTP/gRPC APIs or StreamJsonRpc for IPC.",
+   "alt": "gRPC / REST / StreamJsonRpc",
+   "effort": "large-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "API-CAS",
+   "cat": "api-portability",
+   "title": "Code Access Security / security transparency",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSecurityPermission(Attribute)?\\b",
+    "\\bPermissionSet\\b",
+    "AllowPartiallyTrustedCallers",
+    "\\bSecurityAction\\.",
+    "\\bCodeAccessPermission\\b",
+    "\\[(assembly:\\s*)?Security(Transparent|Critical|SafeCritical|Rules)\\b",
+    "<trust\\s+level="
+   ],
+   "why": "CAS and partial trust are not supported; the attributes are ignored or throw.",
+   "fix": "Remove CAS attributes and partial-trust configuration; rely on OS/container isolation.",
+   "alt": "Container / IAM boundaries",
+   "effort": "trivial",
+   "refs": [
+    "S1",
+    "S2"
+   ]
+  },
+  {
+   "id": "API-ENTERPRISESERVICES",
+   "cat": "api-portability",
+   "title": "System.EnterpriseServices (COM+)",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.EnterpriseServices\\b",
+    ":\\s*ServicedComponent\\b",
+    "Inherits\\s+ServicedComponent\\b"
+   ],
+   "why": "COM+ (EnterpriseServices) is not supported on .NET 6+.",
+   "fix": "Re-implement the component as a normal class/service; use explicit transactions.",
+   "alt": "Plain services + explicit transactions",
+   "effort": "large-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "API-WORKFLOW",
+   "cat": "api-portability",
+   "title": "Windows Workflow Foundation",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bSystem\\.Activities\\b",
+    "\\bSystem\\.Workflow\\.",
+    "\\bWorkflowApplication\\b",
+    "\\bWorkflowServiceHost\\b",
+    "\\.xamlx\\b"
+   ],
+   "why": "Workflow Foundation is not supported on .NET 6+.",
+   "fix": "Port to CoreWF, Elsa Workflows or AWS Step Functions; or retain on .NET Framework.",
+   "alt": "CoreWF / Elsa / AWS Step Functions",
+   "effort": "large-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "API-BINARYFORMATTER",
+   "cat": "api-portability",
+   "title": "BinaryFormatter and legacy formatters",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bBinaryFormatter\\b",
+    "\\bSoapFormatter\\b",
+    "\\bNetDataContractSerializer\\b",
+    "\\bLosFormatter\\b",
+    "\\bObjectStateFormatter\\b"
+   ],
+   "why": "BinaryFormatter always throws from .NET 9 and is a deserialization security risk; persisted binary blobs need a migration path.",
+   "fix": "Switch to System.Text.Json / DataContractSerializer / MessagePack; convert any persisted data.",
+   "alt": "System.Text.Json / MessagePack / protobuf-net",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Is BinaryFormatter output persisted (database, files, session, cache) and needed after migration?"
+  },
+  {
+   "id": "API-THREAD-ABORT",
+   "cat": "api-portability",
+   "title": "Thread.Abort / Suspend / Resume",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b\\w*[Tt]hread\\w*\\.(Abort|Suspend|Resume|ResetAbort)\\(\\)"
+   ],
+   "why": "Thread.Abort/Suspend/Resume throw PlatformNotSupportedException on .NET.",
+   "fix": "Use cooperative cancellation (CancellationToken).",
+   "alt": "CancellationToken",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-CODEDOM",
+   "cat": "api-portability",
+   "title": "Runtime compilation with CodeDom",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "CompileAssemblyFrom(Source|File|Dom)\\b",
+    "\\bnew\\s+(CSharp|VB)CodeProvider\\b"
+   ],
+   "why": "CodeDomProvider.CompileAssemblyFrom* throws on .NET.",
+   "fix": "Use Roslyn (Microsoft.CodeAnalysis) scripting/compilation.",
+   "alt": "Microsoft.CodeAnalysis.CSharp",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-REFLECTION-ONLY",
+   "cat": "api-portability",
+   "title": "Reflection-only load / Assembly.CodeBase",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bReflectionOnlyLoad(From)?\\b",
+    "\\.EscapedCodeBase\\b",
+    "\\.CodeBase\\b",
+    "\\bType\\.ReflectionOnlyGetType\\b"
+   ],
+   "why": "These APIs throw on .NET (CodeBase is obsolete and throws for single-file).",
+   "fix": "Use MetadataLoadContext / Assembly.Location / AppContext.BaseDirectory.",
+   "alt": "MetadataLoadContext / AppContext.BaseDirectory",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-XSLT-SCRIPT",
+   "cat": "api-portability",
+   "title": "XSLT script blocks",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "msxsl:script",
+    "EnableScript\\s*=\\s*true",
+    "XsltSettings\\.TrustedXslt"
+   ],
+   "why": "XSLT script blocks are supported only on .NET Framework.",
+   "fix": "Move script logic into extension objects (XsltArgumentList.AddExtensionObject).",
+   "alt": "XSLT extension objects",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "API-WEBREQUEST",
+   "cat": "api-portability",
+   "title": "Obsolete WebRequest / WebClient",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bWebRequest\\.Create(Http)?\\b",
+    "\\bnew\\s+WebClient\\b",
+    "\\bHttpWebRequest\\b"
+   ],
+   "why": "WebRequest/WebClient are obsolete (SYSLIB0014) on .NET and behave differently (no ServicePointManager tuning).",
+   "fix": "Move to IHttpClientFactory/HttpClient.",
+   "alt": "IHttpClientFactory",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "API-CONFIGMANAGER",
+   "cat": "configuration-secrets",
+   "title": "System.Configuration (ConfigurationManager)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(Web)?ConfigurationManager\\.(AppSettings|ConnectionStrings|GetSection|OpenExeConfiguration|OpenWebConfiguration|RefreshSection)\\b"
+   ],
+   "why": "web.config/app.config do not drive ASP.NET Core; values must move to appsettings/environment and secrets to AWS stores.",
+   "fix": "Introduce IConfiguration/IOptions; source settings from appsettings + Parameter Store and secrets from Secrets Manager.",
+   "alt": "IConfiguration + Amazon.Extensions.Configuration.SystemsManager",
+   "effort": "small-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-SYSTEMWEB",
+   "cat": "web-platform",
+   "title": "System.Web dependency",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "^\\s*using\\s+System\\.Web(\\.\\w+)*\\s*;",
+    "^\\s*Imports\\s+System\\.Web\\b"
+   ],
+   "why": "System.Web does not exist on modern .NET; every file using it changes in an ASP.NET Core port.",
+   "fix": "Port to ASP.NET Core; use Microsoft.AspNetCore.SystemWebAdapters to keep shared libraries compiling during an incremental (strangler fig) migration.",
+   "alt": "ASP.NET Core + System.Web adapters",
+   "effort": "per-file-web",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-HTTPCONTEXT-CURRENT",
+   "cat": "web-platform",
+   "title": "HttpContext.Current (ambient request context)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bHttpContext\\.Current\\b"
+   ],
+   "why": "There is no static HttpContext.Current in ASP.NET Core; code deep in libraries that reaches for it must be re-plumbed.",
+   "fix": "Inject IHttpContextAccessor or pass values explicitly; System.Web adapters can bridge during migration.",
+   "alt": "IHttpContextAccessor / SystemWebAdapters",
+   "effort": "per-occurrence-small",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-WEBFORMS-UI",
+   "cat": "web-platform",
+   "title": "ASP.NET Web Forms (System.Web.UI)",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bSystem\\.Web\\.UI\\.(Page|UserControl|MasterPage|WebControls|HtmlControls)\\b",
+    ":\\s*(System\\.Web\\.UI\\.)?(Page|UserControl|MasterPage)\\b(?!\\w)",
+    "<%@\\s*Page\\b",
+    "<%@\\s*Control\\b",
+    "<%@\\s*Master\\b",
+    "<asp:\\w+"
+   ],
+   "why": "Web Forms does not exist on ASP.NET Core and has no direct equivalent; the UI layer must be rewritten (Blazor / Razor Pages / MVC / SPA) or the app retained on .NET Framework.",
+   "fix": "Choose per app: rewrite UI (AWS Transform can port Web Forms UI to Blazor), or retain on .NET Framework on Windows and move shared libraries to .NET Standard 2.0 (hybrid).",
+   "alt": "Blazor / Razor Pages; retain + .NET Standard 2.0 shared libraries",
+   "effort": "per-file-webforms",
+   "baseline": true,
+   "refs": [
+    "S1",
+    "S9",
+    "S18"
+   ]
+  },
+  {
+   "id": "WEB-WEBFORMS-AJAX",
+   "cat": "front-end",
+   "title": "Web Forms AJAX / third-party Web Forms controls",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "markup",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "<asp:(UpdatePanel|ScriptManager|UpdateProgress|Timer)\\b",
+    "<ajaxToolkit:",
+    "\\bAjaxControlToolkit\\b",
+    "<telerik:",
+    "<dx:",
+    "<ig:"
+   ],
+   "why": "Server-side AJAX controls and vendor Web Forms suites have no ASP.NET Core counterpart.",
+   "fix": "Rebuild the interaction in the target UI stack; check vendor licences for their Blazor/Core suites.",
+   "alt": "Blazor components / vendor Core suites",
+   "effort": "per-file-webforms",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-GLOBAL-ASAX",
+   "cat": "web-platform",
+   "title": "Global.asax application events",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bApplication_(Start|End|BeginRequest|EndRequest|AuthenticateRequest|PostAuthenticateRequest|AcquireRequestState|Error|PreSendRequestHeaders)\\b",
+    "\\bSession_(Start|End)\\b"
+   ],
+   "why": "Application/session events become Program.cs startup and middleware in ASP.NET Core.",
+   "fix": "Move logic to Program.cs, middleware and IHostApplicationLifetime.",
+   "alt": "Middleware / hosted services",
+   "effort": "small-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-MODULE-HANDLER",
+   "cat": "web-platform",
+   "title": "Custom HTTP modules / handlers",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    ":\\s*IHttp(Module|Handler|AsyncHandler)\\b",
+    "Implements\\s+IHttp(Module|Handler)\\b",
+    "<%@\\s*WebHandler\\b"
+   ],
+   "why": "IHttpModule/IHttpHandler do not exist in ASP.NET Core.",
+   "fix": "Rewrite as middleware or endpoints.",
+   "alt": "ASP.NET Core middleware / minimal API endpoints",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-OWIN",
+   "cat": "web-platform",
+   "title": "OWIN / Katana pipeline",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Owin\\b",
+    "\\bIAppBuilder\\b",
+    "\\[assembly:\\s*OwinStartup",
+    "owin:AppStartup"
+   ],
+   "why": "OWIN middleware (often authentication) must be rebuilt on the ASP.NET Core pipeline.",
+   "fix": "Replace Katana middleware with ASP.NET Core equivalents (authentication handlers, CORS, static files).",
+   "alt": "ASP.NET Core authentication/middleware",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-CHILD-ACTION",
+   "cat": "web-platform",
+   "title": "MVC child actions",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\[ChildActionOnly\\]",
+    "Html\\.(RenderAction|Action)\\("
+   ],
+   "why": "Child actions were removed in ASP.NET Core MVC.",
+   "fix": "Convert to View Components or partial views.",
+   "alt": "View Components",
+   "effort": "per-occurrence-small",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-ASMX",
+   "cat": "wcf-desktop",
+   "title": "ASMX web services",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "<%@\\s*WebService\\b",
+    "\\[WebMethod\\b",
+    ":\\s*System\\.Web\\.Services\\.WebService\\b",
+    "Inherits\\s+System\\.Web\\.Services\\.WebService\\b"
+   ],
+   "why": "ASMX services are not supported on ASP.NET Core; callers depend on the SOAP contract.",
+   "fix": "Expose the same contract with CoreWCF (BasicHttpBinding) or move callers to REST.",
+   "alt": "CoreWCF / Web API",
+   "effort": "medium-change",
+   "refs": [
+    "S1",
+    "S17"
+   ],
+   "question": "Which external systems call these SOAP endpoints, and can they change contract?"
+  },
+  {
+   "id": "WEB-REPORTVIEWER",
+   "cat": "integrations",
+   "title": "ReportViewer control (SSRS/RDLC in Web Forms/WinForms)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "Microsoft\\.Reporting\\.(WebForms|WinForms)",
+    "<rsweb:ReportViewer",
+    "\\.rdlc\\b"
+   ],
+   "why": "The ReportViewer controls are .NET Framework only.",
+   "fix": "Render reports via the SSRS/PBIRS REST or URL access, or move RDLC rendering to a supported library.",
+   "alt": "SSRS REST API; Bold Reports; Telerik Reporting; QuestPDF for code-built documents",
+   "effort": "medium-change",
+   "refs": [
+    "S12"
+   ]
+  },
+  {
+   "id": "WEB-SIGNALR-LEGACY",
+   "cat": "front-end",
+   "title": "ASP.NET SignalR (legacy)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "js",
+    "markup"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.AspNet\\.SignalR\\b",
+    "jquery\\.signalR",
+    "\\$\\.connection\\."
+   ],
+   "why": "ASP.NET SignalR and ASP.NET Core SignalR use incompatible protocols; server and JavaScript client both change.",
+   "fix": "Port hubs to ASP.NET Core SignalR and update clients; use a Redis backplane (ElastiCache) when scaled out.",
+   "alt": "ASP.NET Core SignalR + ElastiCache backplane",
+   "effort": "medium-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WCF-SERVICE",
+   "cat": "wcf-desktop",
+   "title": "WCF service (server side)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\[ServiceContract\\b",
+    "<ServiceContract\\b",
+    "<%@\\s*ServiceHost\\b",
+    "\\bnew\\s+ServiceHost\\b"
+   ],
+   "why": "WCF server is not part of .NET; CoreWCF supports a subset (BasicHttp, NetTcp, WSHttp and some WS-* features).",
+   "fix": "Port to CoreWCF when callers need the SOAP/NetTcp contract; otherwise re-expose as REST/gRPC.",
+   "alt": "CoreWCF / gRPC / ASP.NET Core Web API",
+   "effort": "per-file-wcf",
+   "baseline": true,
+   "refs": [
+    "S1",
+    "S23"
+   ],
+   "question": "Who consumes these WCF services (internal apps, partners) and which bindings/security modes do they use?"
+  },
+  {
+   "id": "WCF-BINDING",
+   "cat": "wcf-desktop",
+   "title": "WCF bindings / features without CoreWCF support",
+   "sev": "Blocker",
+   "conf": "Likely",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(netNamedPipeBinding|wsDualHttpBinding|netPeerTcpBinding|wsFederationHttpBinding|ws2007FederationHttpBinding|msmqIntegrationBinding|netMsmqBinding)\\b",
+    "\\bNet(NamedPipe|Msmq|PeerTcp)Binding\\b",
+    "\\bWSDualHttpBinding\\b",
+    "\\bCallbackContract\\b"
+   ],
+   "why": "These bindings/duplex patterns are not (fully) supported by CoreWCF or have no Linux transport.",
+   "fix": "Redesign the transport (gRPC streaming, SignalR, SQS) or retain the service on .NET Framework.",
+   "alt": "gRPC / SignalR / SQS",
+   "effort": "large-change",
+   "refs": [
+    "S23"
+   ]
+  },
+  {
+   "id": "WCF-CLIENT",
+   "cat": "connectivity",
+   "title": "WCF / SOAP client proxies",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    ":\\s*(System\\.ServiceModel\\.)?ClientBase<",
+    "\\bChannelFactory<",
+    "\\bSoapHttpClientProtocol\\b",
+    "<client>"
+   ],
+   "why": "WCF clients work on .NET via System.ServiceModel.* packages, but generated proxies and client config must be regenerated and the endpoint must be reachable from AWS.",
+   "fix": "Regenerate proxies with dotnet-svcutil; move endpoint config to appsettings; confirm network path.",
+   "alt": "System.ServiceModel.Http/NetTcp + dotnet-svcutil",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "DESK-WINFORMS",
+   "cat": "wcf-desktop",
+   "title": "Windows Forms",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "^\\s*using\\s+System\\.Windows\\.Forms\\s*;",
+    "^\\s*Imports\\s+System\\.Windows\\.Forms\\b",
+    ":\\s*Form\\b(?!\\w)"
+   ],
+   "why": "WinForms runs on .NET 10 but only on Windows; it cannot run on Linux.",
+   "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or AppStream 2.0/WorkSpaces), or rewrite as a web front end.",
+   "alt": ".NET 10 WinForms on Windows; web UI rewrite; Avalonia",
+   "effort": "per-file-desktop",
+   "baseline": true,
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DESK-WPF",
+   "cat": "wcf-desktop",
+   "title": "WPF",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "^\\s*using\\s+System\\.Windows\\.(Controls|Markup|Media|Data|Input)\\s*;",
+    "\\bPresentationFramework\\b",
+    "<UseWPF>true"
+   ],
+   "why": "WPF runs on .NET 10 but only on Windows.",
+   "fix": "Retain on Windows (.NET 10 WPF) or rewrite (web / Avalonia).",
+   "alt": ".NET 10 WPF on Windows; Avalonia",
+   "effort": "per-file-desktop",
+   "baseline": true,
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DATA-EF6-EDMX",
+   "cat": "data-access",
+   "title": "Entity Framework 6 with EDMX model",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "proj",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.edmx\"",
+    "<EntityDeploy\\b",
+    "\\bObjectContext\\b"
+   ],
+   "why": "EF6 (6.4+) runs on modern .NET, but the EDMX designer workflow is not supported in SDK-style projects and EF Core has no EDMX; metadata must be embedded or the model moved to code.",
+   "fix": "Short term: EF 6.5 on .NET 10 with embedded EDMX metadata. Long term: EF Core 10 (scaffold from database).",
+   "alt": "EF 6.5 on .NET 10; EF Core 10",
+   "effort": "medium-change",
+   "refs": [
+    "S18"
+   ]
+  },
+  {
+   "id": "DATA-EF6",
+   "cat": "data-access",
+   "title": "Entity Framework 6",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "^\\s*using\\s+System\\.Data\\.Entity\\s*;",
+    "^\\s*Imports\\s+System\\.Data\\.Entity\\b"
+   ],
+   "why": "EF6 works on .NET 10 but is in maintenance; EF Core is the strategic ORM (and AWS Transform can port EF code).",
+   "fix": "Keep EF 6.5 for the first move; plan EF Core as a follow-up.",
+   "alt": "EF Core 10",
+   "effort": "trivial",
+   "refs": [
+    "S18"
+   ]
+  },
+  {
+   "id": "DATA-SYSTEM-SQLCLIENT",
+   "cat": "data-access",
+   "title": "System.Data.SqlClient",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "^\\s*using\\s+System\\.Data\\.SqlClient\\s*;",
+    "^\\s*Imports\\s+System\\.Data\\.SqlClient\\b"
+   ],
+   "why": "System.Data.SqlClient is deprecated; Microsoft.Data.SqlClient is the supported provider (different TLS/Encrypt defaults).",
+   "fix": "Switch to Microsoft.Data.SqlClient; set Encrypt/TrustServerCertificate deliberately for RDS.",
+   "alt": "Microsoft.Data.SqlClient",
+   "effort": "trivial",
+   "refs": [
+    "S11"
+   ]
+  },
+  {
+   "id": "DATA-OLEDB",
+   "cat": "data-access",
+   "title": "OLE DB / Jet / ACE (Access, Excel via OLE DB)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Data\\.OleDb\\b",
+    "\\bOleDb(Connection|Command|DataAdapter)\\b",
+    "Provider=Microsoft\\.(Jet|ACE)\\.OLEDB",
+    "Provider=SQLOLEDB",
+    "Provider=MSOLEDBSQL"
+   ],
+   "why": "OLE DB is Windows-only; Jet/ACE drivers do not exist on Linux.",
+   "fix": "Use native ADO.NET providers (Microsoft.Data.SqlClient) or file libraries (ClosedXML/ExcelDataReader) instead of Jet/ACE.",
+   "alt": "Microsoft.Data.SqlClient; ExcelDataReader / ClosedXML",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DATA-ODBC",
+   "cat": "data-access",
+   "title": "ODBC",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Data\\.Odbc\\b",
+    "\\bOdbc(Connection|Command)\\b",
+    "Driver=\\{"
+   ],
+   "why": "ODBC works on Linux only if a Linux ODBC driver exists for the target database.",
+   "fix": "Confirm a Linux driver (unixODBC) or switch to a managed provider.",
+   "alt": "Managed ADO.NET provider",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DATA-ORACLE-UNMANAGED",
+   "cat": "data-access",
+   "title": "Oracle unmanaged ODP.NET",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bOracle\\.DataAccess\\b"
+   ],
+   "why": "Oracle.DataAccess (unmanaged) needs the Windows Oracle client.",
+   "fix": "Move to Oracle.ManagedDataAccess.Core.",
+   "alt": "Oracle.ManagedDataAccess.Core",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DATA-DISTRIBUTED-TX",
+   "cat": "data-access",
+   "title": "TransactionScope / distributed transactions",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bnew\\s+TransactionScope\\b",
+    "\\bEnlistDistributedTransaction\\b",
+    "\\bTransactionInterop\\b"
+   ],
+   "why": "Distributed (MSDTC) transactions are supported on .NET only on Windows; a TransactionScope spanning two connections/resources will fail on Linux.",
+   "fix": "Confirm each scope uses one connection; otherwise redesign (outbox pattern, sagas).",
+   "alt": "Single-connection transactions / outbox",
+   "effort": "small-change",
+   "refs": [
+    "S3",
+    "S12"
+   ]
+  },
+  {
+   "id": "DATA-SQLDEPENDENCY",
+   "cat": "data-access",
+   "title": "SqlDependency / SqlCacheDependency",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSqlDependency\\b",
+    "\\bSqlCacheDependency\\b",
+    "<sqlCacheDependency"
+   ],
+   "why": "Query notifications need Service Broker (not on Babelfish); SqlCacheDependency is System.Web only.",
+   "fix": "Replace with explicit cache invalidation or events (ElastiCache, SNS).",
+   "alt": "ElastiCache + explicit invalidation",
+   "effort": "small-change",
+   "db": {
+    "babelfish": "blocker",
+    "rds": "ok"
+   },
+   "refs": [
+    "S14"
+   ]
+  },
+  {
+   "id": "DATA-INTEGRATED-SECURITY",
+   "cat": "auth",
+   "title": "Windows-integrated database authentication",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb",
+    "any"
+   ],
+   "pat": [
+    "(?i)Integrated\\s+Security\\s*=\\s*(SSPI|true|yes)",
+    "(?i)Trusted_Connection\\s*=\\s*(yes|true)"
+   ],
+   "why": "Windows authentication to SQL Server from Linux needs Kerberos (domain-joined host or keytab) and, on RDS, AWS Managed Microsoft AD or a self-managed AD trust.",
+   "fix": "Switch to SQL authentication with credentials in Secrets Manager (rotation), or set up Kerberos with AWS Managed Microsoft AD.",
+   "alt": "SQL auth + Secrets Manager rotation; Kerberos via AWS Managed Microsoft AD",
+   "effort": "small-change",
+   "refs": [
+    "S8",
+    "S11"
+   ],
+   "question": "Must database access keep using Windows (Kerberos) identities for audit/compliance?"
+  },
+  {
+   "id": "DB-CLR",
+   "cat": "database",
+   "title": "SQL CLR assemblies",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+ASSEMBLY\\b",
+    "(?i)\\bEXTERNAL\\s+NAME\\b",
+    "(?i)'clr enabled'"
+   ],
+   "why": "CLR is not supported on RDS for SQL Server 2017+ (SAFE only on 2016 and lower) nor on Babelfish.",
+   "fix": "Rewrite CLR routines in T-SQL or move logic to the application / Lambda; or use SQL Server on EC2.",
+   "alt": "T-SQL / app code / Lambda; SQL Server on EC2",
+   "effort": "db-object-large",
+   "db": {
+    "rds": "blocker",
+    "babelfish": "blocker",
+    "ec2": "ok"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-LINKED-SERVER",
+   "cat": "database",
+   "title": "Linked servers / distributed queries",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bOPENQUERY\\s*\\(",
+    "(?i)\\bOPENDATASOURCE\\s*\\(",
+    "(?i)\\bsp_addlinkedserver\\b",
+    "(?i)\\bOPENROWSET\\s*\\((?!\\s*BULK)",
+    "\\[[\\w\\-]+\\]\\.\\[[\\w\\-]+\\]\\.\\[[\\w]+\\]\\.\\[[\\w]+\\]"
+   ],
+   "why": "RDS supports linked servers only in limited forms; Babelfish allows read-only four-part names to SQL Server targets.",
+   "fix": "Inventory each linked server; replace with application-level integration or AWS DMS replication where possible.",
+   "alt": "Application integration / AWS DMS / Glue",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "limited",
+    "babelfish": "limited"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "question": "What do the linked servers point at, and will those systems also move to AWS?"
+  },
+  {
+   "id": "DB-XP-CMDSHELL",
+   "cat": "database",
+   "title": "xp_cmdshell / OLE automation / file-system extended procedures",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bxp_cmdshell\\b",
+    "(?i)\\bxp_(fileexist|dirtree|subdirs|regread|regwrite)\\b",
+    "(?i)\\bsp_OA(Create|Method|GetProperty|SetProperty|Destroy)\\b"
+   ],
+   "why": "Extended stored procedures and OS access are not available on RDS or Babelfish.",
+   "fix": "Move OS/file work into the application or a Lambda/ECS task; use S3 integration for files.",
+   "alt": "Lambda / ECS task / RDS S3 integration",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "blocker",
+    "babelfish": "blocker",
+    "ec2": "ok"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-FILESTREAM",
+   "cat": "database",
+   "title": "FILESTREAM / FileTable",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bFILESTREAM\\b",
+    "(?i)\\bFILETABLE\\b",
+    "(?i)\\bAS\\s+FileTable\\b"
+   ],
+   "why": "FILESTREAM and FileTables are not supported on RDS or Babelfish.",
+   "fix": "Store blobs in Amazon S3 with keys in the database.",
+   "alt": "Amazon S3",
+   "effort": "db-object-large",
+   "db": {
+    "rds": "blocker",
+    "babelfish": "blocker",
+    "ec2": "ok"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-SERVICE-BROKER",
+   "cat": "database",
+   "title": "Service Broker",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+(QUEUE|SERVICE|CONTRACT|MESSAGE\\s+TYPE)\\b",
+    "(?i)\\bBEGIN\\s+DIALOG\\b",
+    "(?i)\\bSEND\\s+ON\\s+CONVERSATION\\b",
+    "(?i)\\bRECEIVE\\s+(TOP\\s*\\(|\\*|\\w)",
+    "(?i)\\bENABLE_BROKER\\b"
+   ],
+   "why": "RDS does not support Service Broker endpoints (cross-instance); Babelfish has no Service Broker.",
+   "fix": "Replace with Amazon SQS/SNS or an outbox table polled by a worker.",
+   "alt": "Amazon SQS / outbox pattern",
+   "effort": "db-object-large",
+   "db": {
+    "rds": "limited",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-MSDTC",
+   "cat": "database",
+   "title": "Distributed transactions in T-SQL",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bBEGIN\\s+DISTRIBUTED\\s+TRAN"
+   ],
+   "why": "MSDTC needs an option group on RDS and is unsupported on Babelfish.",
+   "fix": "Avoid cross-server transactions; redesign with sagas/outbox.",
+   "alt": "Outbox / saga",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "limited",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-SQL-AGENT",
+   "cat": "database",
+   "title": "SQL Server Agent jobs",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_add_job(step|schedule)?\\b",
+    "(?i)\\bsp_add_schedule\\b",
+    "(?i)\\bsp_start_job\\b",
+    "(?i)msdb\\.(dbo)?\\.sysjobs"
+   ],
+   "why": "SQL Agent is available on RDS (msdb import not supported) but not on Babelfish.",
+   "fix": "Recreate jobs on RDS, or move them to EventBridge Scheduler + Lambda/ECS for Babelfish/PostgreSQL.",
+   "alt": "EventBridge Scheduler + Lambda / ECS",
+   "effort": "db-object-small",
+   "db": {
+    "rds": "ok",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ],
+   "question": "Which SQL Agent jobs run on the current server (the repository may not contain all of them)?"
+  },
+  {
+   "id": "DB-CROSS-DATABASE",
+   "cat": "database",
+   "title": "Cross-database references (three-part names)",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\b(?!dbo\\b|sys\\b|INFORMATION_SCHEMA\\b)\\[?[A-Za-z_][\\w]*\\]?\\.\\[?dbo\\]?\\.\\[?[A-Za-z_][\\w]*\\]?"
+   ],
+   "not": "(?i)^\\s*(--|/\\*)",
+   "why": "Cross-database queries work on one RDS instance (all databases must move together) and in Babelfish multi-database mode only for DML, not DDL.",
+   "fix": "Keep the related databases on the same instance, or remove the coupling.",
+   "alt": "Same-instance placement / service APIs",
+   "effort": "db-object-small",
+   "db": {
+    "rds": "limited",
+    "babelfish": "limited"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-BULK-FILE",
+   "cat": "database",
+   "title": "BULK INSERT / OPENROWSET(BULK) from server files",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bBULK\\s+INSERT\\b",
+    "(?i)\\bOPENROWSET\\s*\\(\\s*BULK\\b",
+    "(?i)\\bbcp\\s+\\S+\\s+(in|out|queryout)\\b"
+   ],
+   "why": "There is no server file system on RDS (use S3 integration) and BULK INSERT is not supported on Babelfish.",
+   "fix": "Load files through the application, AWS DMS/Glue, or RDS S3 integration.",
+   "alt": "RDS S3 integration / AWS Glue",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "limited",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-FULLTEXT",
+   "cat": "database",
+   "title": "Full-text search",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+FULLTEXT\\b",
+    "(?i)\\b(CONTAINS|FREETEXT|CONTAINSTABLE|FREETEXTTABLE)\\s*\\("
+   ],
+   "why": "Full-text search works on RDS for SQL Server but is not supported by Babelfish.",
+   "fix": "RDS: keep. Babelfish/PostgreSQL: move to PostgreSQL full-text or Amazon OpenSearch.",
+   "alt": "Amazon OpenSearch Service",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "ok",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-BABELFISH-SYNTAX",
+   "cat": "database",
+   "title": "T-SQL syntax not supported by Babelfish",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)^\\s*MERGE\\b",
+    "(?i)\\bhierarchyid\\b",
+    "(?i)\\bSYSTEM_VERSIONING\\b",
+    "(?i)\\bFOR\\s+XML\\s+EXPLICIT\\b",
+    "(?i)\\bWITH\\s+XMLNAMESPACES\\b",
+    "(?i)\\bCREATE\\s+(PRIMARY\\s+)?XML\\s+INDEX\\b",
+    "(?i)\\bEXECUTE\\s+AS\\s+(USER|LOGIN|SELF)\\b",
+    "(?i)\\bWITH\\s+EXECUTE\\s+AS\\b",
+    "##[A-Za-z_]\\w*",
+    "(?i)\\bCREATE\\s+SYNONYM\\b",
+    "(?i)\\bGROUP\\s+BY\\s+(ROLLUP|CUBE|ALL)\\b",
+    "(?i)\\bWAITFOR\\s+(DELAY|TIME)\\b",
+    "(?i)\\bCREATE\\s+(UNIQUE\\s+)?CLUSTERED\\s+COLUMNSTORE\\b",
+    "(?i)\\bCREATE\\s+SECURITY\\s+POLICY\\b",
+    "(?i)\\bCREATE\\s+TYPE\\b",
+    "(?i)\\b(UPDATETEXT|WRITETEXT|READTEXT)\\b",
+    "(?i)\\bSET\\s+DATEFORMAT\\b",
+    "(?i)\\bSELECT\\s+TOP\\s*\\(?\\s*\\d+\\s*\\)?\\s+WITH\\s+TIES\\b"
+   ],
+   "why": "Babelfish does not support these constructs (see the AWS list of unsupported functionality); RDS for SQL Server does.",
+   "fix": "Rewrite each construct before choosing Babelfish; confirm with Babelfish Compass on a schema export.",
+   "alt": "Babelfish Compass assessment",
+   "effort": "db-object-small",
+   "db": {
+    "rds": "ok",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S14",
+    "S15"
+   ]
+  },
+  {
+   "id": "DB-SERVER-CONFIG",
+   "cat": "database",
+   "title": "Server-level configuration / privileges",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_configure\\b",
+    "(?i)\\bTRUSTWORTHY\\s+ON\\b",
+    "(?i)\\bCREATE\\s+TRIGGER\\s+\\w+\\s+ON\\s+ALL\\s+SERVER\\b",
+    "(?i)\\bCREATE\\s+ENDPOINT\\b",
+    "(?i)\\bsp_add(publication|subscription|article)\\b",
+    "(?i)\\bsp_replicationdboption\\b"
+   ],
+   "why": "RDS gives no sysadmin: sp_configure, TRUSTWORTHY, server triggers, endpoints and replication are unsupported (parameter groups replace sp_configure).",
+   "fix": "Translate settings to RDS parameter groups; remove server-level objects or use SQL Server on EC2.",
+   "alt": "RDS parameter/option groups; SQL Server on EC2",
+   "effort": "db-object-medium",
+   "db": {
+    "rds": "blocker",
+    "babelfish": "blocker",
+    "ec2": "ok"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ]
+  },
+  {
+   "id": "DB-DATABASE-MAIL",
+   "cat": "integrations",
+   "title": "Database Mail",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_send_dbmail\\b"
+   ],
+   "why": "Database Mail works on RDS (with configuration) but not on Babelfish.",
+   "fix": "Send email from the application through Amazon SES.",
+   "alt": "Amazon SES",
+   "effort": "db-object-small",
+   "db": {
+    "rds": "ok",
+    "babelfish": "blocker"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ]
+  },
+  {
+   "id": "AUTH-WINDOWS",
+   "cat": "auth",
+   "title": "Windows authentication / impersonation in IIS",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<authentication\\s+mode=\"Windows\"",
+    "<windowsAuthentication\\s+enabled=\"true\"",
+    "<identity\\s+impersonate=\"true\""
+   ],
+   "why": "On Linux, Windows auth needs the Negotiate handler with Kerberos (keytab, SPNs, LDAP for roles); impersonation is Windows-only.",
+   "fix": "Move users to an OIDC identity provider (IAM Identity Center, Cognito, Entra ID via federation) or configure Negotiate/Kerberos with AWS Managed Microsoft AD.",
+   "alt": "OIDC (Cognito / Entra ID / ADFS OIDC); Negotiate + keytab",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ],
+   "question": "Do users sign in with domain accounts, and is a move to SSO/OIDC acceptable?"
+  },
+  {
+   "id": "AUTH-IMPERSONATION",
+   "cat": "auth",
+   "title": "Windows identity / impersonation in code",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bWindowsIdentity\\b",
+    "\\bWindowsImpersonationContext\\b",
+    "\\.Impersonate\\(",
+    "\\bLogonUser\\b",
+    "\\bWindowsPrincipal\\b",
+    "\\bRunImpersonated\\b"
+   ],
+   "why": "WindowsIdentity and impersonation are Windows-only.",
+   "fix": "Use claims from the identity provider; access resources with IAM roles instead of impersonated accounts.",
+   "alt": "Claims + IAM roles",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ]
+  },
+  {
+   "id": "AUTH-FORMS-MEMBERSHIP",
+   "cat": "auth",
+   "title": "Forms authentication / Membership / Role manager",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "<authentication\\s+mode=\"Forms\"",
+    "<membership\\b",
+    "<roleManager\\s+enabled=\"true\"",
+    "\\bFormsAuthentication\\.",
+    "\\bMembership\\.(GetUser|ValidateUser|CreateUser)\\b",
+    "\\bRoles\\.(IsUserInRole|GetRolesForUser|AddUserToRole)\\b",
+    "\\bSqlMembershipProvider\\b"
+   ],
+   "why": "Forms auth tickets and Membership providers do not exist in ASP.NET Core; password hashes need a migration strategy.",
+   "fix": "Move to ASP.NET Core cookie authentication + ASP.NET Core Identity (or an external IdP); migrate users with a rehash-on-login strategy.",
+   "alt": "ASP.NET Core Identity / Cognito",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "AUTH-MACHINEKEY",
+   "cat": "auth",
+   "title": "machineKey configuration",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<machineKey\\b"
+   ],
+   "why": "machineKey protects auth cookies, ViewState and anti-forgery tokens; ASP.NET Core uses the Data Protection key ring, and web farms need shared keys.",
+   "fix": "Store keys in Secrets Manager (never in config); share a Data Protection key ring (S3 + KMS) across instances; plan cookie compatibility during cut-over.",
+   "alt": "Data Protection + S3/KMS key ring",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "AUTH-WSFED",
+   "cat": "auth",
+   "title": "WS-Federation / ADFS (WIF)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.IdentityModel\\.Services\\b",
+    "<system\\.identityModel",
+    "\\bWSFederationAuthenticationModule\\b",
+    "\\bSessionAuthenticationModule\\b",
+    "\\bWsFederation\\b"
+   ],
+   "why": "Windows Identity Foundation is .NET Framework only.",
+   "fix": "Use Microsoft.AspNetCore.Authentication.WsFederation or switch the relying party to OIDC.",
+   "alt": "ASP.NET Core WsFederation / OIDC",
+   "effort": "medium-change",
+   "refs": [
+    "S9"
+   ],
+   "question": "Which identity provider (ADFS version, Entra ID) issues tokens, and will it be reachable from AWS?"
+  },
+  {
+   "id": "AUTH-IDENTITY2",
+   "cat": "auth",
+   "title": "ASP.NET Identity 2 (OWIN)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.AspNet\\.Identity\\b"
+   ],
+   "why": "ASP.NET Identity 2 must move to ASP.NET Core Identity (schema and hasher differ).",
+   "fix": "Migrate to ASP.NET Core Identity; keep the v2 password hasher compatibility mode during transition.",
+   "alt": "ASP.NET Core Identity",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "AUTH-DEFAULT-CREDENTIALS",
+   "cat": "auth",
+   "title": "Outbound calls with Windows default credentials",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bCredentialCache\\.Default(Network)?Credentials\\b",
+    "UseDefaultCredentials\\s*=\\s*true",
+    "useDefaultCredentials=\"true\""
+   ],
+   "why": "On Linux the process has no Windows identity; integrated auth to on-prem services needs Kerberos configuration.",
+   "fix": "Use explicit service credentials from Secrets Manager or Kerberos keytabs.",
+   "alt": "Secrets Manager credentials",
+   "effort": "small-change",
+   "refs": [
+    "S8"
+   ]
+  },
+  {
+   "id": "AUTH-EXTERNAL-IDP",
+   "cat": "auth",
+   "title": "External identity provider (OpenID Connect / Azure AD / Entra ID)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bUseOpenIdConnectAuthentication\\b",
+    "\\bOpenIdConnectAuthenticationOptions\\b",
+    "\\bUseWindowsAzureActiveDirectoryBearerAuthentication\\b",
+    "\"ida:(ClientId|Tenant|AADInstance|PostLogoutRedirectUri)\"",
+    "\\bMicrosoft\\.Identity\\.Web\\b",
+    "\\bAddMicrosoftIdentityWebApp\\b"
+   ],
+   "why": "Sign-in is delegated to an external IdP: the OWIN middleware must be replaced, and redirect URIs, client secrets and allowed origins must be registered for the new AWS host names.",
+   "fix": "Port to ASP.NET Core OpenID Connect (or Microsoft.Identity.Web); register AWS redirect URIs; move client secrets to Secrets Manager.",
+   "alt": "Microsoft.AspNetCore.Authentication.OpenIdConnect / Microsoft.Identity.Web; Amazon Cognito federation",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ],
+   "question": "Which identity provider tenant/app registrations does each application use, and who can add the new redirect URIs?"
+  },
+  {
+   "id": "CFG-HARDCODED-SECRET",
+   "cat": "configuration-secrets",
+   "title": "Hard-coded credential or key in source",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "js"
+   ],
+   "pat": [
+    "(?i)\\b\\w*(password|passwd|pwd|secret|apikey|api_key|accesskey|access_key|clientsecret|client_secret|token)\\w*\\s*(=|:)\\s*@?\"[^\"\\s]{6,}\""
+   ],
+   "not": "(?i)(\"\\s*\\+|string\\.Empty|placeholder|example|\\{0\\}|Resources\\.|ErrorMessage|DisplayName|\\[Display|PasswordChar|Text\\s*=\\s*\"|Label|Required|\"(your[-_ ]|<|\\{|enter|change|todo|xxx|sample|dummy|placeholder|insert|replace))",
+   "why": "Credentials in source code travel with every clone and cannot be rotated.",
+   "fix": "Move to AWS Secrets Manager; rotate the exposed credential.",
+   "alt": "AWS Secrets Manager",
+   "effort": "trivial",
+   "refs": [
+    "S21"
+   ]
+  },
+  {
+   "id": "CFG-PROTECTED-SECTION",
+   "cat": "configuration-secrets",
+   "title": "DPAPI/RSA-protected configuration sections",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "configProtectionProvider=",
+    "\\b(DataProtection|Rsa)ProtectedConfigurationProvider\\b"
+   ],
+   "why": "Protected config sections are machine-bound and RsaProtectedConfigurationProvider throws on .NET.",
+   "fix": "Move the protected values to Secrets Manager / Parameter Store (SecureString).",
+   "alt": "Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "CFG-TRANSFORMS",
+   "cat": "configuration-secrets",
+   "title": "web.config / app.config transforms",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "xmlns:xdt=\"http://schemas\\.microsoft\\.com/XML-Document-Transform\""
+   ],
+   "why": "Per-environment transforms become appsettings.{Environment}.json + environment variables.",
+   "fix": "Map each transform to environment configuration and Parameter Store paths.",
+   "alt": "appsettings.{env}.json + Parameter Store",
+   "effort": "trivial",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "NET-UNC-SHARE",
+   "cat": "file-handling",
+   "title": "UNC network share paths",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "sql",
+    "script"
+   ],
+   "pat": [
+    "@\"\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\",
+    "\"\\\\\\\\\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\\\\\",
+    "=\"\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\",
+    "'\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\"
+   ],
+   "why": "SMB shares on the on-prem network are unreachable from AWS without VPN/Direct Connect, and Linux needs a mount instead of UNC paths.",
+   "fix": "Move the files to Amazon S3, Amazon EFS, or FSx for Windows File Server / FSx for NetApp ONTAP (SMB); use configuration, not literals.",
+   "alt": "Amazon S3 / EFS / FSx",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "What lives on these shares, how big is it, and which other systems read or write it?"
+  },
+  {
+   "id": "NET-SMTP",
+   "cat": "integrations",
+   "title": "SMTP email sending",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bnew\\s+SmtpClient\\b",
+    "<smtp\\b",
+    "<network\\s+host="
+   ],
+   "why": "On-prem SMTP relays are not reachable from AWS without a network path; EC2 throttles outbound port 25.",
+   "fix": "Send through Amazon SES (SMTP interface or API) with verified domains (SPF/DKIM/DMARC).",
+   "alt": "Amazon SES; MailKit as client",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which SMTP relay is used today and are there allow-listed sender IPs?"
+  },
+  {
+   "id": "NET-FTP",
+   "cat": "integrations",
+   "title": "FTP/SFTP transfers",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bFtpWebRequest\\b",
+    "ftp://",
+    "sftp://",
+    "\\bWinSCP\\b",
+    "\\bFluentFTP\\b",
+    "\\bSshNet\\b|\\bRenci\\.SshNet\\b"
+   ],
+   "why": "File-transfer partners usually allow-list source IPs; the egress IP changes on AWS.",
+   "fix": "Use fixed egress IPs (NAT gateway Elastic IPs) and notify partners; consider AWS Transfer Family for inbound.",
+   "alt": "AWS Transfer Family; NAT gateway EIPs",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which partners exchange files, and do they allow-list our IP addresses?"
+  },
+  {
+   "id": "NET-PROXY",
+   "cat": "connectivity",
+   "title": "Explicit HTTP proxy configuration",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "<defaultProxy\\b",
+    "<proxy\\s+(usesystemdefault|proxyaddress)",
+    "\\bnew\\s+WebProxy\\b"
+   ],
+   "why": "Corporate proxies are usually not reachable or not wanted from AWS.",
+   "fix": "Remove or make egress configurable (VPC endpoints / NAT).",
+   "alt": "VPC endpoints / NAT gateway",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "HV-HARDWARE-ID",
+   "cat": "hypervisor",
+   "title": "Hardware / MAC / BIOS identifiers",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.GetPhysicalAddress\\(",
+    "Win32_(BaseBoard|BIOS|Processor|DiskDrive|NetworkAdapter|ComputerSystemProduct|PhysicalMedia)",
+    "\\bProcessorId\\b",
+    "\\bHardwareId\\b"
+   ],
+   "why": "Licensing or identity tied to hardware/MAC/BIOS breaks when VMs move hypervisor or instances are replaced.",
+   "fix": "Find what the identifier is used for (often licensing); move to instance-independent identity or re-license.",
+   "alt": "Instance-independent IDs / vendor cloud licences",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Is any software licensed to a MAC address, host ID or BIOS serial on the current VMs?"
+  },
+  {
+   "id": "HV-MACHINE-NAME",
+   "cat": "hypervisor",
+   "title": "Logic keyed on machine name / host name",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bEnvironment\\.MachineName\\b",
+    "\\bDns\\.GetHostName\\(",
+    "\\bSystem\\.Net\\.Dns\\.GetHostEntry\\("
+   ],
+   "why": "Host names change on AWS (auto scaling, containers); logic that switches on server name breaks.",
+   "fix": "Use explicit configuration/environment instead of host names.",
+   "alt": "Environment configuration",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "HV-LOCAL-DEVICE",
+   "cat": "hypervisor",
+   "title": "Local devices (serial/COM/LPT ports, dongles, scanners)",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSerialPort\\b",
+    "\"(COM\\d+|LPT\\d)\"",
+    "\\b(HASP|Sentinel|Aladdin)\\b",
+    "\\bTwain\\b|\\bWIA\\b"
+   ],
+   "why": "Physical devices attached to an on-prem host cannot follow the workload to AWS.",
+   "fix": "Move the device interaction to an edge component (e.g. on-prem agent, IoT Greengrass) or retire it.",
+   "alt": "Edge agent / AWS IoT Greengrass",
+   "effort": "large-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Are any devices physically attached to the servers (ports, dongles, scanners, printers)?"
+  },
+  {
+   "id": "FILE-DRIVE-LETTER",
+   "cat": "file-handling",
+   "title": "Hard-coded drive-letter paths",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "sql",
+    "script"
+   ],
+   "pat": [
+    "@\"[A-Za-z]:\\\\",
+    "\"[A-Za-z]:\\\\\\\\",
+    "=\"[A-Za-z]:\\\\",
+    "'[A-Za-z]:\\\\"
+   ],
+   "why": "Linux has no drive letters; these paths fail on Linux and on any new host.",
+   "fix": "Make paths configurable and root them in a mounted volume / S3.",
+   "alt": "Configuration + EFS/S3",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "FILE-BACKSLASH",
+   "cat": "file-handling",
+   "title": "Backslash path separators in literals",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\"[\\w.~\\-]*\\\\\\\\[\\w.\\-]+\\\\\\\\?[\\w.\\-]*\"",
+    "@\"[\\w.~\\-]+\\\\[\\w.\\-]+"
+   ],
+   "not": "(?i)(\\\\n|\\\\r|\\\\t|\\\\d|\\\\w|\\\\s|\\\\\\.|Regex|\\\\u[0-9a-f]{4}|^\\s*//|\\[RegularExpression)",
+   "why": "'\\' is a valid file-name character on Linux, so these paths silently point to the wrong place.",
+   "fix": "Use Path.Combine / '/' separators.",
+   "alt": "Path.Combine",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "FILE-MAPPATH",
+   "cat": "file-handling",
+   "title": "Server.MapPath / HostingEnvironment.MapPath",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bServer\\.MapPath\\(",
+    "\\bHostingEnvironment\\.MapPath\\(",
+    "\\bHttpContext\\.Current\\.Server\\.MapPath\\("
+   ],
+   "why": "MapPath does not exist in ASP.NET Core; files under the site folder are lost when containers restart.",
+   "fix": "Use IWebHostEnvironment.ContentRootPath/WebRootPath for read-only assets; S3/EFS for writable data.",
+   "alt": "IWebHostEnvironment + S3",
+   "effort": "per-occurrence-small",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "FILE-WIN-FOLDERS",
+   "cat": "file-handling",
+   "title": "Windows special folders / %VARIABLES%",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "%(APPDATA|LOCALAPPDATA|PROGRAMDATA|TEMP|TMP|WINDIR|SystemRoot|USERPROFILE|ProgramFiles|ProgramFiles\\(x86\\)|ALLUSERSPROFILE)%",
+    "Environment\\.SpecialFolder\\.(CommonApplicationData|ProgramFiles|ProgramFilesX86|Windows|System|SystemX86|CommonDocuments|MyDocuments|Desktop)"
+   ],
+   "why": "These locations do not exist (or map to unexpected paths) on Linux/containers.",
+   "fix": "Use configured paths on mounted storage.",
+   "alt": "Configuration + mounted volumes",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "FILE-LOCAL-WRITE",
+   "cat": "state-scale",
+   "title": "Writes to the local file system",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bFile\\.(WriteAll(Text|Bytes|Lines)|AppendAll(Text|Lines)|AppendText|Create|CreateText|Copy|Move|Delete|Replace)\\(",
+    "\\bnew\\s+StreamWriter\\(",
+    "\\bnew\\s+FileStream\\(",
+    "\\bDirectory\\.(CreateDirectory|Delete|Move)\\(",
+    "\\.SaveAs\\("
+   ],
+   "why": "Local disk is not shared between instances and is lost with containers; files written here break horizontal scaling.",
+   "fix": "Write durable files to Amazon S3 (or EFS when a file system is required); keep only temp files locally.",
+   "alt": "Amazon S3 / EFS",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "FILE-ENCODING",
+   "cat": "file-handling",
+   "title": "Code-page encodings / Encoding.Default",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bEncoding\\.Default\\b",
+    "\\bEncoding\\.GetEncoding\\(\\s*(\\d+|\"(windows-\\d+|iso-8859-\\d+|ibm\\d+|shift_jis|gb2312|big5)\")"
+   ],
+   "why": "Encoding.Default is UTF-8 on .NET (ANSI code page on .NET Framework); code pages need CodePagesEncodingProvider.",
+   "fix": "Name encodings explicitly; register CodePagesEncodingProvider where legacy code pages are needed.",
+   "alt": "System.Text.Encoding.CodePages",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "FILE-CRLF",
+   "cat": "file-handling",
+   "title": "Hard-coded CRLF line endings",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\"\\\\r\\\\n\"",
+    "\\bvbCrLf\\b",
+    "\\bControlChars\\.CrLf\\b"
+   ],
+   "why": "Environment.NewLine is \\n on Linux; parsers that split on \\r\\n or files compared byte-for-byte behave differently.",
+   "fix": "Decide per use: protocol-mandated CRLF (keep), file output (Environment.NewLine or explicit), parsing (accept both).",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "IIS-REWRITE",
+   "cat": "hosting",
+   "title": "IIS URL Rewrite rules",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<rewrite>",
+    "<rule\\s+name="
+   ],
+   "why": "IIS URL Rewrite is an IIS module; rules must move to ASP.NET Core rewrite middleware or the load balancer.",
+   "fix": "Translate rules to UseRewriter (it can import IIS rules) or ALB listener rules / CloudFront functions.",
+   "alt": "Microsoft.AspNetCore.Rewrite / ALB rules",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-MODULES-HANDLERS",
+   "cat": "hosting",
+   "title": "IIS modules and handlers registered in config",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<(httpModules|httpHandlers)>",
+    "<add\\s+name=\"[^\"]+\"\\s+type=\"(?!System\\.Web\\.Routing|System\\.Web\\.Handlers\\.TransferRequestHandler)[^\"]+\""
+   ],
+   "requires": "<(modules|handlers|httpModules|httpHandlers)\\b",
+   "why": "Module/handler registrations configure IIS; each needs an ASP.NET Core equivalent.",
+   "fix": "Map each registered module/handler to middleware or remove.",
+   "alt": "Middleware",
+   "effort": "small-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-SESSION-STATE",
+   "cat": "state-scale",
+   "title": "Session state mode",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<sessionState\\b"
+   ],
+   "why": "In-process session needs sticky sessions and is lost on restart; StateServer/SQLServer modes are System.Web features.",
+   "fix": "Use ASP.NET Core distributed session backed by ElastiCache (Redis/Valkey) or DynamoDB; reduce session usage.",
+   "alt": "ElastiCache (Valkey/Redis) / DynamoDB",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-HTTPRUNTIME",
+   "cat": "hosting",
+   "title": "httpRuntime / request limits",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<httpRuntime\\b[^>]*(maxRequestLength|executionTimeout)",
+    "<requestLimits\\b"
+   ],
+   "why": "Upload size and timeouts move to Kestrel/ALB settings.",
+   "fix": "Set KestrelServerOptions/FormOptions limits and ALB idle timeout.",
+   "alt": "Kestrel + ALB settings",
+   "effort": "trivial",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-PUBLISH",
+   "cat": "hosting",
+   "title": "IIS / MSDeploy publishing",
+   "sev": "Info",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "<WebPublishMethod>(MSDeploy|FileSystem|Package)</WebPublishMethod>",
+    "<MSDeployServiceURL>"
+   ],
+   "why": "Deployment targets IIS today.",
+   "fix": "Replace with container images (ECR) or Linux packages deployed by CodePipeline/GitHub Actions.",
+   "alt": "ECR + ECS/EKS; CodeDeploy",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "HOST-WINDOWS-CONTAINER",
+   "cat": "hosting",
+   "title": "Windows container images",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "(?i)FROM\\s+mcr\\.microsoft\\.com/(dotnet/framework|windows/servercore|windows/nanoserver|windows)\\b",
+    "(?i)FROM\\s+microsoft/(aspnet|dotnet-framework|windowsservercore|nanoserver)\\b"
+   ],
+   "why": "Windows containers keep Windows licensing and run only on Windows nodes (ECS Windows / EKS Windows).",
+   "fix": "After porting, rebuild on Linux images (mcr.microsoft.com/dotnet/aspnet:10.0); otherwise run on ECS with Windows container instances.",
+   "alt": "Linux .NET 10 images; ECS Windows as fallback",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "STATE-APP-CACHE",
+   "cat": "state-scale",
+   "title": "In-process application state / cache",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bApplication\\[\"",
+    "\\bHttpContext\\.Current\\.Application\\b",
+    "\\bHttpRuntime\\.Cache\\b",
+    "\\bHttpContext\\.(Current\\.)?Cache\\b",
+    "\\bMemoryCache\\.Default\\b",
+    "\\bnew\\s+MemoryCache\\("
+   ],
+   "why": "Each instance gets its own copy; data diverges once the app runs on more than one server.",
+   "fix": "Use IDistributedCache on ElastiCache for shared data; keep IMemoryCache only for per-instance, rebuildable data.",
+   "alt": "ElastiCache (Valkey/Redis)",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "STATE-SESSION",
+   "cat": "state-scale",
+   "title": "Session usage in code",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bSession\\[\"",
+    "\\bHttpContext\\.Current\\.Session\\b",
+    "\\bSession\\.(Add|Remove|Clear|Abandon)\\("
+   ],
+   "why": "Session values must be serializable and stored out of process to scale horizontally; ASP.NET Core session stores bytes/strings only.",
+   "fix": "Minimise session; store in distributed session (ElastiCache) with JSON serialization.",
+   "alt": "Distributed session on ElastiCache",
+   "effort": "per-occurrence-small",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "STATE-STATIC-MUTABLE",
+   "cat": "state-scale",
+   "title": "Static mutable collections (per-process state)",
+   "sev": "Low",
+   "conf": "Needs verification",
+   "types": [
+    "cs"
+   ],
+   "pat": [
+    "\\b(public|private|internal|protected)?\\s*static\\s+(?!readonly\\b)(?!class\\b)(?!extern\\b)(Dictionary|ConcurrentDictionary|List|HashSet|Hashtable|ArrayList|Queue|Stack)<?[^(;=]*\\s+\\w+\\s*(=|;)"
+   ],
+   "why": "Static collections act as per-instance caches/state; behaviour changes when scaled out.",
+   "fix": "Review each: keep if rebuildable per instance, otherwise move to a shared store.",
+   "alt": "ElastiCache / database",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "STATE-WEB-BACKGROUND",
+   "cat": "background",
+   "title": "Timers / background work inside web processes",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bHostingEnvironment\\.QueueBackgroundWorkItem\\b",
+    "\\bnew\\s+System\\.Timers\\.Timer\\b",
+    "\\bnew\\s+System\\.Threading\\.Timer\\b",
+    "\\bnew\\s+Timer\\s*\\("
+   ],
+   "why": "In-process timers run once per instance after scale-out and stop when the app pool/container recycles.",
+   "fix": "Move scheduled work to a hosted worker with a distributed lock, or to EventBridge Scheduler + Lambda/ECS tasks.",
+   "alt": "EventBridge Scheduler; BackgroundService + distributed lock",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "BG-TASK-SCHEDULER",
+   "cat": "background",
+   "title": "Windows Task Scheduler",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Win32\\.TaskScheduler\\b",
+    "(?i)\\bschtasks(\\.exe)?\\b",
+    "\\bTaskService\\b",
+    "(?i)Register-ScheduledTask"
+   ],
+   "why": "Task Scheduler is Windows-only; jobs scheduled on the server are often undocumented.",
+   "fix": "Move schedules to EventBridge Scheduler (cron) triggering ECS tasks/Lambda.",
+   "alt": "Amazon EventBridge Scheduler",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "List every scheduled task on the current servers (the repository rarely contains all of them)."
+  },
+  {
+   "id": "BG-HANGFIRE-QUARTZ",
+   "cat": "background",
+   "title": "Hangfire / Quartz.NET job schedulers",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bHangfire\\b",
+    "\\bQuartz\\b"
+   ],
+   "why": "Both run on .NET 10; scaled-out instances need clustered/shared job storage and dashboard authorization.",
+   "fix": "Use persistent job storage (SQL/Redis) and clustering; secure the dashboard.",
+   "alt": "Hangfire.AspNetCore / Quartz clustering",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "LOG-FILE-TARGETS",
+   "cat": "logging",
+   "title": "File-based logging targets",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "(Rolling)?FileAppender",
+    "xsi:type=\"File\"",
+    "\\.WriteTo\\.(File|RollingFile)\\(",
+    "EventLogAppender",
+    "xsi:type=\"EventLog\""
+   ],
+   "why": "Log files on instance disks are lost with containers and are not centralised; Event Log targets fail on Linux.",
+   "fix": "Log to stdout in JSON and collect with CloudWatch Logs (awslogs / FireLens) or use CloudWatch sinks.",
+   "alt": "CloudWatch Logs (AWS.Logger.*), FireLens",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "LOG-ELMAH",
+   "cat": "logging",
+   "title": "ELMAH error logging",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bElmah\\b",
+    "<elmah>"
+   ],
+   "why": "ELMAH classic is System.Web-based.",
+   "fix": "Use ASP.NET Core exception handling middleware + CloudWatch/X-Ray (or ElmahCore).",
+   "alt": "Exception middleware + CloudWatch / X-Ray",
+   "effort": "trivial",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "LOG-TRACE",
+   "cat": "logging",
+   "title": "System.Diagnostics trace listeners",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<system\\.diagnostics>",
+    "<trace\\s+(autoflush|enabled)"
+   ],
+   "why": "Config-driven trace listeners are not loaded from config on .NET.",
+   "fix": "Replace with ILogger providers.",
+   "alt": "Microsoft.Extensions.Logging",
+   "effort": "trivial",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "INT-PRINTING",
+   "cat": "integrations",
+   "title": "Printing",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bPrintDocument\\b",
+    "\\bPrinterSettings\\b",
+    "\\bSystem\\.Printing\\b",
+    "\\b(Local)?PrintServer\\b",
+    "\\bPrintQueue\\b"
+   ],
+   "why": "Windows printing APIs and on-prem printers are not available from Linux in AWS.",
+   "fix": "Generate PDFs and send them to a print service / on-prem print agent.",
+   "alt": "PDF generation + on-prem print agent",
+   "effort": "medium-change",
+   "refs": [
+    "S6"
+   ],
+   "question": "Which printers are used from the servers, and where are they?"
+  },
+  {
+   "id": "INT-FAX",
+   "cat": "integrations",
+   "title": "Fax",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bFAXCOMEXLib\\b",
+    "\\bFAXCOMLib\\b",
+    "\\bFaxServer\\b",
+    "\\bFaxDocument\\b"
+   ],
+   "why": "Windows Fax Service (COM) is not available on Linux/AWS.",
+   "fix": "Use a cloud fax API.",
+   "alt": "Cloud fax provider API",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-OFFICE-INTEROP",
+   "cat": "integrations",
+   "title": "Office interop automation",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Office\\.Interop\\.\\w+",
+    "\\bMicrosoft\\.Office\\.Core\\b"
+   ],
+   "why": "Office automation needs Office installed on Windows (and is unsupported on servers).",
+   "fix": "Use Open XML-based libraries.",
+   "alt": "Open XML SDK / ClosedXML / NPOI / EPPlus (commercial)",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-CRYSTAL",
+   "cat": "integrations",
+   "title": "Crystal Reports",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "proj",
+    "config"
+   ],
+   "pat": [
+    "\\bCrystalDecisions\\.",
+    "\\.rpt\"",
+    "<CR:CrystalReportViewer"
+   ],
+   "why": "The Crystal Reports .NET runtime is Windows/.NET Framework only.",
+   "fix": "Re-implement reports (SSRS/PBIRS, a reporting library, or a BI tool); keep a Windows report host as an interim.",
+   "alt": "SSRS / Power BI Report Server; Telerik / Stimulsoft / FastReport (commercial); QuestPDF",
+   "effort": "per-report",
+   "refs": [
+    "S12"
+   ],
+   "question": "How many Crystal reports are in use, and can any be retired?"
+  },
+  {
+   "id": "INT-SSRS-CLIENT",
+   "cat": "integrations",
+   "title": "SSRS web-service clients",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bReportExecution(2005|Service)\\b",
+    "\\bReportingService20(05|06|10)\\b",
+    "/ReportServer"
+   ],
+   "why": "Calls an SSRS server that must also move (RDS SSRS option on SQL 2016-2022, PBIRS from SQL 2025, or EC2).",
+   "fix": "Decide where reports run; regenerate SOAP clients or use the REST API.",
+   "alt": "RDS SSRS option / PBIRS / EC2",
+   "effort": "small-change",
+   "refs": [
+    "S12"
+   ]
+  },
+  {
+   "id": "INT-PDF-WINDOWS",
+   "cat": "integrations",
+   "title": "PDF/HTML rendering libraries with Windows or native dependencies",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bABCpdf\\b",
+    "\\bEvoPdf\\b",
+    "\\bWinnovative\\b",
+    "\\bwkhtmltopdf\\b",
+    "\\bRotativa\\b",
+    "\\b(Tues)?Pechkin\\b",
+    "\\bSelectPdf\\b",
+    "\\biTextSharp\\b"
+   ],
+   "why": "These need Windows binaries, native wkhtmltopdf builds, or have licence changes (iTextSharp 5 is AGPL/EOL).",
+   "fix": "Confirm the Linux story and licence; otherwise move to QuestPDF, PuppeteerSharp/Playwright (Chromium), or iText 8 (commercial/AGPL).",
+   "alt": "QuestPDF / PuppeteerSharp / iText 8",
+   "effort": "small-change",
+   "refs": [
+    "S6"
+   ]
+  },
+  {
+   "id": "INT-SHAREPOINT-EXCHANGE",
+   "cat": "integrations",
+   "title": "SharePoint server object model / Exchange EWS",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.SharePoint\\b(?!\\.Client)",
+    "\\bMicrosoft\\.Exchange\\.WebServices\\b"
+   ],
+   "why": "The SharePoint server object model is on-prem/Windows only; EWS is being retired in favour of Microsoft Graph.",
+   "fix": "Use Microsoft Graph / CSOM REST APIs with app credentials.",
+   "alt": "Microsoft Graph",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "TZ-WINDOWS-ID",
+   "cat": "time-culture",
+   "title": "Windows time-zone IDs",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "sql"
+   ],
+   "pat": [
+    "FindSystemTimeZoneById\\(\\s*\"[^\"]+\"",
+    "\"[A-Z][A-Za-z .]+ (Standard|Daylight) Time\""
+   ],
+   "why": "On Linux .NET resolves Windows IDs only through ICU; containers without ICU/tzdata or in invariant mode throw TimeZoneNotFoundException.",
+   "fix": "Store IANA IDs (or convert with TimeZoneInfo.TryConvertWindowsIdToIanaId); include tzdata and ICU in the image.",
+   "alt": "IANA IDs; NodaTime",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "TZ-LOCAL-TIME",
+   "cat": "time-culture",
+   "title": "Server-local time (DateTime.Now / Today)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bDateTime\\.(Now|Today)\\b",
+    "\\bDate\\.Now\\b",
+    "\\bTimeZoneInfo\\.Local\\b"
+   ],
+   "why": "AWS hosts and containers run in UTC; logic that relied on the on-prem server's local time zone shifts (cut-offs, reports, schedules).",
+   "fix": "Decide the business time zone explicitly; use DateTime.UtcNow / TimeProvider and convert at the edges, or set TZ deliberately.",
+   "alt": "TimeProvider + explicit business time zone",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ],
+   "question": "Which time zone are the current servers set to, and which business rules depend on it?"
+  },
+  {
+   "id": "TZ-SQL-LOCAL-TIME",
+   "cat": "time-culture",
+   "title": "Database-server local time (GETDATE)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\b(GETDATE|SYSDATETIME|CURRENT_TIMESTAMP)\\b"
+   ],
+   "why": "RDS instances default to UTC (time zone can only be set at creation); Babelfish/PostgreSQL also run UTC by default.",
+   "fix": "Choose the RDS time zone at creation, or store UTC (GETUTCDATE/SYSUTCDATETIME) and convert.",
+   "alt": "RDS time zone setting / UTC storage",
+   "effort": "db-object-small",
+   "db": {
+    "rds": "limited",
+    "babelfish": "limited"
+   },
+   "refs": [
+    "S11"
+   ]
+  },
+  {
+   "id": "CULT-HARDCODED",
+   "cat": "time-culture",
+   "title": "Culture handling",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bnew\\s+CultureInfo\\(\\s*\"",
+    "\\bCultureInfo\\.GetCultureInfo\\(\\s*\"",
+    "<globalization\\b[^>]*(culture|uiCulture)="
+   ],
+   "why": "Culture data comes from ICU on Linux (formats, sorting and comparisons can differ from Windows NLS); web.config globalization settings are not applied in ASP.NET Core.",
+   "fix": "Set RequestLocalization explicitly; test formatting/sorting; keep ICU in images.",
+   "alt": "RequestLocalizationOptions",
+   "effort": "trivial",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "SEC-OLD-TLS",
+   "cat": "security",
+   "title": "Legacy TLS/SSL protocol settings",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "SecurityProtocolType\\.(Ssl3|Tls|Tls11)\\b(?!12|13)",
+    "SslProtocols\\.(Ssl2|Ssl3|Tls|Tls11)\\b(?!12|13)",
+    "\\bServicePointManager\\.SecurityProtocol\\b"
+   ],
+   "why": "Forcing TLS 1.0/1.1 fails against modern endpoints and compliance baselines; on .NET the OS (OpenSSL) negotiates TLS.",
+   "fix": "Remove protocol pinning and let the OS choose (TLS 1.2+); verify partners support TLS 1.2+.",
+   "alt": "OS defaults (TLS 1.2/1.3)",
+   "effort": "trivial",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "SEC-CERT-VALIDATION-OFF",
+   "cat": "security",
+   "title": "Certificate validation disabled",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "ServerCertificateValidationCallback\\s*\\+?=",
+    "ServerCertificateCustomValidationCallback\\s*=",
+    "DangerousAcceptAnyServerCertificateValidator"
+   ],
+   "why": "Bypassing certificate validation hides man-in-the-middle risk and usually masks a missing internal CA.",
+   "fix": "Install the internal CA in the image / trust store, remove the bypass.",
+   "alt": "Trusted CA bundle",
+   "effort": "trivial",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "SEC-WEAK-CRYPTO",
+   "cat": "security",
+   "title": "Weak hashes / ciphers",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(MD5|SHA1)(CryptoServiceProvider|Managed|Cng)?\\.Create\\(",
+    "\\bnew\\s+(MD5|SHA1)(CryptoServiceProvider|Managed|Cng)\\b",
+    "\\b(DES|TripleDES|RC2)CryptoServiceProvider\\b",
+    "\\bRijndaelManaged\\b"
+   ],
+   "why": "Weak algorithms fail common compliance baselines (PCI DSS, HIPAA guidance); some legacy types are obsolete on .NET.",
+   "fix": "Use SHA-256+ and AES-GCM; keep MD5/SHA1 only for non-security checksums.",
+   "alt": "SHA256 / AesGcm",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "SEC-CONFIG-HARDENING",
+   "cat": "security",
+   "title": "Insecure web.config settings",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "markup",
+    "cs"
+   ],
+   "pat": [
+    "<compilation\\b[^>]*debug=\"true\"",
+    "<customErrors\\s+mode=\"Off\"",
+    "validateRequest=\"false\"",
+    "requestValidationMode=\"2\\.0\"",
+    "\\[ValidateInput\\(false\\)\\]",
+    "enableViewStateMac=\"false\""
+   ],
+   "why": "Debug builds, detailed errors and disabled request validation weaken the production posture.",
+   "fix": "Disable in production configuration; review input encoding where validation is off.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "BUILD-WEB-TARGETS",
+   "cat": "build-delivery",
+   "title": "Visual Studio web application build targets",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "proj"
+   ],
+   "pat": [
+    "Microsoft\\.WebApplication\\.targets",
+    "\\$\\(VSToolsPath\\)\\\\WebApplications"
+   ],
+   "why": "These MSBuild targets ship with Visual Studio on Windows; the project cannot `dotnet build` on Linux as-is.",
+   "fix": "Convert to SDK-style (Microsoft.NET.Sdk.Web) during the port.",
+   "alt": "SDK-style projects",
+   "effort": "trivial",
+   "baseline": true,
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "BUILD-EVENTS",
+   "cat": "build-delivery",
+   "title": "Pre/post-build events with Windows commands",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "proj"
+   ],
+   "pat": [
+    "<(Pre|Post)BuildEvent>\\s*\\S",
+    "<Exec\\s+Command=\"[^\"]*(xcopy|robocopy|copy\\s|del\\s|\\.exe|\\.bat|\\.cmd|powershell)"
+   ],
+   "why": "Windows shell commands in build steps fail on Linux build agents.",
+   "fix": "Replace with MSBuild tasks (Copy, Delete) or cross-platform scripts.",
+   "alt": "MSBuild Copy/Exec with pwsh",
+   "effort": "trivial",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "BUILD-WINDOWS-CI",
+   "cat": "build-delivery",
+   "title": "Windows-only CI agents / steps",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "ci"
+   ],
+   "pat": [
+    "(?i)vmImage:\\s*['\"]?windows",
+    "(?i)runs-on:\\s*windows",
+    "(?i)\\bVSBuild@\\d",
+    "(?i)\\bMSBuild@\\d",
+    "(?i)\\bNuGetCommand@\\d",
+    "(?i)\\bVSTest@\\d",
+    "(?i)\\bbat\\s+['\"]",
+    "(?i)\\bmsbuild(\\.exe)?\\s"
+   ],
+   "why": "Pipelines build on Windows agents with Visual Studio tasks.",
+   "fix": "Move to `dotnet` CLI steps on Linux runners (CodeBuild / GitHub Actions ubuntu).",
+   "alt": "AWS CodeBuild / GitHub Actions Linux runners",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "BUILD-PRIVATE-FEED",
+   "cat": "build-delivery",
+   "title": "Private NuGet feeds",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "<add\\s+key=\"[^\"]+\"\\s+value=\"(?!https://api\\.nuget\\.org)(https?://|\\\\\\\\|[A-Za-z]:\\\\)[^\"]+\"\\s*(protocolVersion=\"\\d\"\\s*)?/>"
+   ],
+   "requires": "<packageSources>",
+   "why": "Private packages must be available to the new build system (and uploaded to AWS Transform when it is used).",
+   "fix": "Host private packages in AWS CodeArtifact; port private packages first.",
+   "alt": "AWS CodeArtifact",
+   "effort": "small-change",
+   "refs": [
+    "S17"
+   ],
+   "question": "Where are the private NuGet packages built, and do we get their source?"
+  },
+  {
+   "id": "TEST-CODED-UI",
+   "cat": "tests",
+   "title": "Coded UI / MSTest v1 tests",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.VisualStudio\\.TestTools\\.UITesting\\b",
+    "\\bCodedUITest\\b",
+    "Microsoft\\.VisualStudio\\.QualityTools\\.UnitTestFramework"
+   ],
+   "why": "Coded UI is deprecated and Windows-only; MSTest v1 needs conversion to MSTest.TestFramework.",
+   "fix": "Move UI tests to Playwright/Selenium; convert unit tests to MSTest v3/xUnit.",
+   "alt": "Playwright / MSTest v3",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "FE-LEGACY-LIBS",
+   "cat": "front-end",
+   "title": "Outdated client libraries",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "markup",
+    "js",
+    "config"
+   ],
+   "pat": [
+    "jquery-([12]\\.\\d+(\\.\\d+)?|3\\.[0-4]\\.\\d+)(\\.min)?\\.js",
+    "angular(\\.min)?\\.js",
+    "bootstrap(\\.min)?\\.js\\?v=[23]\\.",
+    "knockout-\\d",
+    "modernizr-[12]\\."
+   ],
+   "why": "Old jQuery (< 3.5) and AngularJS (EOL) carry known vulnerabilities and complicate the UI port.",
+   "fix": "Upgrade or replace during the UI work; serve from a bundler or CDN.",
+   "alt": "jQuery 3.7+ / modern framework",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "FE-BUNDLING",
+   "cat": "front-end",
+   "title": "System.Web.Optimization bundling",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bSystem\\.Web\\.Optimization\\b",
+    "\\b(Script|Style)Bundle\\(",
+    "\\b(Scripts|Styles)\\.Render\\("
+   ],
+   "why": "Runtime bundling is not available in ASP.NET Core.",
+   "fix": "Bundle at build time (Vite/esbuild) or use WebOptimizer.",
+   "alt": "Vite / esbuild / LigerShark.WebOptimizer",
+   "effort": "small-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "FE-VIEWSTATE",
+   "cat": "front-end",
+   "title": "ViewState reliance",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\bViewState\\[",
+    "EnableViewState=\"true\"",
+    "\\bIsPostBack\\b"
+   ],
+   "why": "ViewState/postback state management has no equivalent outside Web Forms.",
+   "fix": "Redesign page state in the target UI.",
+   "alt": "Component state (Blazor) / client state",
+   "effort": "per-occurrence-small",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  }
+ ]
+}
