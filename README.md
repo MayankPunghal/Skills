@@ -28,6 +28,7 @@ npx -y github:MayankPunghal/Skills
 - [Installer reference](#installer-reference)
 - [How it works](#how-it-works)
 - [Supported agents](#supported-agents)
+- [Claude app and phone](#claude-app-and-phone)
 - [Publishing a skill](#publishing-a-skill)
 - [Troubleshooting](#troubleshooting)
 - [Repository layout](#repository-layout)
@@ -90,6 +91,7 @@ npx -y github:MayankPunghal/Skills [command] [options]
 | *(none)* / `install` | Interactive install: choose skills, scope, agents, copy or link, prerequisites |
 | `update` | Refresh every recorded install from the latest `main`, and offer skills added since then |
 | `setup` | Install or repair prerequisites for installed skills (e.g. after upgrading Python) |
+| `zips` | Rebuild the upload-ready zips for the Claude app and list the changed ones |
 | `list` | Show what is installed, for which agent and where |
 | `uninstall` | Remove installs (pick from a list, or all with `--yes`) |
 
@@ -102,6 +104,7 @@ npx -y github:MayankPunghal/Skills [command] [options]
 | `--dir=PATH` | Project folder for `--scope=project` (default: current folder) |
 | `--link` | Link to the managed clone instead of copying (updates with every installer run) |
 | `--no-setup` | Skip prerequisite installation |
+| `--no-zips` | Don't write the Claude app zips |
 | `--no-sync` | Use the copy npx provided instead of refreshing the managed clone |
 
 Examples:
@@ -141,7 +144,19 @@ npx github:MayankPunghal/Skills
 | Codex / shared `.agents` | `~/.agents/skills` | `.agents/skills` | ✓ |
 | Cursor | — | `.cursor/skills` | ✓ |
 | GitHub Copilot | — | `.github/skills` | ✓ |
-| claude.ai / Claude desktop | Upload a zipped skill folder under **Settings → Capabilities → Skills** | — | ✓ |
+| Claude app (desktop, web, phone) | Upload the zips from `~/.mayank-skills/zips` under **Settings → Capabilities → Skills** ([details](#claude-app-and-phone)) | — | ✓ |
+
+## Claude app and phone
+
+Chats in the Claude app (desktop, web, phone) use skills stored in your **claude.ai account**. No installer can write there, so every `install`, `update` and `zips` run also writes one upload-ready zip per skill to `~/.mayank-skills/zips/` and lists the ones that changed since the last run:
+
+```
+Claude app / claude.ai (phone, web, desktop chats use skills stored in your account)
+  Upload-ready zips: C:\Users\you\.mayank-skills\zips
+  Upload these in Settings → Capabilities → Skills (replace the old copy): ytstudio.zip
+```
+
+Upload just those under **Settings → Capabilities → Skills**. Once uploaded, they're on every device signed in to the account. `npx -y github:MayankPunghal/Skills zips` rebuilds the zips on demand (and opens the folder on Windows); `--no-zips` skips them.
 
 ## Publishing a skill
 

@@ -5,6 +5,7 @@
  *   npx -y github:MayankPunghal/Skills              interactive install (pick skills, agents, global/project)
  *   npx -y github:MayankPunghal/Skills update       reinstall everything recorded in the manifest from the latest repo
  *   npx -y github:MayankPunghal/Skills setup        install the prerequisites (Python packages) of installed skills
+ *   npx -y github:MayankPunghal/Skills zips         rebuild the upload-ready zips for the Claude app (opens the folder on Windows)
  *   npx -y github:MayankPunghal/Skills list         show what is installed where
  *   npx -y github:MayankPunghal/Skills uninstall    remove skills this installer put in place
  *
@@ -18,6 +19,8 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import zlib from "node:zlib";
+import crypto from "node:crypto";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = path.join(HERE, "skills");
@@ -261,6 +264,79 @@ function runSetup(names, installedPathFor) {
   return ok;
 }
 
+// ---------- upload-ready zips (Claude app / claude.ai) ----------
+// App chats use skills stored in the claude.ai account, which no installer can reach. So every run also writes one
+// zip per skill (the skill folder at the top level, as Settings -> Capabilities -> Skills expects) and reports which
+// ones changed since the last build: those are the ones to re-upload.
+const ZIP_DIR = path.join(HOME, ".mayank-skills", "zips");
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+
+function listFiles(dir, base = dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (SKIP.has(e.name) || e.name.endsWith(".pyc")) continue;
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...listFiles(p, base));
+    else if (e.isFile()) out.push(p);
+  }
+  return out;
+}
+
+/** Minimal ZIP writer (deflate, no dependencies). Fixed timestamps so identical content gives identical zips. */
+function writeZip(srcDir, rootName, outFile) {
+  const parts = [], central = [];
+  let offset = 0;
+  const DOS_TIME = 0, DOS_DATE = (2020 - 1980) << 9 | 1 << 5 | 1; // 2020-01-01: stable output for change detection
+  for (const file of listFiles(srcDir)) {
+    const name = Buffer.from(rootName + "/" + path.relative(srcDir, file).split(path.sep).join("/"), "utf8");
+    const data = fs.readFileSync(file);
+    const comp = zlib.deflateRawSync(data, { level: 9 });
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6); local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(DOS_TIME, 10); local.writeUInt16LE(DOS_DATE, 12); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(comp.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26); local.writeUInt16LE(0, 28);
+    parts.push(local, name, comp);
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6); cen.writeUInt16LE(0x0800, 8); cen.writeUInt16LE(8, 10);
+    cen.writeUInt16LE(DOS_TIME, 12); cen.writeUInt16LE(DOS_DATE, 14); cen.writeUInt32LE(crc, 16); cen.writeUInt32LE(comp.length, 20);
+    cen.writeUInt32LE(data.length, 24); cen.writeUInt16LE(name.length, 28); cen.writeUInt32LE(offset, 42);
+    central.push(cen, name);
+    offset += 30 + name.length + comp.length;
+  }
+  const cenBuf = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(central.length / 2, 8); end.writeUInt16LE(central.length / 2, 10);
+  end.writeUInt32LE(cenBuf.length, 12); end.writeUInt32LE(offset, 16);
+  const zip = Buffer.concat([...parts, cenBuf, end]);
+  fs.writeFileSync(outFile, zip);
+  return crypto.createHash("sha256").update(zip).digest("hex").slice(0, 16);
+}
+
+/** Build a zip per skill into ~/.mayank-skills/zips and say which changed since the last build. */
+function buildZips({ quiet = false } = {}) {
+  fs.mkdirSync(ZIP_DIR, { recursive: true });
+  const stateFile = path.join(ZIP_DIR, "zips.json");
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch {}
+  const changed = [];
+  for (const s of readSkills()) {
+    const hash = writeZip(skillDir(s.name), s.name, path.join(ZIP_DIR, `${s.name}.zip`));
+    if (state[s.name] !== hash) changed.push(s.name);
+    state[s.name] = hash;
+  }
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  if (quiet && !changed.length) return changed;
+  say("");
+  say(bold("Claude app / claude.ai") + dim(" (phone, web, desktop chats use skills stored in your account)"));
+  say(`  Upload-ready zips: ${ZIP_DIR}`);
+  say(changed.length
+    ? `  ${yellow("Upload these")} in Settings → Capabilities → Skills (replace the old copy): ${changed.map((n) => n + ".zip").join(", ")}`
+    : dim("  No skill changed since the last build: nothing to re-upload."));
+  return changed;
+}
+
 // ---------- commands ----------
 async function cmdInstall(flags) {
   const all = readSkills();
@@ -320,6 +396,7 @@ async function cmdInstall(flags) {
   }
   say("");
   say(green(bold(`Done — ${n} skill install(s).`)) + " Claude Code picks them up automatically (or run /reload-skills).");
+  if (!flags["no-zips"]) buildZips();
   say(dim("Update later: npx -y github:MayankPunghal/Skills update   ·   See installs: … list"));
 }
 
@@ -340,6 +417,7 @@ async function cmdUpdate(flags) {
   }
   saveManifest(m);
   say(green(`\nUpdated ${n} install(s).`));
+  if (!flags["no-zips"]) buildZips();
 
   // Skills added to the repo since the last install: offer them, into the same folders the others went to.
   const have = new Set(m.installs.map((i) => i.skill));
@@ -462,9 +540,10 @@ function syncPersonal(flags) {
 const { cmd, flags } = args();
 syncAndHandOver(flags);
 syncPersonal(flags);
-const run = { install: cmdInstall, update: cmdUpdate, setup: cmdSetup, list: cmdList, uninstall: cmdUninstall }[cmd];
+const cmdZips = () => { const c = buildZips(); if (process.platform === "win32" && c.length) spawnSync("explorer", [ZIP_DIR]); };
+const run = { install: cmdInstall, update: cmdUpdate, setup: cmdSetup, list: cmdList, uninstall: cmdUninstall, zips: cmdZips }[cmd];
 if (!run || flags.help) {
-  say("Usage: npx -y github:MayankPunghal/Skills [install|update|setup|list|uninstall] [--skills=all|a,b] [--agents=claude,codex,cursor,copilot] [--scope=global|project] [--dir=PATH] [--link] [--yes] [--no-setup]");
+  say("Usage: npx -y github:MayankPunghal/Skills [install|update|setup|zips|list|uninstall] [--skills=all|a,b] [--agents=claude,codex,cursor,copilot] [--scope=global|project] [--dir=PATH] [--link] [--yes] [--no-setup] [--no-zips]");
   process.exit(run ? 0 : 1);
 }
 Promise.resolve(run(flags)).catch((e) => { say(red(`\n✖ ${e.message}`)); process.exit(1); });
