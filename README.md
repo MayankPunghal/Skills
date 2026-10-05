@@ -5,7 +5,7 @@
 **Production-grade Agent Skills for Claude Code, Codex, Cursor and GitHub Copilot.**
 <br>One command installs them, and Claude picks the right one on its own.
 
-[![Skills](https://img.shields.io/badge/skills-3-6E56CF)](#skills)
+[![Skills](https://img.shields.io/badge/skills-4-6E56CF)](#skills)
 [![Agents](https://img.shields.io/badge/agents-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20Copilot-0A7EA4)](#supported-agents)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.10-3776AB?logo=python&logoColor=white)](https://www.python.org)
@@ -39,6 +39,7 @@ npx -y github:MayankPunghal/Skills
 | Skill | What it does | Bundles |
 |---|---|---|
 | [**codebase-documenter**](skills/codebase-documenter/SKILL.md) | Documents an existing codebase end to end, in any language. It builds a knowledge graph, an exhaustive cross-linked reference and narrative docs (architecture with C4, workflows, data model, security findings), then an offline searchable MkDocs site and an agent layer (`AGENTS.md`, project skill, `llms.txt`). | 14 commands · Python scripts · templates · prerequisite installer |
+| [**gh-review-pr**](skills/gh-review-pr/SKILL.md) | Reviews a GitHub pull request as a senior engineer using the gh CLI, returns structured findings, and can post them as inline review comments. | — |
 | [**migration-assessment**](skills/migration-assessment/SKILL.md) | Assesses legacy .NET estates (one repo or hundreds) for AWS and Linux. It scans for everything that breaks on Linux or .NET 10, classifies apps with the 7 Rs, estimates effort, and writes a client-ready report (Markdown, interactive HTML, JSON/CSV). | 130+ detection rules · estimation model · report templates · worked sample |
 | [**skill-publisher**](skills/skill-publisher/SKILL.md) | Takes any skill folder or zip, refactors it to the [conventions](CONVENTIONS.md) without dropping content, validates it, scans it for secrets, pushes it to this repo and installs it with its prerequisites. | Staging · secret scan · validator gate · git automation |
 
