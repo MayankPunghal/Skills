@@ -153,6 +153,11 @@
   "wave_size_apps": 3,
   "wave_overlap": 0.3
  },
+ "activity_thresholds": {
+  "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",
+  "active_commits_per_week": 3,
+  "hot_commits_per_week": 15
+ },
  "complexity_bands": {
   "_doc": "Work-package size label from likely person-days.",
   "S": 3,
