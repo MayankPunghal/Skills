@@ -29,6 +29,9 @@ import _findings as F
 import _optional as O
 
 
+OPTIONAL_CACHE = {}
+
+
 def lk(r, pos=0.4):
     return r[0] + pos * (r[1] - r[0])
 
@@ -135,12 +138,16 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         fan_in = {p["path"]: 0 for p in inv["projects"]}
         norm = {k.replace("\\", "/").lower(): k for k in by_path}
         for p in inv["projects"]:
+            if p.get("type") == "test":
+                continue  # a test project referencing a library does not make it a shared dependency
             for ref in p.get("project_references", []):
                 t = norm.get(ref.replace("\\", "/").lower())
                 if t:
                     fan_in[t] += 1
         repo_apps = [x for x in cls["applications"] if x["repo"] == repo]
-        optional += [dict(o, repo=repo) for o in O.scan_repo(inv["root"], inv)]
+        if repo not in OPTIONAL_CACHE:  # the scan does not depend on the scenario; compute() runs once per scenario
+            OPTIONAL_CACHE[repo] = O.scan_repo(inv["root"], inv)
+        optional += [dict(o, repo=repo) for o in OPTIONAL_CACHE[repo]]
 
         def skip(f, mode, desktop):
             cat = f["category"]

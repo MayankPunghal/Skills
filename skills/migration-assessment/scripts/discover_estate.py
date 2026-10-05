@@ -305,7 +305,7 @@ def inventory_repo(name, repo_root, cfg):
                     lang = "generated"  # designer / T4 / service-reference code: regenerated, not ported by hand
                 bucket["loc"][lang] += n
                 if ext in (".cs", ".vb") and lang != "generated" and o is not None:
-                    bucket.setdefault("cx_files", []).append(file_metrics(read_text(f)))
+                    bucket.setdefault("cx_files", []).append(file_metrics(read_text(f), vb=(ext == ".vb")))
                 if ext in (".cs", ".vb") and o is not None and not per_proj[o["path"]]["servicebase"] and n:
                     if re.search(r"(:\s*ServiceBase\b|Inherits\s+(System\.ServiceProcess\.)?ServiceBase\b)", read_text(f)):
                         per_proj[o["path"]]["servicebase"] = True

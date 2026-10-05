@@ -9,6 +9,14 @@ import re
 from _common import SOURCE_DIR_SKIP, data, read_text, rel
 
 SOURCE_EXT = (".cs", ".vb", ".config", ".cshtml", ".aspx")
+# Comments are blanked (line numbers kept); string literals are left alone so a // inside a URL is not read as a comment.
+_TOKEN = re.compile(r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|(?P<c>//[^\n]*|/\*.*?\*/|<!--.*?-->)', re.S)
+
+
+def strip_comments(text):
+    return _TOKEN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)) if m.group("c") else m.group(0), text)
+
+
 MAX_FILE_BYTES = 1_500_000  # larger files are generated or data, not code worth reading for these patterns
 
 
@@ -28,11 +36,10 @@ def scan_repo(root, inv):
                 full = os.path.join(d, fn)
                 if os.path.getsize(full) > MAX_FILE_BYTES or fn.lower().endswith((".designer.cs", ".g.cs")):
                     continue
-                for n, line in enumerate(read_text(full).splitlines(), 1):
-                    code = line.split("//")[0]
+                for n, code in enumerate(strip_comments(read_text(full)).splitlines(), 1):
                     for it in items:
                         if any(r.search(code) for r in rx[it["id"]]):
-                            hits[it["id"]].setdefault(rel(full, root), (n, line.strip()[:140]))
+                            hits[it["id"]].setdefault(rel(full, root), (n, code.strip()[:140]))
     out = []
     for it in items:
         files = hits[it["id"]]
