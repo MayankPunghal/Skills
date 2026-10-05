@@ -159,7 +159,7 @@ def third_party(c):
         for cs in c.scan[r].get("connection_strings", []):
             if cs.get("host") and not cs.get("localdb") and cs["host"] not in (".", "(local)", "localhost"):
                 onprem.append({"system": f"{cs['host']} / {cs.get('database') or '-'}", "protocols": "sql", "used_by": ", ".join(apps_for_files([cs["file"]], inv, apps)) or "-",
-                               "references": 1, "evidence": f"{cs['file']}:{cs['line']}", "repo": r, "needs": "Database server: migrate (RDS/Babelfish) or keep reachable"})
+                               "references": 1, "evidence": f"{cs['file']}:{cs['line']}", "repo": r, "needs": "Database server: convert for PostgreSQL (dual or PostgreSQL-only) or keep reachable"})
         for p in c.scan[r].get("packages", []):
             m = next((s for s in sdks if s["_rx"].match(p["id"])), None)
             if not m:

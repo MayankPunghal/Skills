@@ -11,8 +11,8 @@ Write per [style-guide.md](style-guide.md).
 
 1. **Gather facts first.** Make sure findings are reviewed, decisions confirmed (`decisions.json`), and `estimate_effort.py` has been rerun.
 2. **Run `build_report.py` once** to see the generated sections. The narratives refer to them.
-3. **Write the narratives** in this order: `architecture`, `database`, `application-plans`, `testing-and-merge`, `risks-and-questions`, `cost`, and **`executive-summary` last**.
-   - Delete each stub's `TODO:` line.
+3. **Write the narratives** in this order: `architecture`, `dependencies`, `database`, `application-plans`, `testing-and-merge`, `risks-and-questions`, `cost`, and **`executive-summary` last**.
+   - Delete each stub's `PENDING:` line.
    - Use `graphify explain "<entry class>" --graph …` and the dependency table to describe what each application does. Read entry points (controllers, pages, service contracts, `Main`), not whole folders.
    - Cite findings as `F-nnn`. The references are stable until the next build, so rebuild before final proofreading.
    - **Copy numbers from `estimate.json` / the report tables. Never compute or invent them in prose.**

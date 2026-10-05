@@ -7,9 +7,10 @@ Gates
   2 coverage        every category appears in the report with findings or "Checked, none found."
   3 review          every Blocker/High finding with confidence "Needs verification" has a reviewer verdict
   4 decisions       every application has a reviewed 7R decision in assessment/decisions.json (--allow-draft: warning only)
-  5 narratives      no TODO markers left in assessment/narrative/*.md and no missing narrative in the report
+  5 narratives      no PENDING markers left in assessment/narrative/*.md and no missing narrative in the report
   6 secrets         no secret value from the client's config/code appears in the report or exports
   7 structure       report sections 1-11 present; estimate, open questions and an up-to-date HTML report present
+  8 dependencies    sections 4.5-4.7 present; every inventoried project in the interdependency table; workflows traced for every application
 """
 import argparse
 import glob
@@ -110,9 +111,9 @@ def main():
     ok4 = not draft or a.allow_draft
     results.append(("7R decisions reviewed", ok4, f"{len(cls['applications'])} applications; draft (not reviewed): {len(draft)}" + (f" ({', '.join(draft[:6])})" if draft else "") + (" [allowed]" if draft and a.allow_draft else "")))
     # 5 narratives
-    todo = [os.path.basename(p) for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^TODO:", open(p, encoding="utf-8").read())]
+    todo = [os.path.basename(p) for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^(?:PENDING|TODO):", open(p, encoding="utf-8").read())]
     missing_n = re.findall(r"_Narrative '([\w-]+)' not written yet\._", report)
-    results.append(("narratives written", not todo and not missing_n, f"TODO in: {', '.join(todo) or 'none'}; missing: {', '.join(missing_n) or 'none'}"))
+    results.append(("narratives written", not todo and not missing_n, f"PENDING in: {', '.join(todo) or 'none'}; missing: {', '.join(missing_n) or 'none'}"))
     # 6 secrets
     vals = set()
     for inv in invs.values():
@@ -136,6 +137,18 @@ def main():
     ok7 = not absent and bool(est.get("totals", {}).get("likely_days")) and os.path.exists(oq) and bool(htmls) and not stale
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
                     f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
+    # 8 dependencies: project interdependencies and workflow tracing
+    miss_sec = [h for h in ("### 4.5 ", "### 4.6 ", "### 4.7 ") if h not in report]
+    sec45 = report.split("### 4.5 ", 1)[1].split("### 4.6 ", 1)[0] if "### 4.5 " in report and "### 4.6 " in report else ""
+    sec46 = report.split("### 4.6 ", 1)[1].split("### 4.7 ", 1)[0] if "### 4.6 " in report and "### 4.7 " in report else ""
+    miss_proj = [p["name"] for inv in invs.values() for p in inv["projects"] if p["name"] not in sec45]
+    apps = [x["name"] for x in cls["applications"] if x.get("r7") != "Retire"]
+    npath = os.path.join(OUT, "narrative", "dependencies.md")
+    ntext = read_text(npath) if os.path.exists(npath) else ""
+    no_wf = [n for n in apps if "#### " + n + " " not in sec46 and n not in ntext]
+    ok8 = not miss_sec and not miss_proj and not no_wf
+    results.append(("dependencies mapped", ok8, f"missing sections: {', '.join(miss_sec) or 'none'}; projects not in 4.5: {len(miss_proj)}; applications without traced workflows: {', '.join(no_wf) or 'none'}"
+                    + ("" if not no_wf else " (no entry points detected: describe the app's workflows manually in the dependencies narrative and mention the app by name)")))
     w = max(len(n) for n, _, _ in results)
     for name, ok, detail in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name:<{w}}  {detail}")

@@ -57,20 +57,18 @@ Between `scan` and `build`, the assessor (Claude, or you) does the judgment work
 
 The estimate covers what the client actually wants and compares the alternatives side by side. Choose with `setup_assessment.py --target-hosting ... --target-database ...`.
 
-| Hosting | Meaning |
+| Hosting (code side) | Meaning |
 | --- | --- |
-| `modernize` | .NET 10 on Linux containers (ECS Fargate) with managed services, per-application 7R decisions |
-| `linux-lift` | Lift-and-shift to EC2 Linux: minimal port to .NET 10, same architecture. Windows-bound apps are rehosted on EC2 Windows |
-| `windows-rehost` | As-is on EC2 Windows, no code port |
+| `modernize` | Convert .NET Windows applications to .NET 10 on Linux, per-application 7R decisions |
+| `windows-rehost` | Lift-and-shift Windows applications from on-premises to Windows EC2: no code port, only network, identity and configuration changes |
 
-| Database | Meaning |
+| Database (code side) | Meaning |
 | --- | --- |
-| `auto` / `rds-sqlserver` / `ec2-sqlserver` | Keep SQL Server (blocker fixes included) |
-| `babelfish` | Aurora PostgreSQL with Babelfish |
-| `postgresql` | Full port: every table, view, procedure, function and trigger plus the data-access code. Uses the database inventory (sizes, T-SQL constructs, stored-procedure call sites, EF function imports) |
-| `dual` | The app supports SQL Server and PostgreSQL. Adds provider abstraction, a CI matrix and double testing |
+| `dual` | The app supports SQL Server and PostgreSQL. Adds provider abstraction and keeps every procedure for both engines |
+| `postgresql` | PostgreSQL only: every table, view, procedure, function and trigger plus the data-access code. Uses the database inventory (sizes, T-SQL constructs, stored-procedure call sites, EF function imports) |
+| `none` | SQL Server stays; no database code change |
 
-Effort is shown in hours and person-days, AI-assisted with the manual equivalent alongside. The AI factors are configurable: code, QA, operations and database conversion (`scripts/data/estimation.json`).
+Effort is **coding hours only** (no QA, DevOps, project management or contingency), with person-days, AI-assisted and the manual equivalent alongside. Hours are driven by lines of code, project type and a complexity factor (decision density, fan-in, large files); see [estimation-model.md](references/estimation-model.md). The factors are configurable in `scripts/data/estimation.json`. Optional modernizations (SMTP to SES/SNS, Kafka to SQS/SNS, files to S3 and more) are listed with their own hours and are never added to the total.
 
 ## What it produces
 
@@ -85,9 +83,9 @@ All in `assessment/report/`:
   1. Executive summary
   2. Scope and method
   3. Application inventory
-  4. Architecture and dependency map (Mermaid + graphify insights)
+  4. Architecture and dependencies (Mermaid map, graphify insights, project interdependencies, workflow dependencies, database object dependencies)
   5. Findings by category (27 categories, each with evidence or "checked, none found")
-  6. Database assessment (RDS / Babelfish / EC2 matrix)
+  6. Database assessment (dual / PostgreSQL code conversion)
   7. Per-application plans (with the hybrid table)
   8. Effort and phased timeline
   9. Risks and open questions

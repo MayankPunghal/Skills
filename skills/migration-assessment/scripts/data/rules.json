@@ -1195,7 +1195,7 @@
     "^\\s*Imports\\s+System\\.Data\\.SqlClient\\b"
    ],
    "why": "System.Data.SqlClient is deprecated; Microsoft.Data.SqlClient is the supported provider (different TLS/Encrypt defaults).",
-   "fix": "Switch to Microsoft.Data.SqlClient; set Encrypt/TrustServerCertificate deliberately for RDS.",
+   "fix": "Switch to Microsoft.Data.SqlClient and set Encrypt/TrustServerCertificate deliberately; PostgreSQL targets use Npgsql instead.",
    "alt": "Microsoft.Data.SqlClient",
    "effort": "trivial",
    "refs": [
@@ -1315,13 +1315,12 @@
     "\\bSqlCacheDependency\\b",
     "<sqlCacheDependency"
    ],
-   "why": "Query notifications need Service Broker (not on Babelfish); SqlCacheDependency is System.Web only.",
+   "why": "Query notifications need SQL Server Service Broker (no PostgreSQL equivalent); SqlCacheDependency is System.Web only.",
    "fix": "Replace with explicit cache invalidation or events (ElastiCache, SNS).",
    "alt": "ElastiCache + explicit invalidation",
    "effort": "small-change",
    "db": {
-    "babelfish": "blocker",
-    "rds": "ok"
+    "pg": "redesign"
    },
    "refs": [
     "S14"
@@ -1343,9 +1342,9 @@
     "(?i)Integrated\\s+Security\\s*=\\s*(SSPI|true|yes)",
     "(?i)Trusted_Connection\\s*=\\s*(yes|true)"
    ],
-   "why": "Windows authentication to SQL Server from Linux needs Kerberos (domain-joined host or keytab) and, on RDS, AWS Managed Microsoft AD or a self-managed AD trust.",
+   "why": "Windows authentication to SQL Server from Linux needs Kerberos (domain-joined host or keytab); PostgreSQL uses password/IAM auth instead.",
    "fix": "Switch to SQL authentication with credentials in Secrets Manager (rotation), or set up Kerberos with AWS Managed Microsoft AD.",
-   "alt": "SQL auth + Secrets Manager rotation; Kerberos via AWS Managed Microsoft AD",
+   "alt": "SQL auth + Secrets Manager rotation; IAM database auth for PostgreSQL",
    "effort": "small-change",
    "refs": [
     "S8",
@@ -1367,14 +1366,12 @@
     "(?i)\\bEXTERNAL\\s+NAME\\b",
     "(?i)'clr enabled'"
    ],
-   "why": "CLR is not supported on RDS for SQL Server 2017+ (SAFE only on 2016 and lower) nor on Babelfish.",
-   "fix": "Rewrite CLR routines in T-SQL or move logic to the application / Lambda; or use SQL Server on EC2.",
-   "alt": "T-SQL / app code / Lambda; SQL Server on EC2",
+   "why": "CLR assemblies run inside SQL Server; PostgreSQL has no CLR, so each routine is rewritten.",
+   "fix": "Rewrite CLR routines in PL/pgSQL, or move the logic to the application (preferred when it is not set-based).",
+   "alt": "PL/pgSQL function / application code",
    "effort": "db-object-large",
    "db": {
-    "rds": "blocker",
-    "babelfish": "blocker",
-    "ec2": "ok"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1397,13 +1394,12 @@
     "(?i)\\bOPENROWSET\\s*\\((?!\\s*BULK)",
     "\\[[\\w\\-]+\\]\\.\\[[\\w\\-]+\\]\\.\\[[\\w]+\\]\\.\\[[\\w]+\\]"
    ],
-   "why": "RDS supports linked servers only in limited forms; Babelfish allows read-only four-part names to SQL Server targets.",
+   "why": "PostgreSQL has no linked servers; remote data needs postgres_fdw or application-level integration.",
    "fix": "Inventory each linked server; replace with application-level integration or AWS DMS replication where possible.",
-   "alt": "Application integration / AWS DMS / Glue",
+   "alt": "postgres_fdw / application integration / AWS DMS",
    "effort": "db-object-medium",
    "db": {
-    "rds": "limited",
-    "babelfish": "limited"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1425,14 +1421,12 @@
     "(?i)\\bxp_(fileexist|dirtree|subdirs|regread|regwrite)\\b",
     "(?i)\\bsp_OA(Create|Method|GetProperty|SetProperty|Destroy)\\b"
    ],
-   "why": "Extended stored procedures and OS access are not available on RDS or Babelfish.",
+   "why": "Extended stored procedures and OS access do not exist in PostgreSQL.",
    "fix": "Move OS/file work into the application or a Lambda/ECS task; use S3 integration for files.",
-   "alt": "Lambda / ECS task / RDS S3 integration",
+   "alt": "Lambda / ECS task / S3 for files",
    "effort": "db-object-medium",
    "db": {
-    "rds": "blocker",
-    "babelfish": "blocker",
-    "ec2": "ok"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1453,14 +1447,12 @@
     "(?i)\\bFILETABLE\\b",
     "(?i)\\bAS\\s+FileTable\\b"
    ],
-   "why": "FILESTREAM and FileTables are not supported on RDS or Babelfish.",
+   "why": "FILESTREAM and FileTables have no PostgreSQL equivalent.",
    "fix": "Store blobs in Amazon S3 with keys in the database.",
    "alt": "Amazon S3",
    "effort": "db-object-large",
    "db": {
-    "rds": "blocker",
-    "babelfish": "blocker",
-    "ec2": "ok"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1483,13 +1475,12 @@
     "(?i)\\bRECEIVE\\s+(TOP\\s*\\(|\\*|\\w)",
     "(?i)\\bENABLE_BROKER\\b"
    ],
-   "why": "RDS does not support Service Broker endpoints (cross-instance); Babelfish has no Service Broker.",
+   "why": "Service Broker has no PostgreSQL equivalent (LISTEN/NOTIFY is not a durable queue).",
    "fix": "Replace with Amazon SQS/SNS or an outbox table polled by a worker.",
    "alt": "Amazon SQS / outbox pattern",
    "effort": "db-object-large",
    "db": {
-    "rds": "limited",
-    "babelfish": "blocker"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1508,13 +1499,12 @@
    "pat": [
     "(?i)\\bBEGIN\\s+DISTRIBUTED\\s+TRAN"
    ],
-   "why": "MSDTC needs an option group on RDS and is unsupported on Babelfish.",
+   "why": "MSDTC distributed transactions do not exist in PostgreSQL (two-phase commit is a different mechanism).",
    "fix": "Avoid cross-server transactions; redesign with sagas/outbox.",
    "alt": "Outbox / saga",
    "effort": "db-object-medium",
    "db": {
-    "rds": "limited",
-    "babelfish": "blocker"
+    "pg": "redesign"
    },
    "refs": [
     "S12",
@@ -1536,13 +1526,12 @@
     "(?i)\\bsp_start_job\\b",
     "(?i)msdb\\.(dbo)?\\.sysjobs"
    ],
-   "why": "SQL Agent is available on RDS (msdb import not supported) but not on Babelfish.",
-   "fix": "Recreate jobs on RDS, or move them to EventBridge Scheduler + Lambda/ECS for Babelfish/PostgreSQL.",
+   "why": "SQL Server Agent has no PostgreSQL equivalent (pg_cron covers simple schedules).",
+   "fix": "Move each job to EventBridge Scheduler + Lambda/ECS task, or pg_cron for pure SQL jobs.",
    "alt": "EventBridge Scheduler + Lambda / ECS",
    "effort": "db-object-small",
    "db": {
-    "rds": "ok",
-    "babelfish": "blocker"
+    "pg": "rework"
    },
    "refs": [
     "S11",
@@ -1563,13 +1552,12 @@
     "(?i)\\b(?!dbo\\b|sys\\b|INFORMATION_SCHEMA\\b)\\[?[A-Za-z_][\\w]*\\]?\\.\\[?dbo\\]?\\.\\[?[A-Za-z_][\\w]*\\]?"
    ],
    "not": "(?i)^\\s*(--|/\\*)",
-   "why": "Cross-database queries work on one RDS instance (all databases must move together) and in Babelfish multi-database mode only for DML, not DDL.",
-   "fix": "Keep the related databases on the same instance, or remove the coupling.",
-   "alt": "Same-instance placement / service APIs",
+   "why": "PostgreSQL cannot query across databases; three-part names fail.",
+   "fix": "Put the related data in schemas of one database, use postgres_fdw, or remove the coupling in the application.",
+   "alt": "Schemas in one database / postgres_fdw",
    "effort": "db-object-small",
    "db": {
-    "rds": "limited",
-    "babelfish": "limited"
+    "pg": "rework"
    },
    "refs": [
     "S12",
@@ -1590,13 +1578,12 @@
     "(?i)\\bOPENROWSET\\s*\\(\\s*BULK\\b",
     "(?i)\\bbcp\\s+\\S+\\s+(in|out|queryout)\\b"
    ],
-   "why": "There is no server file system on RDS (use S3 integration) and BULK INSERT is not supported on Babelfish.",
-   "fix": "Load files through the application, AWS DMS/Glue, or RDS S3 integration.",
-   "alt": "RDS S3 integration / AWS Glue",
+   "why": "BULK INSERT and OPENROWSET(BULK) read server files; PostgreSQL uses COPY (client-side) or S3-based loads.",
+   "fix": "Load files through the application, COPY, or AWS Glue.",
+   "alt": "COPY / aws_s3 import / AWS Glue",
    "effort": "db-object-medium",
    "db": {
-    "rds": "limited",
-    "babelfish": "blocker"
+    "pg": "rework"
    },
    "refs": [
     "S11",
@@ -1616,58 +1603,15 @@
     "(?i)\\bCREATE\\s+FULLTEXT\\b",
     "(?i)\\b(CONTAINS|FREETEXT|CONTAINSTABLE|FREETEXTTABLE)\\s*\\("
    ],
-   "why": "Full-text search works on RDS for SQL Server but is not supported by Babelfish.",
-   "fix": "RDS: keep. Babelfish/PostgreSQL: move to PostgreSQL full-text or Amazon OpenSearch.",
+   "why": "SQL Server full-text search is a different engine from PostgreSQL full-text search.",
+   "fix": "Move to PostgreSQL full-text (tsvector) or Amazon OpenSearch.",
    "alt": "Amazon OpenSearch Service",
    "effort": "db-object-medium",
    "db": {
-    "rds": "ok",
-    "babelfish": "blocker"
+    "pg": "rework"
    },
    "refs": [
     "S14"
-   ]
-  },
-  {
-   "id": "DB-BABELFISH-SYNTAX",
-   "cat": "database",
-   "title": "T-SQL syntax not supported by Babelfish",
-   "sev": "Medium",
-   "conf": "Confirmed",
-   "types": [
-    "sql"
-   ],
-   "pat": [
-    "(?i)^\\s*MERGE\\b",
-    "(?i)\\bhierarchyid\\b",
-    "(?i)\\bSYSTEM_VERSIONING\\b",
-    "(?i)\\bFOR\\s+XML\\s+EXPLICIT\\b",
-    "(?i)\\bWITH\\s+XMLNAMESPACES\\b",
-    "(?i)\\bCREATE\\s+(PRIMARY\\s+)?XML\\s+INDEX\\b",
-    "(?i)\\bEXECUTE\\s+AS\\s+(USER|LOGIN|SELF)\\b",
-    "(?i)\\bWITH\\s+EXECUTE\\s+AS\\b",
-    "##[A-Za-z_]\\w*",
-    "(?i)\\bCREATE\\s+SYNONYM\\b",
-    "(?i)\\bGROUP\\s+BY\\s+(ROLLUP|CUBE|ALL)\\b",
-    "(?i)\\bWAITFOR\\s+(DELAY|TIME)\\b",
-    "(?i)\\bCREATE\\s+(UNIQUE\\s+)?CLUSTERED\\s+COLUMNSTORE\\b",
-    "(?i)\\bCREATE\\s+SECURITY\\s+POLICY\\b",
-    "(?i)\\bCREATE\\s+TYPE\\b",
-    "(?i)\\b(UPDATETEXT|WRITETEXT|READTEXT)\\b",
-    "(?i)\\bSET\\s+DATEFORMAT\\b",
-    "(?i)\\bSELECT\\s+TOP\\s*\\(?\\s*\\d+\\s*\\)?\\s+WITH\\s+TIES\\b"
-   ],
-   "why": "Babelfish does not support these constructs (see the AWS list of unsupported functionality); RDS for SQL Server does.",
-   "fix": "Rewrite each construct before choosing Babelfish; confirm with Babelfish Compass on a schema export.",
-   "alt": "Babelfish Compass assessment",
-   "effort": "db-object-small",
-   "db": {
-    "rds": "ok",
-    "babelfish": "blocker"
-   },
-   "refs": [
-    "S14",
-    "S15"
    ]
   },
   {
@@ -1687,14 +1631,12 @@
     "(?i)\\bsp_add(publication|subscription|article)\\b",
     "(?i)\\bsp_replicationdboption\\b"
    ],
-   "why": "RDS gives no sysadmin: sp_configure, TRUSTWORTHY, server triggers, endpoints and replication are unsupported (parameter groups replace sp_configure).",
-   "fix": "Translate settings to RDS parameter groups; remove server-level objects or use SQL Server on EC2.",
-   "alt": "RDS parameter/option groups; SQL Server on EC2",
+   "why": "Server-level settings, triggers, endpoints and replication are SQL Server administration objects with no PostgreSQL counterpart.",
+   "fix": "Translate needed settings to PostgreSQL parameters; drop the server-level objects.",
+   "alt": "PostgreSQL parameter groups",
    "effort": "db-object-medium",
    "db": {
-    "rds": "blocker",
-    "babelfish": "blocker",
-    "ec2": "ok"
+    "pg": "rework"
    },
    "refs": [
     "S12",
@@ -1713,13 +1655,12 @@
    "pat": [
     "(?i)\\bsp_send_dbmail\\b"
    ],
-   "why": "Database Mail works on RDS (with configuration) but not on Babelfish.",
+   "why": "Database Mail does not exist in PostgreSQL.",
    "fix": "Send email from the application through Amazon SES.",
    "alt": "Amazon SES",
    "effort": "db-object-small",
    "db": {
-    "rds": "ok",
-    "babelfish": "blocker"
+    "pg": "redesign"
    },
    "refs": [
     "S11",
@@ -2798,9 +2739,9 @@
     "\\bReportingService20(05|06|10)\\b",
     "/ReportServer"
    ],
-   "why": "Calls an SSRS server that must also move (RDS SSRS option on SQL 2016-2022, PBIRS from SQL 2025, or EC2).",
+   "why": "Calls an SSRS server, which depends on SQL Server; reports need a new home when SQL Server goes.",
    "fix": "Decide where reports run; regenerate SOAP clients or use the REST API.",
-   "alt": "RDS SSRS option / PBIRS / EC2",
+   "alt": "Amazon QuickSight / paginated reporting / SSRS on EC2",
    "effort": "small-change",
    "refs": [
     "S12"
@@ -2917,13 +2858,12 @@
    "pat": [
     "(?i)\\b(GETDATE|SYSDATETIME|CURRENT_TIMESTAMP)\\b"
    ],
-   "why": "RDS instances default to UTC (time zone can only be set at creation); Babelfish/PostgreSQL also run UTC by default.",
-   "fix": "Choose the RDS time zone at creation, or store UTC (GETUTCDATE/SYSUTCDATETIME) and convert.",
-   "alt": "RDS time zone setting / UTC storage",
+   "why": "GETDATE() uses the server's local time; PostgreSQL servers default to UTC, so results shift.",
+   "fix": "Store UTC (GETUTCDATE/SYSUTCDATETIME, now() AT TIME ZONE 'UTC') and convert at the edge.",
+   "alt": "UTC storage",
    "effort": "db-object-small",
    "db": {
-    "rds": "limited",
-    "babelfish": "limited"
+    "pg": "rework"
    },
    "refs": [
     "S11"

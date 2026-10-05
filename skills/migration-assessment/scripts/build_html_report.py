@@ -152,15 +152,17 @@ def collect(c, cfg):
         b = w.get("breakdown_hours", {})
         wps.append({"name": w["name"], "kind": w["kind"], "r7": w.get("r7") or "-", "h": w.get("total_hours", [0, 0]), "lh": w.get("likely_hours", 0),
                     "d": w["total_days"], "ld": w["likely_days"], "mh": w.get("manual_hours", [0, 0]), "size": w["complexity"], "confidence": w["confidence"],
-                    "code": b.get("code", [0, 0]), "qa": b.get("qa", [0, 0]), "ops": b.get("operations", [0, 0]), "drivers": "; ".join(w["drivers"][:4]),
+                    "code": b.get("code", [0, 0]), "drivers": "; ".join(w["drivers"][:4]),
                     "items": [x["item"] for x in w.get("conversion", [])], "findings": [f"{x['title']} ({x['hours'][0]}–{x['hours'][1]} h)" for x in w.get("findings", [])[:15]]})
     for d in c.est.get("databases", []):
         sel = d.get("selected", d["recommended"])
+        if sel == "none":
+            continue
         o = d["options"][sel]
         hrs = o.get("hours", [o["days"][0] * HPD, o["days"][1] * HPD])
-        wps.append({"name": f"{d['repo']}: databases ({sel})", "kind": "database", "r7": "Replatform", "h": hrs, "lh": o.get("likely_hours", round(o["likely"] * HPD)),
-                    "d": o["days"], "ld": o["likely"], "mh": hrs, "size": "-", "confidence": "-", "code": [0, 0], "qa": [0, 0], "ops": hrs,
-                    "drivers": ", ".join(o["blockers"] + o["limited"]) or "-", "items": [f"Migrate {', '.join(d['databases'])} to {sel}"], "findings": []})
+        wps.append({"name": f"{d['repo']}: database code ({sel})", "kind": "database", "r7": "Replatform", "h": hrs, "lh": o.get("likely_hours", round(o["likely"] * HPD)),
+                    "d": o["days"], "ld": o["likely"], "mh": o.get("manual_hours", hrs), "size": "-", "confidence": "-", "code": hrs,
+                    "drivers": ", ".join(o.get("redesign", []) + o.get("rework", [])) or "-", "items": [f"Convert {', '.join(d['databases'])} code to {sel}"], "findings": []})
     t = c.est.get("totals", {})
     loc = sum((c.inv[r] or {}).get("totals", {}).get("loc", 0) for r in c.repos)
     sev = Counter(f["severity"] for f in findings)
@@ -179,8 +181,8 @@ def collect(c, cfg):
     effort = {"h": t.get("total_hours", [0, 0]), "lh": t.get("likely_hours", 0), "d": td, "ld": t.get("likely_days", 0),
               "mh": t.get("manual_equivalent_hours", [0, 0]), "md": t.get("manual_equivalent_days", [0, 0]), "weeks": t.get("duration_weeks", 0),
               "engineers": c.est.get("engineers"), "ai": c.est.get("ai_assisted", False), "ai_factor": c.est.get("ai_code_factor", [1, 1]),
-              "split": {k: [round(sum(w[k][i] for w in wps)) for i in (0, 1)] for k in ("code", "qa", "ops")},
-              "scenario": c.est.get("scenario", {}), "factors": c.est.get("ai_factors", {}), "mlh": t.get("manual_likely_hours", 0)}
+              "split": {"code": [round(sum(w["code"][i] for w in wps)) for i in (0, 1)]},
+              "scenario": c.est.get("scenario", {}), "factors": c.est.get("ai_factors", {}), "mlh": t.get("manual_likely_hours", 0), "kloc": t.get("kloc", 0), "hpk": t.get("likely_hours_per_kloc", 0)}
     lbuild = []
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}

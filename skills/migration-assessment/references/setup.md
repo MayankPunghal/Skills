@@ -12,7 +12,7 @@
 
 ## Workspace rules
 
-- **Create the workspace outside the client repositories**, e.g. `D:\assessments\<client>`. The skill never writes inside client code.
+- **Create the workspace outside the client repositories**, e.g. `D:/assessments/<client>`. The skill never writes inside client code.
 - **Keep the client code read-only.** Clone or copy with the access the client gave you.
 - **Never ask for passwords or keys in chat.** LLM keys for community naming come from environment variables only.
 - **Treat the outputs as confidential.** They contain hosts, architecture and security findings.

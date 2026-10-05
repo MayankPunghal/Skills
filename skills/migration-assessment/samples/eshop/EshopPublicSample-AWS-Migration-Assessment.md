@@ -1,3 +1,8 @@
+<!--
+## Contents
+Executive summary, scope and method, application inventory, architecture, findings by category, database, per-application plans, effort and timeline, risks and questions, testing and merge, appendices.
+This sample predates the v4 coding-only estimate and the dual / PostgreSQL scenarios; use it for structure and tone, not for scenario names or hour figures.
+-->
 # eShop (public sample) — AWS Migration & Modernization Assessment
 
 | | |
@@ -75,7 +80,7 @@ Everything server-side runs on .NET Framework 4.6.1–4.7.2 on Windows/IIS with 
 
 | Repository | Path | Files | Files scanned | Lines scanned | Branch / last commit | Code graph |
 | --- | --- | --- | --- | --- | --- | --- |
-| eshopmodernizing | C:\Users\mayan\Desktop\Prod_Analysis\testbeds\eShopModernizing | 1,279 | 372 | 16,216 | main @ 2023-10-25 (shallow clone) | yes |
+| eshopmodernizing | C:/Users/mayan/Desktop/Prod_Analysis/testbeds/eShopModernizing | 1,279 | 372 | 16,216 | main @ 2023-10-25 (shallow clone) | yes |
 
 ### 2.2 How
 
@@ -987,7 +992,7 @@ Routine size (procedures, functions, triggers, views): small 0, medium 0, large 
 | Effort | 6–22 h (0.7–2.7 d), likely 12 h / 1.5 d, size S |
 | Risk / confidence | High / Medium |
 
-**Why:** Desktop client already on .NET 6 (out of support since Nov 2024): upgrade the TFM to net10.0-windows when the service endpoint changes.
+**Why:** Desktop client already on .NET 6 (out of support): upgrade the TFM to net10.0-windows when the service endpoint changes.
 
 **Blocking / high findings:** F-002 Windows Forms; F-003 WPF; F-022 System.Drawing / GDI+ imaging; F-024 Target framework .NET Core / .NET 5-7 (out of support)
 

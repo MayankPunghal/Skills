@@ -1,99 +1,104 @@
-# Estimation model (v3: AI-assisted delivery, scenarios, hours and days)
+# Estimation model (v4: coding effort only)
 
 `estimate_effort.py` is parametric and transparent:
 - every number lives in `scripts/data/estimation.json` (`version`);
 - the working unit is **hours**, with person-days = hours ÷ 8;
-- ranges are low–high, and "likely" = low + 40 % of the range (effort is right-skewed).
+- ranges are low–high, and "likely" = low + 40 % of the range (effort is right-skewed);
+- **scope is developer hours for code and SQL only.** QA, DevOps, infrastructure, project management, parallel-development drift and contingency are not estimated.
 
-## Why AI-assisted rates
+## Contents
 
-Porting .NET Framework code is now largely tool-driven:
-- AWS Transform for .NET (AWS cites up to 4× faster);
-- GitHub Copilot app modernization;
-- coding agents.
+- [Why the numbers are lower than before](#why-the-numbers-are-lower-than-before)
+- [Formula](#formula)
+- [Complexity factor](#complexity-factor)
+- [Reference points](#reference-points)
+- [Scenarios](#scenarios)
+- [Optional modernizations](#optional-modernizations)
+- [What changes the estimate](#what-changes-the-estimate)
+- [Calibration from actuals](#calibration-from-actuals)
 
-Engineers direct, review and fix the output. Testing, cut-over, infrastructure and coordination do not shrink at the same rate. So the model costs those separately instead of as percentages of code effort.
+## Why the numbers are lower than before
+
+Earlier versions added QA, operations, project management, drift and contingency layers and a heavy database block. They inflated totals well beyond the code actually touched. v4 keeps only what scales with the code:
+- project conversion, driven by hand-written lines and project type;
+- finding remediation, driven by the rule's effort key and occurrence count;
+- database code conversion, driven by object counts and sizes.
+
+**Calibration anchor:** AWS reported 143,000 lines of .NET Framework ported with about 270 developer hours saved (AWS Transform for .NET case study), about 1.9 manual hours per KLOC for a mechanical port. Human-designed work (UI rewrite, auth, interop) is much slower, hence the higher rates for those project types. The report prints the resulting likely hours per KLOC so a reader can sanity-check it.
 
 ## Formula
 
-For each work package (one per application, one for shared libraries per repository, one for repository-wide items, one estate foundation):
-
 ```
-code_manual = Σ conversion(project) + Σ remediation(finding)          manual-equivalent hours
-code        = code_manual × ai_assistance.code_factor (0.25–0.40)     AI-assisted (set enabled=false for manual)
-              (+ fixed hours for Retain / Retire / Repurchase)
-qa          = (qa.fixed + KLOC × qa.per_kloc) × (1 + no_tests_extra) × qa_factor (0.6–0.8); KLOC above 50 counts at 40 %
-ops         = (scenario ops_per_app per deployable app; scenario foundation once) × ops_factor (0.7–0.85)
-total       = (code + qa + ops) × (1 + drift + PM) × (1 + contingency by confidence)
-
-conversion(project)  = fixed_hours[type] + hand-written KLOC × hours_per_kloc[type] + markup KLOC × markup_hours_per_kloc[type]
-                       (generated code is excluded; a project shared by several apps is ported once)
-remediation(finding) = min(fixed + per × (occurrences − 1), cap)       by the rule's effort key
+conversion(project) = (fixed[type] + hand-written KLOC × rate[type] + markup KLOC × markup_rate[type]) × complexity_factor
+remediation(finding) = min(fixed + per × (occurrences − 1), cap)          by the rule's effort key
+code_manual = Σ conversion + Σ remediation
+code        = code_manual × ai_assistance.code_factor (0.30–0.50)         set enabled=false for manual-only
+database    = Σ object, construct and data-access hours × db_factor (0.35–0.55)   only in a database scenario
 ```
 
+- Generated code is excluded; a project shared by several apps is ported once.
 - **Baseline findings** (System.Web usage, Global.asax, legacy project format …) describe work inside the conversion rate. They show in the report but add no hours.
-- **Retain apps** only pay for hosting-relevant findings. **Desktop clients** pay for endpoint repointing and packaging only. **Retired apps** pay a decommissioning fixed cost.
-- **Databases:**
-  - each option gets a per-database base cost;
-  - blocker findings add their full (AI-assisted) remediation hours, limited findings half;
-  - the recommended option's figure goes into the total.
-- **Manual equivalent:** every work package and the total also carry the hours without AI assistance. The report shows both, so the saving is explicit and auditable.
-- **Timeline:**
-  1. Mobilise and the AWS foundation run in parallel.
-  2. Shared libraries.
-  3. Waves of 3 applications (Replatform first, then Refactor, then Rehost/Retain; low risk first). A wave's length is its likely hours ÷ (engineers × 5 × 8 × efficiency), and waves overlap by about 30 %.
-  4. Database migration alongside the last waves.
-  5. Hypercare.
+- **Retain, Retire, Repurchase and desktop clients** pay small fixed code costs (`other_r_hours`): repointing connection strings and endpoints, integration code.
+- **Manual equivalent:** every total also carries the hours without AI assistance, so the saving is explicit and auditable.
+- **Timeline:** coding only. Shared libraries first, then waves of 3 applications (low risk first) with 30 % overlap, database code in parallel with the last waves. Wave length = likely hours ÷ (engineers × 5 × 8 × efficiency).
 
-## Reference points (manual-equivalent hours per KLOC)
+## Complexity factor
 
-| Project type | hours/KLOC | Fixed hours | Notes |
-| --- | --- | --- | --- |
-| Class library | 2–6 | 2–6 | Mostly mechanical |
-| ASP.NET MVC 5 / Web API 2 | 8–16 / 6–12 | 8–16 / 6–12 | Startup, DI, auth, filters, routing |
-| ASP.NET Web Forms → Blazor/Razor | 24–48 | 16–32 | UI rewrite; AWS Transform gives a starting point |
-| WCF → CoreWCF | 8–16 | 8–16 | Contract kept |
-| Windows service → Worker | 4–10 | 2–6 | |
-| Already ASP.NET Core / .NET 5+ | 0.5–3 | 2–6 | Retarget + package upgrades |
+Multiplier on a project's conversion hours (findings already count the hard parts), computed by `_complexity.py` from the source:
 
-## Confidence and what changes the estimate
+| Signal | Effect |
+| --- | --- |
+| Decision density (branches, loops, `case`, `catch`, `&&`/`||` per KLOC): ≤ 40 / ≤ 90 / ≤ 150 / above | 0.85 / 1.0 / 1.2 / 1.4 |
+| Fan-in: three or more projects depend on it | +0.10 |
+| Each file over 800 lines | +0.05 (capped at +0.20) |
+| Projects under 0.3 KLOC | not scaled (density of a few lines is noise) |
 
-- **Application confidence:**
-  - High: at most 2 Needs-verification findings and no Blockers;
-  - Medium: up to 8 Needs-verification findings;
-  - Low: otherwise.
-- **What changes the estimate** (the report states these):
-  - reviewer dismissals;
-  - answers to open questions (hidden jobs, server-only integrations, data volumes);
-  - the 7R decision (Retain vs Refactor for Web Forms is the largest swing);
-  - team size and freeze windows;
-  - the actual productivity of the tools on this code base. Measure it on the first wave and recalibrate `code_factor`.
+The result is clamped to 0.8–1.6.
+
+## Reference points
+
+Manual-equivalent hours per KLOC of hand-written code (`conversion_hours_per_kloc`):
+
+| Project type | Hours/KLOC | Fixed hours |
+| --- | --- | --- |
+| Class library | 1–3 | 1–3 |
+| Console | 1.5–4 | 1–3 |
+| Test project | 0.5–1.5 | 0.5–1.5 |
+| ASP.NET MVC 5 | 3–7 | 4–8 |
+| ASP.NET Web API 2 | 2.5–6 | 3–6 |
+| ASP.NET Web Forms → Razor/Blazor | 14–28 | 8–16 |
+| WCF → CoreWCF | 4–9 | 4–8 |
+| Windows service → Worker | 2–5 | 1–3 |
+| Already ASP.NET Core / .NET 5+ | 0.3–1.2 | 1–3 |
+
+## Scenarios
+
+`estimate_effort.py` computes the primary scenario (`assessment.json` scenario) in full and every alternative as totals (`comparisons`).
+
+| Axis | Values |
+| --- | --- |
+| Hosting (code side) | `modernize` (port to .NET 10 for Linux), `windows-rehost` (lift-and-shift to Windows EC2; only network, identity and configuration changes) |
+| Database (code side) | `dual` (SQL Server + PostgreSQL), `postgresql` (PostgreSQL only), `none` |
+
+See [seven-rs.md](seven-rs.md) and [database-assessment.md](database-assessment.md).
+
+## Optional modernizations
+
+`_optional.py` scans for things the code does that a managed AWS service could replace (SMTP → SES/SNS, Kafka → SQS/SNS/EventBridge, local files → S3, in-process cache → ElastiCache, schedulers, authentication, logging, search). Catalog and hours: `scripts/data/optional_modernizations.json`. These are **never in the estimate total**; the report lists them in section 7.3 with their own hours so the client can opt in.
+
+## What changes the estimate
+
+The report states these:
+- reviewer dismissals;
+- answers to open questions (hidden jobs, server-only integrations);
+- the 7R decision (Retain vs Refactor for Web Forms is the largest swing);
+- team size;
+- the real productivity of the tools on this code base. Measure it on the first wave and recalibrate `ai_assistance.code_factor`.
 
 ## Calibration from actuals
 
 After each engagement:
-1. Compare actual hours per work package with the estimate.
-2. Adjust these settings in `estimation.json`:
-   - `conversion_hours_per_kloc` / `conversion_fixed_hours`;
-   - `finding_hours`;
-   - `ai_assistance`;
-   - `qa_hours`;
-   - `operations_hours`.
+1. Compare actual coding hours per project with the estimate.
+2. Adjust in `estimation.json`: `conversion_hours_per_kloc`, `conversion_fixed_hours`, `complexity`, `finding_hours`, `ai_assistance`, `postgres`.
 3. Bump `version`.
 4. Log the change in [calibration.md](calibration.md).
-
-## Why AI-assisted and manual differ by about 45-60 % (not more)
-
-| Part | Manual | AI-assisted | Why it does not go further |
-| --- | --- | --- | --- |
-| Code port and remediation | 100 % | 25-40 % | Engineers still direct, review and fix the generated changes, and design the replacements (interop, auth, reporting) |
-| QA | 100 % | 60-80 % | Generated tests help, but scenario design, data, UAT and sign-off are human |
-| Operations / foundation | 100 % | 70-85 % | IaC is generated, but network, security and cut-over are coordinated with the client |
-| Database conversion | 100 % | 35-50 % | DMS Schema Conversion and agents convert most T-SQL; semantics (transactions, collation, dates) need review and testing |
-| PM, drift, contingency | % of the above | % of the above | Scale with the work |
-
-Measure the real productivity on the first wave and recalibrate `ai_assistance`.
-
-## Scenarios
-
-`estimate_effort.py` computes the primary scenario (`assessment.json` scenario) in full and every hosting and database alternative as totals (`comparisons`). See [seven-rs.md](seven-rs.md) (hosting) and [database-assessment.md](database-assessment.md) (PostgreSQL / dual).

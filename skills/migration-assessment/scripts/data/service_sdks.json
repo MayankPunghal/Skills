@@ -26,7 +26,7 @@
   {"match": "MongoDB\\.Driver", "service": "MongoDB", "aws": "Amazon DocumentDB / MongoDB Atlas on AWS"},
   {"match": "Slack.*|Microsoft\\.Bot\\..*", "service": "Chat / bots", "aws": "Stays external"},
   {"match": "SSH\\.NET|Renci\\.SshNet|WinSCP|FluentFTP", "service": "SFTP / FTP partners", "aws": "AWS Transfer Family; fixed egress IPs"},
-  {"match": "Microsoft\\.ReportingServices\\..*|Microsoft\\.ReportViewer\\..*", "service": "SQL Server Reporting Services", "aws": "RDS SSRS option / PBIRS / EC2"},
+  {"match": "Microsoft\\.ReportingServices\\..*|Microsoft\\.ReportViewer\\..*", "service": "SQL Server Reporting Services", "aws": "Power BI Report Server / QuickSight / SSRS on EC2"},
   {"match": "Sentry.*|Bugsnag.*|Raygun.*|NewRelic.*|Datadog.*|Elmah\\.Io.*", "service": "Monitoring SaaS", "aws": "Stays external or CloudWatch / X-Ray"}
  ]
 }

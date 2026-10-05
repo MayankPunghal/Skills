@@ -1,5 +1,5 @@
 {
- "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
+ "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, block:optional (optional modernizations), gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
  "brand": {
   "company": "",
   "accent": "#d9480f",
@@ -34,11 +34,12 @@
     {
      "id": "effort",
      "title": "Effort & timeline",
-     "intro": "Effort in hours and person-days for the selected scenario (AI-assisted delivery, manual equivalent alongside), every hosting and database option side by side, the phased plan and licensing.",
+     "intro": "Coding effort in hours and person-days for the selected scenario (AI-assisted delivery, manual equivalent alongside), the code-side and database-code scenarios side by side, optional modernizations, the phased plan and licensing.",
      "items": [
       "effort-summary",
       "block:scenarios",
       "workpackages-table",
+      "block:optional",
       "gantt",
       "block:multipliers",
       "block:cost",
@@ -163,6 +164,17 @@
       "architecture-map",
       "block:graph-insights",
       "dependencies-table"
+     ]
+    },
+    {
+     "id": "dependency-map",
+     "title": "Dependencies",
+     "intro": "What depends on what: project references and port order, the workflows (entry points) and what each one touches, and database object dependencies.",
+     "items": [
+      "narrative:dependencies",
+      "block:project-deps",
+      "block:workflows",
+      "block:db-dependents"
      ]
     },
     {

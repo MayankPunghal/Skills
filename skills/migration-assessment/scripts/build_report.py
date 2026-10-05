@@ -16,10 +16,12 @@ import datetime
 import json
 import os
 import re
+import shutil
 from collections import Counter, defaultdict
 
 from _common import OUT, SKILL_DIR, data, load_config, mark_step, read_json, slug, utf8_stdout, write_text
 import _findings as F
+import _dependencies as D
 import _analysis as A
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
@@ -117,7 +119,7 @@ def b_method(c):
             ("Endpoints", "URLs, host names, IPs and UNC paths classified internal (on-prem) vs external"),
             ("Linux file-system", "Path-literal case check against files on disk; drive letters; separators"),
             ("Review", "Findings marked Needs verification were read in context by the assessor; verdicts are recorded with the evidence"),
-            ("Estimation", f"Parametric model {c.est.get('model_version', '')}: conversion baseline by project type and size + remediation per finding + QA, drift, DevOps, PM and contingency")]
+            ("Estimation", f"Parametric model {c.est.get('model_version', '')}: coding hours only: project conversion by type, size and complexity + remediation per finding + database code conversion (no QA, DevOps, PM or contingency)")]
     return table(["Step", "What was done"], rows)
 
 
@@ -196,6 +198,75 @@ def b_projects(c):
                          "packages.config" if p.get("packages_config") else "PackageReference", ", ".join(p.get("languages", [])), f"{p.get('loc_code', 0):,}", sup))
     return table(["Repository", "Project", "Type", "TFM", "Format", "Packages", "Language", "LOC", "Support status"], rows)
 
+
+def _list(x, n=6):
+    return "<br>".join(x[:n]) + (f"<br>+{len(x) - n} more" if len(x) > n else "") if x else "-"
+
+
+def b_project_deps(c):
+    """Project interdependencies: who references whom, build / port order (leaf first) and blast radius."""
+    out = []
+    for r, g in D.project_graph(c).items():
+        out.append(f"**{r}** — {len(g['nodes'])} projects, {len(g['edges'])} project references.\n")
+        out.append("```mermaid\nflowchart LR")
+        ids = {n["name"]: f"p{i}" for i, n in enumerate(g["nodes"])}
+        for n in g["nodes"]:
+            out.append(f'  {ids[n["name"]]}["{n["name"]}<br/><small>{n["type"]} · {n["tfm"]}</small>"]')
+        for a_, b_ in g["edges"]:
+            out.append(f"  {ids[a_]} --> {ids[b_]}")
+        out.append("```\n")
+        out.append(table(["Layer", "Project", "Type / TFM", "Depends on (direct)", "Needed by (direct)", "Change impact (all dependents)", "Applications affected"],
+                         [(n["layer"], n["name"], f"{n['type']} · {n['tfm']}", _list(n["direct"]), _list(n["dependents"]), _list(n["used_by_all"]), _list(n["apps"])) for n in g["nodes"]]))
+        out.append("\nLayer 0 projects reference nothing and are ported first; a project is ported after every project it references (or is multi-targeted / retained). "
+                   "'Change impact' lists every project that rebuilds when the project changes, which sets the regression-test scope.")
+        if g["cycles"]:
+            out.append("\n**Circular references:** " + "; ".join(f"{a_} ↔ {b_}" for a_, b_ in g["cycles"]) + " (break before porting).")
+        unres = [(n["name"], ", ".join(n["unresolved"])) for n in g["nodes"] if n["unresolved"]]
+        if unres:
+            out.append("\n**References to projects outside this repository (need their source or a package):**\n\n" + table(["Project", "References"], unres))
+        out.append("")
+    return "\n".join(out) or "_No projects inventoried._"
+
+
+def b_workflows(c):
+    """Entry point -> projects, database objects, external systems and findings it depends on."""
+    wf = D.workflows(c)
+    if not wf:
+        return "_No entry points detected (HTTP endpoints, MVC actions, Web Forms pages, background services, console jobs)._"
+    out = [f"{len(wf)} entry points traced. Reach is derived from the code graph (calls, references, inheritance, interface implementations) and string literals naming database objects; "
+           "treat it as a strong lead to confirm in review, not a proof (reflection, DI by convention, dynamic SQL and EF-generated SQL are not visible).\n"]
+    by_app = defaultdict(list)
+    for w in wf:
+        by_app[(w["repo"], w["app"])].append(w)
+    for (r, app), ws in by_app.items():
+        out.append(f"#### {app} ({r})\n")
+        out.append(table(["Workflow", "Kind", "Entry", "Projects reached", "Database objects", "External systems", "Findings on the path"],
+                         [(w["name"], w["kind"], f"`{w['entry']}`", _list(w["projects"], 5), _list(w["db_objects"], 6), _list(w["external"], 4), ", ".join(w["findings"][:8]) or "-") for w in ws]))
+        out.append("")
+    return "\n".join(out)
+
+
+def b_db_dependents(c):
+    """Database object -> other objects it calls, and the workflows that depend on it."""
+    dd = D.db_dependencies(c)
+    idx = D.object_dependents(c, D.workflows(c))
+    out = []
+    for r, g in dd.items():
+        calls, called_by = defaultdict(list), defaultdict(list)
+        for a_, b_ in g["edges"]:
+            calls[a_].append(b_)
+            called_by[b_].append(a_)
+        rows = []
+        for o in g["objects"]:
+            wfs = sorted(set(idx.get((r, o["name"]), [])))
+            if not (calls.get(o["name"]) or called_by.get(o["name"]) or wfs):
+                continue
+            rows.append((o["name"], o["kind"], f"`{o['file']}:{o['line']}`", _list(sorted(calls.get(o["name"], [])), 5), _list(sorted(called_by.get(o["name"], [])), 5), _list(wfs, 5)))
+        unused = len(g["objects"]) - len(rows)
+        out.append(f"**{r}** — {len(g['objects'])} database objects; {len(rows)} with a detected dependency, {unused} with none found (unused, or reached only through EF-generated SQL / dynamic SQL).\n")
+        out.append(table(["Object", "Kind", "Defined", "Uses (objects)", "Used by (objects)", "Used by (workflows)"], rows))
+        out.append("")
+    return "\n".join(out) or "_No database objects inventoried._"
 
 def b_architecture_diagram(c):
     """Layered Mermaid map (same model as the HTML map): clients -> applications -> shared libraries -> data -> external systems.
@@ -358,8 +429,7 @@ INFO_ONLY = {"tooling"}  # explanatory categories: a table, never findings
 CATEGORY_EXTRAS = {"tooling": extra_tooling, "inventory": extra_inventory, "parallel-dev": extra_parallel, "tests": extra_tests}
 
 
-DB_LABEL = {"rds-sqlserver": "Amazon RDS for SQL Server", "ec2-sqlserver": "SQL Server on Amazon EC2", "babelfish": "Aurora PostgreSQL with Babelfish",
-            "postgresql": "Full port to PostgreSQL", "dual": "Dual: SQL Server and PostgreSQL"}
+DB_LABEL = {"postgresql": "PostgreSQL only", "dual": "Dual: SQL Server and PostgreSQL"}
 
 
 def b_database(c):
@@ -372,15 +442,14 @@ def b_database(c):
             o = d["options"].get(t)
             if not o:
                 continue
-            tag = (" — selected" if t == sel else "") + (" (recommended)" if t == d.get("recommended") else "")
-            rows.append((label + tag, hd(o["days"], o.get("hours")), f"{o.get('likely_hours', '-')} h", ", ".join(o["blockers"]) or ("n/a (code converted)" if t in ("postgresql", "dual") else "none found"),
-                         ", ".join(o["limited"]) or "-"))
-        out.append(table(["Target", "Effort", "Likely", "Blocking features in code", "Limited / needs work"], rows))
+            rows.append((label + (" — selected" if t == sel else ""), hd(o["days"], o.get("hours")), f"{o.get('likely_hours', '-')} h", ", ".join(o.get("redesign", [])) or "none",
+                         ", ".join(o.get("rework", [])) or "-"))
+        out.append(table(["Scenario (code and SQL conversion only)", "Effort (AI-assisted)", "Likely", "No PostgreSQL equivalent (redesign)", "Needs rework"], rows))
         out.append(f"\n{d['note']}\n")
     feats = [f for f in c.findings if f["category"] == "database"]
     if feats:
-        out.append("Database features found (details in 5, Database):\n")
-        out.append(table(["Ref", "Feature", "RDS", "Babelfish", "Count", "Evidence"], [(f["ref"], f["title"], (f.get("db") or {}).get("rds", "ok"), (f.get("db") or {}).get("babelfish", "ok"), f.get("occurrences"), evidence_cell(f, 1)) for f in feats]))
+        out.append("SQL Server features found that need work for PostgreSQL (details in 5, Database):\n")
+        out.append(table(["Ref", "Feature", "PostgreSQL impact", "Count", "Evidence"], [(f["ref"], f["title"], (f.get("db") or {}).get("pg", "convert"), f.get("occurrences"), evidence_cell(f, 1)) for f in feats]))
     elif not out:
         out.append("No SQL Server database code (SSDT projects, .sql files) was found in the repositories; database fit is assessed from connection strings only.")
     return "\n".join(out)
@@ -410,8 +479,8 @@ def b_db_inventory(c):
             if o and o.get("breakdown_manual_hours"):
                 bk = o["breakdown_manual_hours"]
                 out.append(f"\n**{DB_LABEL[t]}** — manual-equivalent hours: objects {rng(bk['objects'])}, T-SQL constructs {rng(bk['constructs'])}, data-access code {rng(bk['code'])}, "
-                           f"tooling + data migration {rng(bk['setup_and_data'])}" + (f", provider abstraction + CI matrix {rng(bk['dual_extra'])}" if t == "dual" else "") +
-                           f"; testing {int(bk['testing_share'][0] * 100)}–{int(bk['testing_share'][1] * 100)}% of conversion. AI-assisted total: {hd(o['days'], o['hours'])}.\n")
+                           f"findings without a PostgreSQL equivalent {rng(bk['findings'])}" + (f", provider-neutral data layer {rng(bk['dual_extra'])}" if t == "dual" else "") +
+                           f". AI-assisted total: {hd(o['days'], o['hours'])}. Data migration, tooling set-up and database testing are not included.\n")
     return "\n".join(out) or "_No database code in the repositories._"
 
 
@@ -419,15 +488,28 @@ def b_scenarios(c):
     comp = c.est.get("comparisons") or []
     if not comp:
         return "_Scenarios not computed (rerun estimate_effort.py)._"
-    out = ["**Hosting options** (database: " + (c.est.get("scenario", {}).get("database_label") or "") + ")\n"]
+    out = ["**Code-side options** (database scenario: " + (c.est.get("scenario", {}).get("database_label") or "") + "; coding effort only)\n"]
     out.append(table(["Option", "Effort (AI-assisted)", "Likely", "Manual likely", "Duration", "Notes"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), hd(x["total_days"], x["total_hours"]), f"{x['likely_hours']} h / {x['likely_days']} d",
                        f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks", " ".join(x.get("notes", []))[:300]) for x in comp if x["kind"] == "hosting"]))
-    out.append("\n**Database options** (hosting: " + (c.est.get("scenario", {}).get("hosting_label") or "") + ")\n")
+    out.append("\n**Database code options** (code scenario: " + (c.est.get("scenario", {}).get("hosting_label") or "") + ")\n")
     out.append(table(["Option", "Database work", "Total effort (AI-assisted)", "Likely", "Manual likely", "Duration"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), rng(x.get("database_hours", [0, 0]), " h"), hd(x["total_days"], x["total_hours"]),
                        f"{x['likely_hours']} h / {x['likely_days']} d", f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks") for x in comp if x["kind"] == "database"]))
     return "\n".join(out)
+
+
+def b_optional(c):
+    """Optional modernizations: managed AWS services the code could adopt. Reported beside the estimate, never in it."""
+    items = c.est.get("optional") or []
+    if not items:
+        return "_No optional modernization opportunities were detected (SMTP / SMS, Kafka / message queues, local file storage, in-process caches and schedulers, custom authentication, file logging, self-hosted search)._"
+    rows = [(o["title"], o["aws"], o["count"], ", ".join(f"`{f['file']}:{f['line']}`" for f in o["files"][:2]) + (f" +{o['count'] - 2} more" if o["count"] > 2 else ""),
+             rng(o["hours"], " h"), o["why"]) for o in items]
+    t = (c.est.get("totals") or {}).get("optional_hours", [0, 0])
+    return ("These are improvements the client may choose; none is needed to run on Linux or AWS and **none is included in the effort estimate**. Hours are AI-assisted coding hours per item.\n\n" +
+            table(["Opportunity", "Suggested AWS service", "Files", "Evidence", "Coding effort", "Why consider it"], rows) +
+            f"\n\nIf every item were adopted: {rng(t, ' h')} of additional coding.")
 
 
 def b_app_plans(c):
@@ -463,39 +545,36 @@ def b_hybrid(c):
 def b_estimate(c):
     rows = []
     for w in sorted(c.est.get("work_packages", []), key=lambda w: -w["likely_days"]):
-        b = w.get("breakdown_hours", {})
-        split = f"code {rng(b.get('code', [0, 0]))} h · QA {rng(b.get('qa', [0, 0]))} h · ops {rng(b.get('operations', [0, 0]))} h" if b else "-"
-        rows.append((w["name"], w.get("r7") or w["kind"], hd(w["total_days"], w.get("total_hours")), f"{w.get('likely_hours', '-')} h / {w['likely_days']} d", split,
+        rows.append((w["name"], w.get("r7") or w["kind"], hd(w["total_days"], w.get("total_hours")), f"{w.get('likely_hours', '-')} h / {w['likely_days']} d",
                      hd(w.get("manual_days"), w.get("manual_hours")) if w.get("manual_days") else "-", w["complexity"], "; ".join(w["drivers"][:3])))
     for d in c.est.get("databases", []):
-        o = d["options"][d.get("selected", d["recommended"])]
-        rows.append((f"{d['repo']}: databases ({d.get('selected', d['recommended'])})", "database", hd(o["days"], o.get("hours")), f"{o.get('likely_hours', '-')} h / {o['likely']} d", "migration + blocker fixes", "-", "-", ", ".join(o["blockers"] + o["limited"]) or "-"))
+        sel = d.get("selected", d["recommended"])
+        if sel == "none":
+            continue
+        o = d["options"][sel]
+        rows.append((f"{d['repo']}: database code ({sel})", "database", hd(o["days"], o.get("hours")), f"{o.get('likely_hours', '-')} h / {o['likely']} d",
+                     hd([round(x / 8, 1) for x in o["manual_hours"]], o["manual_hours"]), "-", ", ".join(o.get("redesign", []) + o.get("rework", [])) or "-"))
     t = c.est.get("totals", {})
-    rows.append(("**Total**", "", f"**{hd(t.get('total_days', [0, 0]), t.get('total_hours'))}**", f"**{t.get('likely_hours', '-')} h / {t.get('likely_days', '-')} d**", "",
-                 hd(t.get("manual_equivalent_days"), t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "", "", f"~{t.get('person_months_likely', '-')} person-months"))
-    return table(["Work package", "7R / kind", "Effort", "Likely", "Split (code · QA · operations)", "Manual equivalent", "Size", "Main drivers"], rows)
+    rows.append(("**Total (coding only)**", "", f"**{hd(t.get('total_days', [0, 0]), t.get('total_hours'))}**", f"**{t.get('likely_hours', '-')} h / {t.get('likely_days', '-')} d**",
+                 hd(t.get("manual_equivalent_days"), t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "", "",
+                 f"{t.get('kloc', '-')} KLOC, {t.get('likely_hours_per_kloc', '-')} likely h/KLOC"))
+    return table(["Work package", "7R / kind", "Effort (AI-assisted)", "Likely", "Manual equivalent", "Size", "Main drivers"], rows)
 
 
 def b_multipliers(c):
+    """How the hours are built: the factors the engine applied (all in scripts/data/estimation.json)."""
     est = data("estimation.json")
-    m = est["multipliers"]
-    ai = est["ai_assistance"]
-    q, o = est["qa_hours"], est["operations_hours"]
     f = c.est.get("ai_factors") or {}
-    hs = est["hosting_scenarios"].get((c.est.get("scenario") or {}).get("hosting", "modernize"), {})
     pc = lambda r: rng([x * 100 for x in r], "%")
-    rows = [("Scenario", (c.est.get("scenario") or {}).get("hosting_label", "-"), "database: " + ((c.est.get("scenario") or {}).get("database_label") or "-")),
-            ("AI-assisted code work", pc(f.get("code", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off (manual estimate)", "AWS Transform for .NET / GitHub Copilot app modernization / coding agents port; engineers direct, review and fix"),
-            ("AI-assisted QA", pc(f.get("qa", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off", "generated characterisation and regression tests, automated runs; test design sign-off and UAT stay human"),
-            ("AI-assisted operations", pc(f.get("ops", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off", "generated IaC / pipelines / container files, reviewed"),
-            ("AI-assisted database conversion", pc(f.get("db", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off", "AWS DMS Schema Conversion (generative AI) / SCT + agents for T-SQL to PL/pgSQL"),
-            ("Functional QA per application", f"{rng(q['fixed'])} h + {rng(q['per_kloc'])} h per KLOC", "+" + pc(q["no_tests_extra"]) + " where automated tests are missing"),
-            ("Operations per deployable app", f"{rng(hs.get('ops_per_app', [0, 0]))} h", "image/AMI, pipeline, configuration/secrets, cut-over, hypercare"),
-            ("AWS foundation (once)", f"{rng(hs.get('foundation', [0, 0]))} h", "landing zone, networking, CI/CD templates, observability"),
-            ("Parallel-development drift", ", ".join(f"{k} {rng([x * 100 for x in v], '%')}" for k, v in m["parallel_dev_drift"].items() if k != "_doc"), "by repository commit rate"),
-            ("Project management", rng([x * 100 for x in m["project_management"]], "%"), ""),
-            ("Contingency", ", ".join(f"{k} {rng([x * 100 for x in v], '%')}" for k, v in m["contingency_by_confidence"].items()), "by application confidence")]
-    return table(["Factor", "Range", "Applied to"], rows)
+    cx = est["complexity"]
+    rate = est["conversion_hours_per_kloc"]
+    rows = [("Scope", "Coding effort only", "code and SQL conversion, fixing findings, unit tests written with the code; QA, DevOps, project management, drift and contingency are excluded"),
+            ("Scenario", (c.est.get("scenario") or {}).get("hosting_label", "-"), "database: " + ((c.est.get("scenario") or {}).get("database_label") or "-")),
+            ("AI-assisted code work", pc(f.get("code", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off (manual estimate)", "coding agents / AWS Transform for .NET / GitHub Copilot app modernization do the mechanical part; engineers direct, review and fix"),
+            ("AI-assisted database conversion", pc(f.get("db", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off", "AWS DMS Schema Conversion (generative AI) + review for T-SQL to PL/pgSQL"),
+            ("Port rate per KLOC (manual)", ", ".join(f"{k} {v[0]:g}–{v[1]:g} h" for k, v in rate.items() if k in ("class-library", "aspnet-core", "aspnet-mvc", "aspnet-webapi", "wcf-service", "aspnet-webforms")), "hand-written lines; generated code excluded; markup has its own rate"),
+            ("Complexity factor", f"{cx['min']}–{cx['max']}x", "decision density (" + ", ".join(f"≤{lim:g}/KLOC {fac}x" for lim, fac in cx["decisions_per_kloc_bands"][:-1]) + f", above {cx['decisions_per_kloc_bands'][-2][0]:g}/KLOC {cx['decisions_per_kloc_bands'][-1][1]}x) + {cx['fan_in_extra']}x for projects with {cx['fan_in_threshold']}+ dependents + {cx['big_file_extra']}x per file over 800 lines")]
+    return table(["Factor", "Value", "How it is used"], rows)
 
 
 def b_timeline(c):
@@ -632,7 +711,7 @@ def b_appendix_projects(c):
 
 
 BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
-          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "dependencies": b_dependencies,
+          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "optional": b_optional, "dependencies": b_dependencies,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
@@ -702,6 +781,12 @@ def main():
     root, cfg = load_config()
     os.chdir(root)
     c = Ctx(root, cfg)
+    ndir, tdir = os.path.join(OUT, "narrative"), os.path.join(SKILL_DIR, "templates", "narrative")
+    os.makedirs(ndir, exist_ok=True)
+    for fn in os.listdir(tdir):  # narratives added to the skill after the workspace was created
+        if fn.endswith(".md") and not os.path.exists(os.path.join(ndir, fn)):
+            shutil.copy2(os.path.join(tdir, fn), os.path.join(ndir, fn))
+            print(f"new narrative stub: {fn} (write it, then rebuild)")
     tpl = open(a.template, encoding="utf-8").read()
     tpl = re.sub(r"(?s)<!--\s*guide:.*?-->\s*", "", tpl)  # template guidance never reaches the client
     meta = {"client": cfg.get("client") or "Client", "prepared_by": cfg.get("prepared_by", ""), "engagement": cfg.get("engagement"),

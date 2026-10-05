@@ -1,5 +1,5 @@
-
 <!-- guide: Contents (stripped from the client report)
+## Contents
 - 1. Executive summary
 - 2. Scope and method
 - 3. Application inventory
@@ -93,6 +93,20 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:dependencies}}
 
+### 4.5 Project interdependencies
+
+{{block:project-deps}}
+
+### 4.6 Workflow dependencies (what each entry point depends on)
+
+{{block:workflows}}
+
+### 4.7 Database object dependencies
+
+{{block:db-dependents}}
+
+{{narrative:dependencies}}
+
 ## 5. Findings by category
 
 {{block:findings-summary}}
@@ -121,21 +135,25 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:app-plans}}
 
+### 7.3 Optional modernizations (not in the estimate)
+
+{{block:optional}}
+
 ## 8. Effort estimate and timeline
 
-### 8.1 Effort by work package (hours and person-days)
+### 8.1 Coding effort by work package (hours and person-days)
 
 {{block:estimate}}
 
-### 8.2 Scenario comparison (hosting and database options)
+### 8.2 Scenario comparison (code-side and database code options)
 
 {{block:scenarios}}
 
-### 8.3 Factors applied
+### 8.3 How the hours are built
 
 {{block:multipliers}}
 
-### 8.4 Phased timeline
+### 8.4 Coding timeline
 
 {{block:timeline}}
 

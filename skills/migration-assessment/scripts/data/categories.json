@@ -94,7 +94,7 @@
   },
   {
    "id": "database",
-   "title": "SQL Server features vs Amazon RDS for SQL Server and Babelfish",
+   "title": "SQL Server features vs PostgreSQL (dual or PostgreSQL-only)",
    "brief": "5.1-3; 5.2 Data layer",
    "scanned": "T-SQL in .sql files / SSDT projects: CLR, linked servers, xp_cmdshell, FILESTREAM, Service Broker, MSDTC, SQL Agent jobs, cross-database references, BULK INSERT, full-text, MERGE, hierarchyid, temporal tables, XML methods, EXECUTE AS, Database Mail, replication; SSIS/SSRS/SSAS artefacts",
    "segment": "data"
@@ -215,7 +215,7 @@
   {
    "id": "data",
    "title": "Data and database",
-   "description": "Data-access code and SQL Server features versus Amazon RDS / Babelfish."
+   "description": "Data-access code and SQL Server features that need work for PostgreSQL."
   },
   {
    "id": "security",
