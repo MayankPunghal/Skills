@@ -6,8 +6,8 @@ Writes (re-runnable; regenerates generated parts, keeps hand edits outside the m
   AGENTS.md                                  rules for every coding agent (Codex, Cursor, Copilot, Claude …)
   CLAUDE.md                                  appends / refreshes a "<product> documentation" block
   .claude/skills/<slug>-docs/SKILL.md        the project's Q&A / change-planning skill (named after the product)
-  docs/_tools/*.py                           runtime tools (build_docs, gen_agent_index, lookup) refreshed
-and then runs gen_agent_index.py (docs/llms.txt + docs/agent/entities.jsonl).
+  docs/_tools/*.py                           runtime tools (build_docs, gen_agent_index, gen_rag_cards, lookup) refreshed
+and then runs gen_agent_index.py (docs/llms.txt + docs/agent/entities.jsonl) and gen_rag_cards.py (docs/agent/cards.jsonl).
 """
 import os
 import re
@@ -54,10 +54,11 @@ def main():
     sk = os.path.join(".claude", "skills", f"{slug}-docs", "SKILL.md")
     write(sk, render("project-skill.md.tmpl", vals))
     os.makedirs(os.path.join(docs, "_tools"), exist_ok=True)
-    for f in ("build_docs.py", "gen_agent_index.py", "lookup.py"):
+    for f in ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py"):
         shutil.copy2(os.path.join(SKILL_DIR, "scripts", "runtime", f), os.path.join(docs, "_tools", f))
     code, out = run([sys.executable, os.path.join(docs, "_tools", "gen_agent_index.py")])
     print(out.strip()[:200])
+    print(run([sys.executable, os.path.join(docs, "_tools", "gen_rag_cards.py")])[1].strip()[-200:])
     code2, out2 = run([sys.executable, os.path.join(docs, "_tools", "lookup.py"), "index", "--kind", "page", "--list", "--limit", "1"])
     print(f"AGENTS.md, CLAUDE.md block, {sk} written; lookup smoke test: {'ok' if code2 == 0 else 'FAILED'}")
     if code2:

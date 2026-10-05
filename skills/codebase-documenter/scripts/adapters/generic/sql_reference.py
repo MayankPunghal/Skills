@@ -149,6 +149,8 @@ def gen_tables(dbroot, title, fname, prefix="tbl"):
                 if t not in fks:
                     fks.append(t)
             tables.append((schema, name.strip(), rel(path), cols, fks))
+            DB_EXPORT["tables"].append({"name": name.strip(), "schema": schema, "columns": [f"{c[0]} {c[1]}" for c in cols],
+                                        "file": rel(path), "page": fname, "anchor": slug(prefix, name.strip())})
     names = {t[1].strip().lower() for t in tables}
     referenced_by = defaultdict(set)
     for schema, name, p, cols, fks in tables:
@@ -185,6 +187,68 @@ def known_objects(dbroot):
     return names
 
 
+def parse_params(sig):
+    """Full parameter list as written: '@OrderId int OUTPUT', '@Lines dbo.OrderLineType READONLY', 'OUT total numeric'."""
+    s = re.sub(r"\s+", " ", sig).strip()
+    if s.startswith("(") and s.endswith(")"):
+        s = s[1:-1]
+    parts = [p.strip() for p in split_columns(s) if p.strip()]
+    if any(p.startswith("@") for p in parts):
+        parts = [p for p in parts if p.startswith("@")]
+    return [p for p in parts if re.match(r"(?i)(@|(?:IN|OUT|INOUT|VARIADIC)\s+)?\w", p)]
+
+
+def select_columns(sql):
+    """Column names of the first SELECT list (aliases preferred), at most 10."""
+    m = re.search(r"\bSELECT\s+(?:DISTINCT\s+|TOP\s*\(?\s*\d+\s*\)?\s+)?(.*?)\bFROM\b", sql, re.S | re.I)
+    if not m:
+        return []
+    cols = []
+    for c in split_columns(m.group(1)):
+        c = re.sub(r"\s+", " ", c).strip()
+        alias = re.search(r"(?i)\bAS\s+\[?\"?(\w+)", c) or re.match(r"\[?(\w+)\]?\s*=", c) or re.search(r"[\[.\s\"]?(\w+)\]?\"?$", c)
+        cols.append(alias.group(1) if alias else c[:30])
+    return cols[:10] + (["…"] if len(cols) > 10 else [])
+
+
+def returns_of(kind, sig_tail, head, body, params):
+    """What a routine gives back: function return type, procedure OUTPUT params / RETURN codes / result sets, view columns."""
+    if kind == "FUNCTION":
+        m = re.match(r"\s*RETURNS\s+(@\w+\s+)?TABLE\s*\((.*?)\)\s*(?:AS|WITH|BEGIN)", sig_tail, re.S | re.I)
+        if m:
+            cols = [re.match(r"\s*\[?(\w+)", c).group(1) for c in split_columns(m.group(2)) if re.match(r"\s*\[?\w+", c) and not re.match(r"(?i)\s*(PRIMARY|UNIQUE|INDEX|CHECK|CONSTRAINT)\b", c)]
+            return f"table ({', '.join(cols[:10])})"
+        if re.match(r"\s*RETURNS\s+TABLE\b(?!\s*\()", sig_tail, re.I):
+            cols = select_columns(body)
+            return "table (inline" + (f": {', '.join(cols)}" if cols else "") + ")"
+        m = re.match(r"\s*RETURNS\s+(SETOF\s+[\w.]+|TABLE\s*\([^)]*\)|[\w.\[\]]+(?:\s*\([^)]*\))?)", sig_tail, re.I)
+        return re.sub(r"\s+", " ", m.group(1)).replace("[", "").replace("]", "") if m else ""
+    if kind == "PROCEDURE":
+        out = [p.split()[0] for p in params if re.search(r"(?i)\b(OUTPUT|OUT)\b|^(OUT|INOUT)\s", p)]
+        codes = sorted(set(re.findall(r"(?i)\bRETURN\s+(-?\d+|@\w+)", body)), key=str)
+        sets = [s for s in re.finditer(r"(?im)^\s*SELECT\s+(?!@\w+\s*=)", body)  # not INSERT … SELECT, subqueries, EXISTS
+                if not re.search(r"(?is)(INSERT\s+(INTO\s+)?[^;]*|\(\s*|EXISTS\s*\(\s*|UNION(\s+ALL)?\s*|=\s*)$", body[max(0, s.start() - 300):s.start()])]
+        bits = []
+        if out:
+            bits.append("OUTPUT " + ", ".join(out))
+        if codes:
+            bits.append("RETURN " + ", ".join(codes[:6]))
+        if sets:
+            cols = select_columns(body[sets[0].start():])
+            bits.append(f"result sets ~{len(sets)}" + (f" (first: {', '.join(cols)})" if cols else ""))
+        return "; ".join(bits)
+    if kind == "VIEW":
+        cols = select_columns(body)
+        return f"rows ({', '.join(cols)})" if cols else ""
+    if kind == "TRIGGER":
+        m = re.search(r"\bON\s+([\w.\[\]]+)\s+(AFTER|FOR|INSTEAD\s+OF|BEFORE)\s+([\w ,]+)", head, re.I)
+        return f"{m.group(2).upper()} {re.sub(r'[ ]+', ' ', m.group(3)).strip().upper()} on {m.group(1).replace('[', '').replace(']', '')}" if m else ""
+    return ""
+
+
+DB_EXPORT = {"routines": [], "tables": []}
+
+
 def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", table_prefix="tbl"):
     known = known_objects(dbroot)
     rt_re = re.compile(r"CREATE\s+(?:OR\s+(?:ALTER|REPLACE)\s+)?(PROCEDURE|PROC|FUNCTION|VIEW|TRIGGER)\s+(?:\[?(\w+)\]?\.)?\[?([\w\-]+)\]?(.*?)(?:\bAS\b|\bRETURNS\b|\bWITH\b)", re.S | re.I)
@@ -195,11 +259,16 @@ def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", t
         ms = list(rt_re.finditer(text))  # several routines per script are allowed (migrations)
         for k, m in enumerate(ms):
             kind = {"PROC": "PROCEDURE"}.get(m.group(1).upper(), m.group(1).upper())
-            params = re.findall(r"(@\w+)\s+([\w]+(?:\s*\([^)]*\))?)", m.group(4)) if kind in ("PROCEDURE", "FUNCTION") else []
+            full = parse_params(m.group(4)) if kind in ("PROCEDURE", "FUNCTION") else []
+            params = [(p.split(" ", 1) + [""])[:2] for p in full]
             body = text[m.end():ms[k + 1].start() if k + 1 < len(ms) else len(text)]
             tables = sorted(set(t for t in re.findall(r"(?:FROM|JOIN|INTO|UPDATE|MERGE)\s+(?:\[?dbo\]?\.)?\[?([A-Za-z_]\w+)\]?", body, re.I)
                                 if t.lower() in known))
-            items.append((kind, m.group(3), rel(path), params, tables))
+            rets = returns_of(kind, text[m.end(4):m.end(4) + 1500], m.group(4), body, full)
+            items.append((kind, m.group(3), rel(path), params, tables, rets))
+            DB_EXPORT["routines"].append({"name": m.group(3), "schema": m.group(2) or "", "kind": kind.lower(), "params": full,
+                                          "returns": rets, "touches": tables, "file": rel(path),
+                                          "line": text.count("\n", 0, m.start()) + 1, "page": fname, "anchor": slug(prefix, m.group(3))})
     table_names = set()
     for path in walk(dbroot, (".sql",)):
         for _, tname, _ in iter_create_tables(read(path)):
@@ -220,7 +289,7 @@ def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", t
             if target:
                 used_by[target].add(fp)
     callers_sql = defaultdict(set)
-    for kind, name, p, params, tables in items:
+    for kind, name, p, params, tables, _ in items:
         for t in tables:
             if t.lower() in routine_names and t.lower() != name.lower():
                 callers_sql[t.lower()].add(name)
@@ -244,7 +313,8 @@ def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", t
            "",
            "- **Touches**: tables, views and functions this routine reads or writes (FROM / JOIN / INTO / UPDATE / MERGE). Each links to its definition.",
            "- **Called by (SQL)**: other routines that EXEC it or select from it.",
-           "- **Used by (application)**: C# / Razor / JavaScript files that mention the routine by name (EF function import, `SqlQueryByProcName`, `ExecuteSqlCommand`, …).",
+           "- **Returns**: function return type (scalar or table columns); for procedures OUTPUT parameters, RETURN codes and result sets (estimated from top-level SELECTs); view columns; trigger events.",
+           "- **Used by (application)**: code files that mention the routine by name; the call-site link (when `generic-dbaccess` runs) shows each calling method, the access technology (ADO.NET, Dapper, EF, …) and the operation.",
            "", anchor("index"), ""]
     for kind in ("PROCEDURE", "FUNCTION", "VIEW", "TRIGGER"):
         group = sorted([i for i in items if i[0] == kind], key=lambda i: i[1].lower())
@@ -255,14 +325,16 @@ def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", t
         if not group:
             continue
         out += ["", anchor(slug("kind", kind)), "", f"## {kind.title()}s ({len(group)})", "", BACK, "",
-                "| Name | Parameters | Touches | Called by (SQL) | Used by (application) | File |", "| --- | --- | --- | --- | --- | --- |"]
-        for _, name, p, params, tables in group:
-            ps = ", ".join(f"{a} {b}" for a, b in params)
+                "| Name | Parameters | Returns | Touches | Called by (SQL) | Used by (application) | File |", "| --- | --- | --- | --- | --- | --- | --- |"]
+        for _, name, p, params, tables, rets in group:
+            ps = ", ".join(f"{a} {b}".strip() for a, b in params)
             touches = ", ".join(link_obj(t) for t in tables[:30]) + (" …" if len(tables) > 30 else "")
             callers = ", ".join(f"[{c}](#{slug(prefix, c)})" for c in sorted(callers_sql.get(name.lower(), []))[:15])
             users = sorted(used_by.get(name.lower(), []))
             ushow = ", ".join(f"`{u.split('/')[-1]}`" for u in users[:8]) + (f" (+{len(users) - 8})" if len(users) > 8 else "")
-            out.append(f"| {anchor(slug(prefix, name))}**{name}** | {md_escape(ps)} | {touches} | {callers} | {ushow} | `{p}` |")
+            if users:
+                ushow += f" · [call sites](db-access.md#{slug('dba', name)})"
+            out.append(f"| {anchor(slug(prefix, name))}**{name}** | {md_escape(ps)} | {md_escape(rets) or '—'} | {touches} | {callers} | {ushow} | `{p}` |")
     write(fname, "\n".join(out) + "\n")
     return len(items)
 
@@ -301,3 +373,8 @@ if __name__ == "__main__":
         rp = rp or "db-routines.md"
         print(f"generic-sql [{name}] tables", gen_tables(path, f"Database tables ({name})", tp))
         print(f"generic-sql [{name}] routines", gen_routines(path, f"Stored procedures, functions and views ({name})", rp, table_page=tp))
+    if dbs:  # machine-readable copy for generic-dbaccess, tools and retrieval
+        agent = os.path.join(CFG.get("docs_dir", "docs"), "agent")
+        os.makedirs(agent, exist_ok=True)
+        with open(os.path.join(agent, "db.json"), "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(DB_EXPORT, fh, ensure_ascii=False, indent=1)

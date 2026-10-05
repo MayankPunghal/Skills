@@ -7,11 +7,11 @@ It does what a senior business analyst, architect and technical writer would do,
 0. **Prepare**: checks and installs its own prerequisites (Python, MkDocs Material, graphify) at user level.
 1. **Map**: builds a graphify knowledge graph of the code, optionally with LLM-named communities, then surveys stacks, folders and the largest files.
 2. **Research**: reads every area against the code and writes verified notes. Nothing is invented and no secrets are copied.
-3. **Reference**: generates an exhaustive, cross-linked catalogue: classes and functions with callers and callees, files, communities, tables, procedures, config keys. For ASP.NET MVC and SSDT it also covers controllers and actions, views, seeds and SSRS reports.
+3. **Reference**: generates an exhaustive, cross-linked catalogue: classes and functions with callers and callees, a method map (every method's parameters, what it calls and what calls it), project and package dependencies (layers, cycles, version drift), every HTTP endpoint, an error catalogue, a test map (what the tests reach and what nothing tests), database call sites (which method reads or writes each table and routine, and with ADO.NET, Dapper, EF or another technology), a UI map (what each button, link or form calls, down to the database) and entry points (what starts each method, who changes each table, where users meet each error), build-and-run facts for the runbook, files, communities, tables, procedures, config keys. For ASP.NET MVC and SSDT it also covers controllers and actions, views, seeds and SSRS reports.
 4. **Narrative**: writes the narrative pages:
    - architecture (C4);
    - business modules;
-   - workflows and state machines;
+   - workflows and state machines, plus interactive business-flow charts (swimlanes; click a step for its code);
    - integrations;
    - data model;
    - security findings register;

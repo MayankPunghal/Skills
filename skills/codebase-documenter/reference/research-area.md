@@ -5,7 +5,7 @@ The research note is the source of truth for the pages. Pages are written from n
 ## Protocol (per area)
 
 1. **Scope** — open the note (`docs/_notes/<id>.md`); confirm paths and communities.
-2. **Orient with the graph (cheap)** — `code_graph.py ask "<area topic>" --budget 800`; `graphify explain "<main class>"`; `graphify god-nodes` hubs that sit in this area; read the community's wiki page.
+2. **Orient with the graph (cheap)** — `code_graph.py ask "<area topic>" --budget 800`; `graphify explain "<main class>"`; `graphify god-nodes` hubs that sit in this area; read the community's wiki page. Once the reference is built, `trace_flow.py <entry point>` shows each journey's call tree with parameters ([flows.md](flows.md)); note the journeys worth a flow.
 3. **Read fully** — controllers / endpoints, services, view models, validators, key views, stored procedures, triggers, jobs. Large engines (pricing, validation, payload builders) are read top to bottom, not skimmed. `--find`-style greps are for locating, not for understanding.
 4. **Record facts in business terms**, each verified, into the template sections:
    - Screens / endpoints: what each action does, inputs, rules, side effects (emails, documents, statuses), who may call it.

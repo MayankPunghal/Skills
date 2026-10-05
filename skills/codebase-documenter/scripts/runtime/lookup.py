@@ -3,7 +3,7 @@
 Usage (run from the folder Claude Code / your editor is opened in, so printed paths are clickable):
   python docs/_tools/lookup.py Order_Calculate_Totals            # exact / partial name, any kind
   python docs/_tools/lookup.py Order --kind table                # restrict kind (table, routine, controller, action,
-                                                                 #   class, view, enum, seed, claim, role, script, report, page, section)
+                                                                 #   class, method, project, package, endpoint, ui-trigger, entry-point, db-access, error, runbook, view, enum, seed, claim, role, script, report, page, section)
   python docs/_tools/lookup.py "send to billing" --list          # list matches only, no bodies
   python docs/_tools/lookup.py BillingService --find invoice_id        # lines in the source file matching text
 
@@ -144,7 +144,7 @@ def decl_line(ent, src_lines):
         pat = r"CREATE\s+(?:OR\s+ALTER\s+)?(?:PROC(?:EDURE)?|FUNCTION|VIEW|TABLE|TRIGGER|TYPE)\s+[\[\w\].]*?\[?" + n + r"\]?\b"
     elif k in ("class", "controller"):
         pat = r"\b(?:class|interface|struct|record|trait|type|module|object)\s+" + n + r"\b"
-    elif k in ("function", "endpoint"):  # Python, JS/TS, Go, Rust, Kotlin, Ruby, C-like methods
+    elif k in ("function", "endpoint", "method"):  # Python, JS/TS, Go, Rust, Kotlin, Ruby, C-like methods
         pat = (r"(?:\bdef\s+|\bfunction\s*\*?\s*|\bfunc\s+(?:\([^)]*\)\s*)?|\bfn\s+|\bfun\s+|"
                r"\b(?:const|let|var)\s+(?=" + n + r"\s*=)|"
                r"\b(?!(?:return|await|new|throw|yield|else|case|in|of|is|as)\b)[\w<>,\[\]?]+\s+)" + n + r"\s*[(=<]")

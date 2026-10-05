@@ -5,7 +5,19 @@
     python <skill>/scripts/build_site.py --no-site        # skip mkdocs build (faster while writing)
 
 Adapters (codebase-docs.json "adapters", run in order; generic-areas always last):
-  generic-graph    components / modules / communities from graphify's graph.json (any language)
+  generic-graph    components / modules / communities from graphify's graph.json (any language), plus the method map
+  generic-methods  only the method map (declarations, calls, called by): add it next to aspnet-mvc-ssdt
+  generic-deps     project and package dependencies from build manifests (layers, cycles, version drift)
+  generic-api      every HTTP endpoint: verb, route, handler, parameters, auth (ASP.NET, Express, NestJS, Flask, FastAPI,
+                   Django, Spring, Go, OpenAPI files)
+  generic-errors   error catalogue: every exception / validation / HTTP / database error message and its method
+  generic-tests    test map: production methods the tests reach through the call graph, and the ones nothing tests
+  generic-build    build and run facts for the runbook (toolchain, commands, launch profiles, Docker, CI, environments)
+  generic-dbaccess database call sites: which method reads / writes / executes each table and routine, and with what
+                   (ADO.NET, Dapper, EF Core / EF6 LINQ or raw SQL, NHibernate, JPA, JDBC ...)
+  generic-trace    UI map (what each button / link / form / script calls, down to the database) and entry points
+                   (endpoints, UI events, jobs) with everything each reaches; reverse indexes method -> entry points
+  generic-flows    business-flow pages + interactive viewer from docs/_src/workflows/flows/*.flow.json (runs late)
   generic-sql      tables and routines from .sql DDL (SSDT, migrations, schema folders)
   generic-config   configuration key names per config file (never values)
   generic-areas    code & data map by business area (narrative page; drives coverage)
@@ -23,14 +35,23 @@ import sys
 from _common import ADAPTERS, SKILL_DIR, load_config, run, tick, utf8_stdout
 
 ADAPTER_SCRIPTS = {
-    "generic-graph": ["generic/graph_reference.py"],
+    "generic-graph": ["generic/graph_reference.py", "generic/method_reference.py"],
+    "generic-methods": ["generic/method_reference.py"],
+    "generic-deps": ["generic/dependency_reference.py"],
+    "generic-flows": ["generic/flow_pages.py"],
+    "generic-api": ["generic/api_reference.py"],
+    "generic-errors": ["generic/error_reference.py"],
+    "generic-tests": ["generic/test_map.py"],
+    "generic-build": ["generic/build_reference.py"],
+    "generic-dbaccess": ["generic/db_access.py"],
+    "generic-trace": ["generic/trace_map.py"],
     "generic-sql": ["generic/sql_reference.py"],
     "generic-config": ["generic/config_reference.py"],
     "generic-areas": ["generic/area_map.py"],
     "aspnet-mvc-ssdt": ["aspnet-mvc-ssdt/gen_reference.py", "aspnet-mvc-ssdt/gen_seeds.py",
                         "aspnet-mvc-ssdt/gen_inventory.py", "aspnet-mvc-ssdt/gen_ssrs.py"],
 }
-RUNTIME = ("build_docs.py", "gen_agent_index.py", "lookup.py")
+RUNTIME = ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py")
 
 
 def main():
@@ -50,7 +71,10 @@ def main():
         shutil.copy2(os.path.join(SKILL_DIR, "scripts", "runtime", f), os.path.join(tools, f))
     failed = False
     if not a.skip_adapters:
-        names = [n for n in cfg["adapters"] if n != "generic-areas"] + (["generic-areas"] if "generic-areas" in cfg["adapters"] else [])
+        # these read the method map / finished reference, so they run after the others, in this order
+        late = ["generic-api", "generic-errors", "generic-tests", "generic-dbaccess", "generic-trace", "generic-flows", "generic-areas"]
+        names = [n for n in cfg["adapters"] if n not in late] + [n for n in late if n in cfg["adapters"]]
+        done = set()
         for name in names:
             scripts = ([name.split(":", 1)[1]] if name.startswith("custom:") else ADAPTER_SCRIPTS.get(name))
             if not scripts:
@@ -58,6 +82,9 @@ def main():
                 failed = True
                 continue
             for s in scripts:
+                if s in done:  # generic-graph already ran the method map
+                    continue
+                done.add(s)
                 path = s if name.startswith("custom:") else os.path.join(ADAPTERS, s)
                 e = dict(env, PYTHONPATH=os.path.dirname(path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
                 code, out = run([sys.executable, path], env=e)
@@ -74,6 +101,9 @@ def main():
     failed |= code != 0
     code, out = run([sys.executable, os.path.join(tools, "gen_agent_index.py")])
     print("agent index:", out.strip()[:200])
+    failed |= code != 0
+    code, out = run([sys.executable, os.path.join(tools, "gen_rag_cards.py")])
+    print("rag cards:", out.strip()[-300:])
     failed |= code != 0
     if not a.no_site:
         code, out = run([sys.executable, "-m", "mkdocs", "build"])
