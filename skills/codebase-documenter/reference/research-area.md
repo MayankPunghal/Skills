@@ -28,6 +28,8 @@ The research note is the source of truth for the pages. Pages are written from n
 - [ ] Nothing copied from config values; no secrets in the note.
 - [ ] External behaviour is marked "outside the repository".
 
+If any box is unchecked, go back to the research for that area, fix the note, and re-check the whole list before moving on.
+
 ## Working efficiently
 
 - Use `lookup.py` once the reference exists (`--find TEXT` lists matching lines of a declaring file).
