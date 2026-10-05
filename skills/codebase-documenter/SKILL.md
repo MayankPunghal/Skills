@@ -1,6 +1,6 @@
 ---
 name: codebase-documenter
-description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, surveys the stack, researches every area against the code, generates an exhaustive cross-linked reference, writes narrative docs (architecture with C4, business modules, workflows, integrations, data model, security findings, glossary), builds a searchable offline MkDocs site, verifies quality gates, adds an agent layer (AGENTS.md, a project Q&A skill, llms.txt) and packages it as one zip. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA / technical specification for, or explain a whole codebase or repository; to build a knowledge graph of a codebase; to make a project's docs usable by AI agents; or to update, resume or package such documentation."
+description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, researches every area against the code, generates a cross-linked reference and narrative docs (architecture, modules, workflows, data model, security findings), builds a searchable offline MkDocs site, verifies quality gates, and adds an AI-agent layer. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA or technical specification for, or explain a whole codebase; to build a knowledge graph of a repo; to make project docs usable by AI agents; or to update, resume or package such documentation."
 metadata:
   version: 1.1.0
 user-invocable: true
