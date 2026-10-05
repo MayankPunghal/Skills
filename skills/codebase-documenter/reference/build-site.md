@@ -5,7 +5,7 @@
 1. **Adapters** (`codebase-docs.json` → `adapters`; `generic-areas` last) → `docs/reference/*.md`, `docs/_src/appendices/code-map.md`.
 2. **Runtime tools refresh** → `docs/_tools/{build_docs,gen_agent_index,lookup}.py` from the skill.
 3. **`build_docs.py`** → de-duplicates anchors, unlinks dead reference links, resolves `[[kind:name]]` tags in `docs/_src/**` into `docs/**`, writes `docs/appendices/coverage.md`, regenerates the `mkdocs.yml` nav between `# >>> nav` / `# <<< nav`, counts `docs:todo` markers. Reports `UNRESOLVED <kind>: n` with each name and page.
-4. **`gen_agent_index.py`** → `docs/agent/entities.jsonl` and `docs/llms.txt`.
+4. **`gen_agent_index.py`** → `docs/agent/entities.jsonl` and `docs/llms.txt`; then **`gen_rag_cards.py`** → `docs/agent/cards.jsonl` (retrieval cards for a local RAG index; skip pages with `rag_skip_pages`).
 5. **`python -m mkdocs build`** → `site/` (offline, searchable); prints the warning count and the first warnings.
 
 Flags: `--skip-adapters` (narrative-only changes), `--no-site` (fast loop while writing), `--verbose` (full adapter output).

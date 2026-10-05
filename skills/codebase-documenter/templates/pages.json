@@ -49,7 +49,8 @@
     ]},
     {"dir": "operations", "title": "Operations & quality", "pages": [
       {"file": "index.md", "title": "Operations & quality", "purpose": "Build, environments, deployment, monitoring and constraints.", "outline": ["Build", "Environments", "Deployment", "Monitoring and logs", "Operational constraints"]},
-      {"file": "testing.md", "title": "Testing", "purpose": "Test projects, coverage and gaps.", "outline": ["Test projects", "Coverage", "Gaps and recommendations"]}
+      {"file": "testing.md", "title": "Testing", "purpose": "Test projects, coverage and gaps.", "outline": ["Test projects", "Coverage", "Gaps and recommendations"]},
+      {"file": "runbook.md", "title": "Runbook", "purpose": "How to set up, run, build, test, deploy and troubleshoot {{product}}, step by step, from the build files (reference: Build and run) and the error catalogue. Key names only, never values.", "outline": ["Prerequisites and access", "Set up and run locally", "Build and test", "Configuration to provide", "Deploy", "Health checks and logs", "Background jobs and schedules", "Troubleshooting"]}
     ]},
     {"dir": "security", "title": "Security", "pages": [
       {"file": "index.md", "title": "Security", "purpose": "Security model at a glance.", "outline": ["Security model", "Surfaces"]},

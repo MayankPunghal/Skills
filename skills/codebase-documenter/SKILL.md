@@ -2,7 +2,7 @@
 name: codebase-documenter
 description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, researches every area against the code, generates a cross-linked reference and narrative docs (architecture, modules, workflows, data model, security findings), builds a searchable offline MkDocs site, verifies quality gates, and adds an AI-agent layer. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA or technical specification for, or explain a whole codebase; to build a knowledge graph of a repo; to make project docs usable by AI agents; or to update, resume or package such documentation."
 metadata:
-  version: 1.2.0
+  version: 1.3.0
 user-invocable: true
 argument-hint: "[full-run · install-prerequisites · setup-workspace · build-code-graph · survey-codebase · research-area <area> · generate-reference · write-pages <section> · build-site · verify-docs · make-agent-skill · package-docs · update-docs · resume] [target]"
 license: Apache 2.0
@@ -59,7 +59,7 @@ Document any existing codebase end to end (any language or stack), to software-s
 | `update-docs` | Maintain | Refresh graph, reference, affected pages and package after code changes | [reference/update-docs.md](reference/update-docs.md) |
 | `resume` | Continue | Pick up an interrupted job from PROGRESS.md and the notes | [reference/resume.md](reference/resume.md) |
 
-Supporting references: [graphify-commands.md](reference/graphify-commands.md) (every graphify command and when it helps) · [quality-standards.md](reference/quality-standards.md) (the bar: Diátaxis, C4, arc42, style, verification) · [page-patterns.md](reference/page-patterns.md) (page templates, link tags, diagrams) · [flows.md](reference/flows.md) (method map, project / package dependencies, interactive business flows with `trace_flow.py`) · [adapters.md](reference/adapters.md) (reference adapters and the anchor contract) · [lessons.md](reference/lessons.md) (pitfalls already paid for).
+Supporting references: [graphify-commands.md](reference/graphify-commands.md) (every graphify command and when it helps) · [quality-standards.md](reference/quality-standards.md) (the bar: Diátaxis, C4, arc42, style, verification) · [page-patterns.md](reference/page-patterns.md) (page templates, link tags, diagrams) · [flows.md](reference/flows.md) (method map, UI map and entry points for debugging, project / package dependencies, interactive business flows with `trace_flow.py`) · [adapters.md](reference/adapters.md) (reference adapters and the anchor contract) · [lessons.md](reference/lessons.md) (pitfalls already paid for).
 
 Routing:
 - **No argument**: read [reference/routing.md](reference/routing.md), run `context.py`, and offer the menu with the recommended `NEXT`; never auto-run a stage.

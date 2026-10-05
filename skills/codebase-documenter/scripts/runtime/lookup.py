@@ -3,7 +3,7 @@
 Usage (run from the folder Claude Code / your editor is opened in, so printed paths are clickable):
   python docs/_tools/lookup.py Order_Calculate_Totals            # exact / partial name, any kind
   python docs/_tools/lookup.py Order --kind table                # restrict kind (table, routine, controller, action,
-                                                                 #   class, method, project, package, view, enum, seed, claim, role, script, report, page, section)
+                                                                 #   class, method, project, package, endpoint, ui-trigger, entry-point, db-access, error, runbook, view, enum, seed, claim, role, script, report, page, section)
   python docs/_tools/lookup.py "send to billing" --list          # list matches only, no bodies
   python docs/_tools/lookup.py BillingService --find invoice_id        # lines in the source file matching text
 

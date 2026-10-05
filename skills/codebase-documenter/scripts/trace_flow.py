@@ -2,8 +2,11 @@
 
     python <skill>/scripts/trace_flow.py <Class.Method | Method> [--depth 4] [--up] [--max 120]
     python <skill>/scripts/trace_flow.py <Class.Method> --draft <flow-id> [--depth 3]
+    python <skill>/scripts/trace_flow.py <Class.Method> --entry
 
 Prints the callees (or with --up the callers) of a method as an indented tree: name, file:line, parameters.
+--entry answers "what starts this?": every endpoint, UI event or job that reaches the method, one call path each,
+and the buttons / links / scripts that call those endpoints (needs the generic-trace adapter's entry-points.json).
 "↺" marks a method already shown above. Calls include graphify's INFERRED (name-resolved) edges: verify in code.
 --draft writes docs/_src/workflows/flows/<flow-id>.flow.json: one step per method in call order, lane = project,
 step text = method name. Rewrite the texts in business language, merge or drop technical steps, add decisions,
@@ -60,6 +63,41 @@ def tree(m, root, depth, up, limit):
     return lines
 
 
+def entries(cfg, m, target):
+    """Entry points (endpoints, UI events, jobs) that reach `target`, each with one shortest call path and its UI triggers."""
+    p = os.path.join(cfg["docs_dir"], "agent", "entry-points.json")
+    if not os.path.exists(p):
+        sys.exit(f"{p} not found: run build_site.py --no-site with the generic-trace adapter first")
+    data = json.load(open(p, encoding="utf-8"))
+    out = []
+    for e in data["entries"]:
+        prev, frontier = {e["handler"]: None}, [e["handler"]]
+        while frontier and target not in prev:
+            nxt = []
+            for a in frontier:
+                for b in (m.get(a) or {}).get("calls", []):
+                    if b not in prev and b in m:
+                        prev[b] = a
+                        nxt.append(b)
+            frontier = nxt
+        if target in prev:
+            path, a = [], target
+            while a:
+                path.append(m[a]["name"])
+                a = prev[a]
+            out.append((len(path), e, " → ".join(reversed(path))))
+    if not out:
+        return [f"{m[target]['name']}: no entry point reaches it in the static call graph (dead code, DI / reflection, or a missing edge)"]
+    lines = [f"{m[target]['name']} is reached from {len(out)} entry point(s):"]
+    for _, e, path in sorted(out, key=lambda t: t[0]):
+        lines.append(f"  {e['kind']}: {e['label']}  ({e['file']}:{e['line']})")
+        lines.append(f"    {path}")
+        for u in data["ui"]:
+            if u.get("handler") == e["handler"] and u.get("endpoint"):
+                lines.append(f"    UI: \"{u['label']}\" ({u['element']}, {u['event']})  {u['file']}:{u['line']}")
+    return lines
+
+
 def lane_of(x):
     parts = x["file"].split("/")
     proj = next((p for p in parts[:-1] if "." in p or p not in ("src", "source", "app", "apps", "lib", "libs", "packages", "services")), parts[0])
@@ -100,6 +138,7 @@ def main():
     ap.add_argument("--up", action="store_true")
     ap.add_argument("--max", type=int, default=120)
     ap.add_argument("--draft")
+    ap.add_argument("--entry", action="store_true")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
@@ -115,6 +154,9 @@ def main():
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", a.draft):
             sys.exit("flow id: lower-case letters, digits and dashes")
         draft(cfg, m, hits[0], a.depth, a.draft)
+        return
+    if a.entry:
+        print("\n".join(entries(cfg, m, hits[0])))
         return
     print("\n".join(tree(m, hits[0], a.depth, a.up, a.max)))
 
