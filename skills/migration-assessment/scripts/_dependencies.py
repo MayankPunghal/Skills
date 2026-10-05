@@ -148,7 +148,8 @@ def strings_free(e, root):
     except OSError:
         return ""
     txt = "\n".join(lines[max(e["line"] - 1, 0):e["end"] - 1 if e["end"] < 10 ** 9 else None])
-    return RX_STRING.sub('""', re.sub(r"//[^\n]*", "", txt))
+    # strings first, so a // inside a URL literal is not mistaken for a comment that hides the rest of the line
+    return re.sub(r"//[^\n]*", "", RX_STRING.sub('""', txt))
 
 
 def _span(graph, n):
