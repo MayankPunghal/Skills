@@ -1,6 +1,6 @@
 ---
 name: skill-publisher
-description: Publishes a skill folder to Mayank's skill collection in one go: the private Skills-Personal repo by default, or the public Skills repo for shareable skills. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or "set up" a skill; when they want to change, update or improve one of their existing skills (by name); or to make a skill follow best practices and put it in the repo.
+description: "Publishes a skill folder to Mayank's skill collection: private Skills-Personal repo by default, public Skills repo for shareable skills. Refactors it to Anthropic's best practices without dropping content, scans for secrets, validates, pushes, and installs it here. Use when the user gives a skill folder, SKILL.md or zip and asks to add, publish, upload, sync, clean up or \"set up\" a skill, to change or improve an existing skill by name, or to make a skill follow best practices."
 argument-hint: "<skill folder | .zip | skill name> [changes to make]"
 ---
 
@@ -39,7 +39,7 @@ Publish progress:
    - It prints NAME, whether it's NEW or an UPDATE, the validator result, a secret scan and `STATUS {...}`.
    - The user's source folder is never changed.
 2. **Refactor** the staged copy only, following the rules below and `~/.mayank-skills/repo/CONVENTIONS.md` (read it once).
-3. **Check:** `… publish_skill.py check <name>`. Fix and rerun until `"ready": true`. WARN lines are judgment calls, so fix the ones the rules cover.
+3. **Check:** `… publish_skill.py check <name>`. Fix and rerun until `"ready": true`. WARN lines are judgment calls, so fix the ones the rules cover. If skill-creator-plus is installed, the output also has an advisory **extra audit** section; see [reference/extra-checks.md](reference/extra-checks.md). It never blocks a publish. If check still fails after a fix, return to step 2.
 4. **Publish:** `… publish_skill.py publish <name> [--to personal|public] --message "Add skill: <name> — <one line>"`. It refuses if checks fail. It adds the README row for a new skill, commits and pushes.
    - **Where it goes:** a skill already in a repo stays there. A new skill goes to **personal** (private Skills-Personal: only the owner's machines get it) unless the user said it's shareable or for colleagues; then use `--to public`. Public means anyone can read it, including its git history, so when in doubt, personal.
    - `--to` on an existing skill moves it between repos, updating both READMEs.
@@ -61,6 +61,7 @@ Apply only what the skill needs:
 - **Scripts.** Say whether each one is **run** or **read**. Name required packages. If the skill needs installed tools, add `<skill>/scripts/install_prerequisites.py` (idempotent, user-level, standard library). The installer runs it automatically.
 - **Dependencies on other repo skills:** add the pair to `DEPENDS` at the top of `~/.mayank-skills/repo/install.mjs` in the same publish.
 - **Maintaining section.** Add a short `## Maintaining this skill` section pointing at CONVENTIONS.md (copy the wording from any skill in the repo).
+- **Extra checks** (quoting the description, go-back lines, hooks, evals, reference chains): see [reference/extra-checks.md](reference/extra-checks.md). Additive, apply only what the skill needs.
 - **Leave alone:** working logic, the author's voice, and anything you don't understand. Note it in the summary instead.
 
 ## Stop conditions
@@ -84,3 +85,4 @@ Don't paste file contents.
 ## Maintaining this skill
 
 Follow `CONVENTIONS.md` in the repo. Changes are additive. The script is standard-library Python and must keep working on Windows, macOS and Linux.
+- Test prompts and baseline log: [evals/evals.md](evals/evals.md).
