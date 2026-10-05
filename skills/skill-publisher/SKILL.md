@@ -1,6 +1,6 @@
 ---
 name: skill-publisher
-description: "Publishes a skill folder to Mayank's skill collection in one go: the private Skills-Personal repo by default, or the public Skills repo for shareable skills. It refactors the skill to Anthropic's authoring best practices without dropping any content, scans for secrets, validates, commits and pushes, then installs it on this machine with its prerequisites. Use when the user gives a skill folder, SKILL.md path or skill zip and asks to add, publish, upload, sync, clean up or \"set up\" a skill; when they want to change, update or improve one of their existing skills (by name); or to make a skill follow best practices and put it in the repo."
+description: "Publishes a skill folder to Mayank's skill collection: private Skills-Personal repo by default, public Skills repo for shareable skills. Refactors it to Anthropic's best practices without dropping content, scans for secrets, validates, pushes, and installs it here. Use when the user gives a skill folder, SKILL.md or zip and asks to add, publish, upload, sync, clean up or \"set up\" a skill, to change or improve an existing skill by name, or to make a skill follow best practices."
 argument-hint: "<skill folder | .zip | skill name> [changes to make]"
 ---
 

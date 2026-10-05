@@ -44,4 +44,6 @@ Add a baseline log (date, model, with or without the skill, result). Never add e
 
 ## Before you publish
 
+If the skill will run on more than one model tier, try its main prompt on a small and a large model; a skill that only works on the largest is usually over-relying on implicit judgment.
+
 If a skill has scripts, run one end to end with real input, not just the validator. If it was only validated, say so in the summary.
