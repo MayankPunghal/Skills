@@ -302,7 +302,7 @@ def write_nav():
             for f in pages_of(""):
                 lines.append(f"  - {f}" if f == "index.md" else f"  - {q(h1(os.path.join(SRC, f)))}: {f}")
             continue
-        pad = "  " * (d.count("/") + 1)
+        pad = "  " + "    " * d.count("/")  # a sub-folder nests under its parent's page list (YAML indent 2 + 4 per level)
         idx = os.path.join(SRC, d, "index.md")
         title = h1(idx) if os.path.exists(idx) else d.split("/")[-1].replace("-", " ").title()
         lines.append(f"{pad}- {q(title)}:")

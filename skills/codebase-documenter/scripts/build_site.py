@@ -5,7 +5,10 @@
     python <skill>/scripts/build_site.py --no-site        # skip mkdocs build (faster while writing)
 
 Adapters (codebase-docs.json "adapters", run in order; generic-areas always last):
-  generic-graph    components / modules / communities from graphify's graph.json (any language)
+  generic-graph    components / modules / communities from graphify's graph.json (any language), plus the method map
+  generic-methods  only the method map (declarations, calls, called by): add it next to aspnet-mvc-ssdt
+  generic-deps     project and package dependencies from build manifests (layers, cycles, version drift)
+  generic-flows    business-flow pages + interactive viewer from docs/_src/workflows/flows/*.flow.json (runs late)
   generic-sql      tables and routines from .sql DDL (SSDT, migrations, schema folders)
   generic-config   configuration key names per config file (never values)
   generic-areas    code & data map by business area (narrative page; drives coverage)
@@ -23,7 +26,10 @@ import sys
 from _common import ADAPTERS, SKILL_DIR, load_config, run, tick, utf8_stdout
 
 ADAPTER_SCRIPTS = {
-    "generic-graph": ["generic/graph_reference.py"],
+    "generic-graph": ["generic/graph_reference.py", "generic/method_reference.py"],
+    "generic-methods": ["generic/method_reference.py"],
+    "generic-deps": ["generic/dependency_reference.py"],
+    "generic-flows": ["generic/flow_pages.py"],
     "generic-sql": ["generic/sql_reference.py"],
     "generic-config": ["generic/config_reference.py"],
     "generic-areas": ["generic/area_map.py"],
@@ -50,7 +56,9 @@ def main():
         shutil.copy2(os.path.join(SKILL_DIR, "scripts", "runtime", f), os.path.join(tools, f))
     failed = False
     if not a.skip_adapters:
-        names = [n for n in cfg["adapters"] if n != "generic-areas"] + (["generic-areas"] if "generic-areas" in cfg["adapters"] else [])
+        late = ["generic-flows", "generic-areas"]  # flows resolve refs against the finished reference; areas map everything
+        names = [n for n in cfg["adapters"] if n not in late] + [n for n in late if n in cfg["adapters"]]
+        done = set()
         for name in names:
             scripts = ([name.split(":", 1)[1]] if name.startswith("custom:") else ADAPTER_SCRIPTS.get(name))
             if not scripts:
@@ -58,6 +66,9 @@ def main():
                 failed = True
                 continue
             for s in scripts:
+                if s in done:  # generic-graph already ran the method map
+                    continue
+                done.add(s)
                 path = s if name.startswith("custom:") else os.path.join(ADAPTERS, s)
                 e = dict(env, PYTHONPATH=os.path.dirname(path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
                 code, out = run([sys.executable, path], env=e)

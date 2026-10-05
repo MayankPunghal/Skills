@@ -24,7 +24,7 @@ DEFAULTS = {
     "source_markers": [],          # sub-folders/files that identify the source root (lookup.py)
     "docs_dir": "docs",
     "graph_dir": "graphify-out",
-    "adapters": ["generic-graph", "generic-sql", "generic-config", "generic-areas"],
+    "adapters": ["generic-graph", "generic-deps", "generic-sql", "generic-config", "generic-flows", "generic-areas"],
     "adapter_options": {},
     "coverage": [
         {"title": "Classes", "prefix": "cls-", "page": "components.md"},
