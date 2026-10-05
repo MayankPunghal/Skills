@@ -180,12 +180,37 @@ def validate(name):
     return out.count("ERROR"), out
 
 
+# Optional second opinion from robonuggets/skill-creator-plus, when it is installed on this machine. Advisory only:
+# it never changes "ready", never fails a publish, and is skipped silently when the tool is absent.
+EXTRA_VALIDATORS = [os.path.join(HOME, ".claude", "skills-tools", "skill-creator-plus", "scripts", "validate_skill.py"),
+                    os.path.join(HOME, ".claude", "skills", "skill-creator-plus", "scripts", "validate_skill.py")]
+
+
+def extra_audit(name):
+    """Return (errors, warnings, lines) from skill-creator-plus' validator on the staged copy, or None if unavailable."""
+    tool = next((p for p in EXTRA_VALIDATORS if os.path.isfile(p)), None)
+    if not tool:
+        return None
+    try:
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        r = subprocess.run([sys.executable, tool, os.path.join(STAGING, name)], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=env, timeout=120)
+    except Exception:
+        return None
+    lines = [l for l in r.stdout.splitlines() if re.match(r"(ERROR|WARN)\s", l)]
+    return sum(l.startswith("ERROR") for l in lines), sum(l.startswith("WARN") for l in lines), lines
+
+
 def report(name):
     staged = os.path.join(STAGING, name)
     secrets, big = scan(staged)
     errors, vout = validate(name)
     say("\n--- validator ---")
     say(vout)
+    extra = extra_audit(name)
+    if extra:
+        say("\n--- extra audit (skill-creator-plus, advisory: does not block publish) ---")
+        say("\n".join("  " + l[:220] for l in extra[2]) if extra[2] else "  no findings")
     say("\n--- secret scan ---")
     say("\n".join(f"  SECRET?  {s}" for s in secrets) if secrets else "  none found")
     if big:
@@ -193,6 +218,8 @@ def report(name):
         say("\n".join(f"  BIG  {b}" for b in big))
     status = {"name": name, "staged": staged, "errors": errors, "secrets": len(secrets), "big_files": len(big),
               "ready": errors == 0 and not secrets and not big}
+    if extra:
+        status["extra_audit"] = {"errors": extra[0], "warnings": extra[1]}
     say("\nSTATUS " + json.dumps(status))
     return status
 
