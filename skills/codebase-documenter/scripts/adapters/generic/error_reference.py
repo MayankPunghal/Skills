@@ -16,7 +16,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _scan import BACK, DOCS, Methods, esc, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
 
 OPT = options("generic-errors")
 MAXLEN = OPT.get("max_message", 180)
@@ -102,7 +102,7 @@ def main():
            "comes from, and to spot inconsistent wording. Messages built entirely at run time or loaded from resources "
            "are not listed. Messages used in more than one place are marked ×N.", "", '<a id="index"></a>', "",
            "| Project | Errors |", "| --- | ---: |"]
-    out += [f"| [{esc(p)}](#{slug('area', p)}) | {len(v)} |" for p, v in sorted(by_proj.items())]
+    out += [f"| [{esc_text(p)}](#{slug('area', p)}) | {len(v)} |" for p, v in sorted(by_proj.items())]
     for p, rs in sorted(by_proj.items()):
         out += ["", f'<a id="{slug("area", p)}"></a>', "", f"## {p}", "", BACK, "",
                 "| Message | Kind | Raised in | Source |", "| --- | --- | --- | --- |"]
@@ -111,7 +111,7 @@ def main():
             where = m.link(r["method"]) or "—"
             kind = r["kind"] + (f" · `{esc(r['type'])}`" if r["type"] else "")
             times = f" ×{dup[r['message']]}" if dup[r["message"]] > 1 else ""
-            out.append(f'| <a id="{a}"></a>"{esc(r["message"])}"{times} | {kind} | {where} | `{esc(r["file"])}:{r["line"]}` |')
+            out.append(f'| <a id="{a}"></a>"{esc_text(r["message"])}"{times} | {kind} | {where} | `{esc(r["file"])}:{r["line"]}` |')
     write_page("errors.md", out)
     for r in rows:
         r["anchor"] = slug("err", os.path.splitext(os.path.basename(r["file"]))[0], r["line"])

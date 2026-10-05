@@ -13,7 +13,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _scan import BACK, DOCS, Methods, esc, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
 
 OPT = options("generic-api")
 CONVENTIONAL = OPT.get("conventional_mvc", True)
@@ -229,17 +229,17 @@ def main():
            "convention plug-ins, gateways) is not visible here. Auth shows what the code declares on the endpoint or its "
            "class; global filters and middleware apply on top.", "", '<a id="index"></a>', "",
            "| Project | Endpoints |", "| --- | ---: |"]
-    out += [f"| [{esc(p)}](#{slug('area', p)}) | {len(v)} |" for p, v in sorted(by_proj.items())]
+    out += [f"| [{esc_text(p)}](#{slug('area', p)}) | {len(v)} |" for p, v in sorted(by_proj.items())]
     for p, rs in sorted(by_proj.items()):
         out += ["", f'<a id="{slug("area", p)}"></a>', "", f"## {p}", "", BACK, "",
                 "| Endpoint | Handler | Parameters | Auth | Source |", "| --- | --- | --- | --- | --- |"]
         for r in sorted(rs, key=lambda r: (r["route"].lower(), r["verb"])):
-            h = M.link(r["handler"]) or esc(r["note"]) or "—"
+            h = M.link(r["handler"]) or esc_text(r["note"]) or "—"
             if r["handler"] and r["note"]:
-                h += f" · {esc(r['note'])}"
+                h += f" · {esc_text(r['note'])}"
             params = ", ".join(f"`{esc(x)}`" for x in r["params"]) or "—"
-            out.append(f'| <a id="{slug("ep", r["verb"] + " " + r["route"])}"></a>**{r["verb"]} {esc(r["route"])}** | {h} | {params} | '
-                       f'{esc(r["auth"]) or "—"} | `{esc(r["file"])}:{r["line"]}` ({r["framework"]}) |')
+            out.append(f'| <a id="{slug("ep", r["verb"] + " " + r["route"])}"></a>**{r["verb"]} {esc_text(r["route"])}** | {h} | {params} | '
+                       f'{esc_text(r["auth"]) or "—"} | `{esc(r["file"])}:{r["line"]}` ({r["framework"]}) |')
     write_page("endpoints.md", out)
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
     for r in rows:

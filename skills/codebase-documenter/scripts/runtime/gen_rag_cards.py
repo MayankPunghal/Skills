@@ -29,7 +29,7 @@ MAX_CHARS = CFG.get("rag_card_max_chars", 2400)   # ~600 tokens: inside every sm
 LIST_CAP = 12
 SKIP_DIRS = {"_src", "_notes", "_tools", "agent", "assets", "reference"}
 # pages and entity kinds that only add noise to retrieval (indexes of anchors, graph clusters)
-SKIP_PAGES = set(CFG.get("rag_skip_pages", ["appendices/coverage.md"]))
+SKIP_PAGES = set(CFG.get("rag_skip_pages", ["appendices/coverage.md", "appendices/code-map.md"]))
 SKIP_KINDS = {"community", "page", "section", "method", "endpoint", "error", "ui-trigger", "entry-point", "project", "package", "db-access"}
 FRONT = re.compile(r"\A---\n.*?\n---\n", re.S)
 
@@ -62,7 +62,9 @@ def cap(items, n=LIST_CAP):
 
 def plain(md):
     md = re.sub(r"<a id=\"[^\"]*\"></a>", "", md)
-    md = re.sub(r"<[^>]+>", "", md)
+    # real HTML tags only: keep generics (Task<Order>) and route segments (<int:id>)
+    md = re.sub(r"</?(?:a|span|div|p|br|hr|img|iframe|details|summary|sup|sub|em|strong|b|i|code|pre|table|thead|tbody|tr|td|th|ul|ol|li)"
+                r"(?:\s[^<>]*)?/?>", "", md, flags=re.I)
     md = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", md)
     md = md.replace("[↑ Back to index]", "")
     return md
@@ -320,6 +322,38 @@ def split_table(b, room):
     return parts + (["\n".join(head + cur)] if cur else [])
 
 
+def split_code(b, room):
+    """Fenced code bigger than the budget: split at line boundaries, each part re-opened and closed with the same fence."""
+    lines = b.splitlines()
+    fence, body = lines[0], [l for l in lines[1:] if l.strip() != "```"]
+    parts, cur = [], []
+    for l in body:
+        if cur and len("\n".join([fence] + cur + [l, "```"])) > room:
+            parts.append("\n".join([fence] + cur + ["```"]))
+            cur = []
+        cur.append(l[:room - 20])
+    return parts + (["\n".join([fence] + cur + ["```"])] if cur else [])
+
+
+def split_prose(b, room):
+    """Paragraph or list bigger than the budget: split at sentence (or line) boundaries, never mid-word."""
+    units = re.split(r"(?<=[.!?])\s+|\n", b)
+    parts, cur = [], ""
+    for u in units:
+        while len(u) > room:  # one enormous sentence: cut at the last space before the limit
+            cut = u.rfind(" ", 0, room) if u.rfind(" ", 0, room) > 0 else room
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.append(u[:cut])
+            u = u[cut:].lstrip()
+        if cur and len(cur) + 1 + len(u) > room:
+            parts.append(cur)
+            cur = ""
+        cur = f"{cur} {u}".strip() if cur else u
+    return parts + ([cur] if cur else [])
+
+
 def section_cards(path):
     rel = path.replace("\\", "/").removeprefix(DOCS + "/")
     if rel in SKIP_PAGES:
@@ -348,7 +382,14 @@ def section_cards(path):
         room = MAX_CHARS - len(crumb) - 80
         pieces = []
         for b in body:
-            pieces += split_table(b, room) if b.startswith("|") and len(b) > room else [b[i:i + room] for i in range(0, len(b), room)] if len(b) > room else [b]
+            if len(b) <= room:
+                pieces.append(b)
+            elif b.startswith("|"):
+                pieces += split_table(b, room)
+            elif b.startswith("```"):
+                pieces += split_code(b, room)
+            else:
+                pieces += split_prose(b, room)
         parts, cur_p = [], []
         for p in pieces:
             if cur_p and len("\n\n".join(cur_p + [p])) > room:

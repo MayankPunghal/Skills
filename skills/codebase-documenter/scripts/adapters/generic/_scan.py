@@ -25,7 +25,13 @@ def slug(*parts):
 
 
 def esc(s):
+    """Table-cell escape for text inside `code spans` (Markdown already escapes HTML there)."""
     return str(s).replace("|", "\\|").replace("\n", " ")
+
+
+def esc_text(s):
+    """Table-cell escape for prose (routes, messages, labels): `<int:id>` or `Task<T>` would otherwise be read as HTML."""
+    return esc(str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def rel(p):

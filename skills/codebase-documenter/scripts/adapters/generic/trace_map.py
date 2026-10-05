@@ -19,7 +19,7 @@ import os
 import re
 from collections import defaultdict, deque
 
-from _scan import BACK, DOCS, ROOT, Methods, esc, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
 
 OPT = options("generic-trace")
 DEPTH = OPT.get("max_depth", 8)
@@ -75,8 +75,14 @@ class Endpoints:
             if name:
                 self.by_handler[name.lower()].append(e)
 
-    def mvc(self, ctl, action, verb):
+    def mvc(self, ctl, action, verb, area=None):
         cands = self.by_handler.get(f"{ctl}controller.{action}".lower(), [])
+        # same controller name in several MVC areas: keep the ones in the view's area (or outside any area)
+        if area:
+            in_area = [e for e in cands if f"/areas/{area.lower()}/" in "/" + e["file"].lower()]
+        else:
+            in_area = [e for e in cands if "/areas/" not in "/" + e["file"].lower()]
+        cands = in_area or cands
         pick = [e for e in cands if e["verb"] == verb] or [e for e in cands if e["verb"] == "ANY"] or cands
         return pick[0] if pick else None
 
@@ -150,14 +156,14 @@ def ui_triggers(EP):
                 for a in actions:
                     if not label:
                         label = f"→ {a}"
-                    ep = EP.mvc(cname, a, verb) if cname else None
+                    ep = EP.mvc(cname, a, verb, area) if cname else None
                     add(line, tag, label, verb, target=f"{('/' + area) if area else ''}/{cname or '?'}/{a}", endpoint=ep,
                         note=("conditional: one of " + " / ".join(actions)) if len(actions) > 1 else "" if ep or cname else "controller not known from the view path")
             for m in re.finditer(r"Html\.(BeginForm|ActionLink|BeginRouteForm)\(\s*(\"[^\"]*\"\s*,\s*)?\"(\w+)\"\s*,\s*\"(\w+)\"", text):
                 verb = "POST" if m.group(1) != "ActionLink" else "GET"
                 label = (m.group(2) or "").strip(' ",') if m.group(1) == "ActionLink" else "form"
                 action, cname = m.group(3), m.group(4)
-                add(line_at(text, m.start()), m.group(1), label, verb, target=f"/{cname}/{action}", endpoint=EP.mvc(cname, action, verb))
+                add(line_at(text, m.start()), m.group(1), label, verb, target=f"/{cname}/{action}", endpoint=EP.mvc(cname, action, verb, area))
             for m in re.finditer(r"@on(click|submit|change|input)=\"(?:\(\)\s*=>\s*)?(\w+)", text):  # Blazor
                 add(line_at(text, m.start()), "element", m.group(2), m.group(1), target=f"method {m.group(2)}", handler=handler_in(path, m.group(2)))
             for m in re.finditer(r"\b(OnValidSubmit|OnSubmit|OnClick)=\"@?(\w+)\"", text):
@@ -329,7 +335,7 @@ def main():
             err_entries[x["anchor"]].add((e["id"], e["label"]))
 
     def elink(e):
-        return f"[{esc(e['label'])}](#{e['id']})"
+        return f"[{esc_text(e['label'])}](#{e['id']})"
 
     def dbs(items, cap=8):
         g = defaultdict(list)
@@ -349,19 +355,19 @@ def main():
            "element to the endpoint, the handler, and the database objects the handler reaches (through the call graph), "
            "to see what a button really does. Dynamic targets (built at run time) are marked.", "", '<a id="index"></a>', "",
            "| UI file | Triggers |", "| --- | ---: |"]
-    out += [f"| [{esc(f)}](#{slug('uif', f)}) | {len(v)} |" for f, v in sorted(by_file.items())]
+    out += [f"| [{esc_text(f)}](#{slug('uif', f)}) | {len(v)} |" for f, v in sorted(by_file.items())]
     for f, us in sorted(by_file.items()):
         out += ["", f'<a id="{slug("uif", f)}"></a>', "", f"## {f}", "", BACK, "",
                 "| Element | Calls | Handler | Reaches (database) |", "| --- | --- | --- | --- |"]
         for u in sorted(us, key=lambda u: u["line"]):
             ep = u["endpoint"]
-            calls = (f"[{esc(ep['verb'] + ' ' + ep['route'])}](endpoints.md#{ep['anchor']})" if ep else esc(u["target"] or "—"))
+            calls = (f"[{esc_text(ep['verb'] + ' ' + ep['route'])}](endpoints.md#{ep['anchor']})" if ep else esc_text(u["target"] or "—"))
             h = u["handler"]
             r = reach(h) if h else set()
             items = sorted({x for a in r for x in db_by_method.get(a, [])})
-            note = f" · {esc(u['note'])}" if u["note"] else ""
+            note = f" · {esc_text(u['note'])}" if u["note"] else ""
             hl = M.link(h) or (f"inline handler in {M.link(ep['registered_in'])}" if ep and ep.get("registered_in") in M.data else "—")
-            out.append(f'| <a id="{u["id"]}"></a>**{esc(u["label"])}** ({u["element"]}, {u["event"]}) `{esc(u["file"])}:{u["line"]}` | '
+            out.append(f'| <a id="{u["id"]}"></a>**{esc_text(u["label"])}** ({u["element"]}, {u["event"]}) `{esc(u["file"])}:{u["line"]}` | '
                        f'{calls}{note} | {hl} | {dbs(items, 6)} |')
     write_page("ui-map.md", out)
 
@@ -376,9 +382,9 @@ def main():
            '<a id="entries"></a>', "", "## Entry points", "", BACK, "",
            "| Entry point | Handler | Reaches | Database | Errors it can raise | Flows |", "| --- | --- | ---: | --- | --- | --- |"]
     for e in sorted(entries, key=lambda e: (e["kind"], e["label"].lower())):
-        src = f"[{esc(e['label'])}]({e['link']})" if e["link"] else esc(e["label"])
-        errs_s = ", ".join(f"[{esc(x['message'][:40])}](errors.md#{x['anchor']})" for x in e["errors"][:4]) + (f" +{len(e['errors']) - 4}" if len(e["errors"]) > 4 else "")
-        fl = ", ".join(f"[{esc(flows[f])}](../workflows/flows/{f}.md)" for f in e["flows"]) or "—"
+        src = f"[{esc_text(e['label'])}]({e['link']})" if e["link"] else esc_text(e["label"])
+        errs_s = ", ".join(f"[{esc_text(x['message'][:40])}](errors.md#{x['anchor']})" for x in e["errors"][:4]) + (f" +{len(e['errors']) - 4}" if len(e["errors"]) > 4 else "")
+        fl = ", ".join(f"[{esc_text(flows[f])}](../workflows/flows/{f}.md)" for f in e["flows"]) or "—"
         out.append(f'| <a id="{e["id"]}"></a>{e["kind"]}: {src} | {M.link(e["handler"])} | {len(e["reach"])} methods | {dbs(e["db"])} | {errs_s or "—"} | {fl} |')
     out += ["", '<a id="by-method"></a>', "", "## Method → entry points", "", BACK, "",
             "Every method reached from at least one entry point: the entry points and UI triggers that run it, and the flows it belongs to.", "",
@@ -387,23 +393,23 @@ def main():
         es = method_entries[a]
         uis = [u for e in es for u in ui_by_handler.get(e["handler"], []) if u["endpoint"]] + ui_by_handler.get(a, [])
         uis = list({(u["file"], u["line"]): u for u in uis}.values())
-        ui_s = ", ".join(f"[{esc(u['label'])}](ui-map.md#{u['id']})" for u in uis[:4]) + (f" +{len(uis) - 4}" if len(uis) > 4 else "")
+        ui_s = ", ".join(f"[{esc_text(u['label'])}](ui-map.md#{u['id']})" for u in uis[:4]) + (f" +{len(uis) - 4}" if len(uis) > 4 else "")
         fl = sorted(flow_of.get(a, set()) | {f for e in es for f in e["flows"]})
         out.append(f'| <a id="{slug("entm", a)}"></a>{M.link(a)} | {", ".join(elink(e) for e in es[:5])}{f" +{len(es) - 5}" if len(es) > 5 else ""} | '
-                   f'{ui_s or "—"} | {", ".join(esc(flows[f]) for f in fl) or "—"} |')
+                   f'{ui_s or "—"} | {", ".join(esc_text(flows[f]) for f in fl) or "—"} |')
     out += ["", '<a id="by-table"></a>', "", "## Who changes each table", "", BACK, "",
             "Entry points that insert, update, delete or merge rows, directly or through a procedure that touches the table.", "",
             "| Object | Changed by |", "| --- | --- |"]
     for t in sorted(table_writers):
         ws = sorted(table_writers[t], key=lambda w: w[1].lower())
-        out.append(f"| `{esc(t)}` | " + ", ".join(f"[{esc(lbl)}](#{i}) ({esc(op)})" for i, lbl, op in ws[:8]) + (f" +{len(ws) - 8}" if len(ws) > 8 else "") + " |")
+        out.append(f"| `{esc(t)}` | " + ", ".join(f"[{esc_text(lbl)}](#{i}) ({esc_text(op)})" for i, lbl, op in ws[:8]) + (f" +{len(ws) - 8}" if len(ws) > 8 else "") + " |")
     out += ["", '<a id="by-error"></a>', "", "## Where users meet each error", "", BACK, "",
             "| Error | Raised in | Reached from |", "| --- | --- | --- |"]
     for x in errs:
         if x.get("method") and err_entries.get(x["anchor"]):
             es = sorted(err_entries[x["anchor"]], key=lambda w: w[1].lower())
-            out.append(f"| [{esc(x['message'][:70])}](errors.md#{x['anchor']}) | {M.link(x['method'])} | "
-                       + ", ".join(f"[{esc(lbl)}](#{i})" for i, lbl in es[:6]) + (f" +{len(es) - 6}" if len(es) > 6 else "") + " |")
+            out.append(f"| [{esc_text(x['message'][:70])}](errors.md#{x['anchor']}) | {M.link(x['method'])} | "
+                       + ", ".join(f"[{esc_text(lbl)}](#{i})" for i, lbl in es[:6]) + (f" +{len(es) - 6}" if len(es) > 6 else "") + " |")
     write_page("entry-points.md", out)
 
     # ---- machine-readable
