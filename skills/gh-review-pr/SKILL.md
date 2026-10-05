@@ -249,19 +249,19 @@ The cap exists because most findings only need a few lines of surrounding contex
 
 **Review with posting:**
 ```
-User: /review-pr 42 --post
+User: /gh-review-pr 42 --post
 You:  (runs script, reviews, outputs JSON, shows preview, asks confirmation, runs post script)
 ```
 
 **Review without posting:**
 ```
-User: /review-pr https://github.com/acme/app/pull/17
+User: /gh-review-pr https://github.com/acme/app/pull/17
 You:  (runs script, reviews, outputs JSON — no post)
 ```
 
 **First time (no args):**
 ```
-User: /review-pr
+User: /gh-review-pr
 You:  Which repository? (owner/name or full URL)
 User:  acme/app
 You:  Which PR number?
