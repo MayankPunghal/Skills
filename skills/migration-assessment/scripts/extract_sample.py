@@ -23,7 +23,7 @@ VOCAB = {
     "ratings": r"\b(blocker|critical|high|medium|low|severity|priority|likelihood|impact|confidence|RAG|red|amber|green)\b",
     "effort": r"\b(person[- ]days?|man[- ]days?|story points?|hours|weeks|sprints?|FTEs?|t-shirt|S/M/L|XL)\b",
     "cost": r"\b(TCO|licen[cs]e|licen[cs]ing|BYOL|license[- ]included|OLA|MAP|savings|cost|pricing|ROI|\$|USD|INR|EUR)\b",
-    "aws": r"\b(EC2|ECS|EKS|Fargate|Lambda|RDS|Aurora|Babelfish|S3|EFS|FSx|SQS|SNS|ElastiCache|CloudWatch|Secrets Manager|Transform|MGN|DMS|Landing Zone|Control Tower)\b",
+    "aws": r"\b(EC2|ECS|EKS|Fargate|Lambda|RDS|Aurora|S3|EFS|FSx|SQS|SNS|ElastiCache|CloudWatch|Secrets Manager|Transform|MGN|DMS|Landing Zone|Control Tower)\b",
     "dotnet": r"\b(\.NET (Framework|Core|\d+)|ASP\.NET|Web Forms|WCF|WPF|WinForms|Entity Framework|EF Core|IIS|System\.Web|NuGet)\b",
 }
 

@@ -34,3 +34,4 @@ Put sample reports in `calibration/samples/` (excluded from packaging), then:
 | Date | Change | Evidence |
 | --- | --- | --- |
 | 2026-10-02 | Initial research baseline (no house samples yet) | references/sources.md |
+| 2026-10-05 | Estimation v4: coding hours only, complexity factor, dual / PostgreSQL scenarios, optional modernizations kept outside the total. Testbed FulfillmentHub: 849 h to 203 h likely | AWS Transform for .NET case study (143 KLOC, about 270 h saved); FulfillmentHub testbed |

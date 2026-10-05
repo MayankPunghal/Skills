@@ -308,8 +308,8 @@ class Scan:
         if has_pwd:
             r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High", "Confirmed",
                                "Plain-text database credentials in config files are a compliance finding and block credential rotation.",
-                               "Store credentials in AWS Secrets Manager (RDS integration supports rotation); build the connection string at start-up.",
-                               "Secrets Manager + RDS rotation", "trivial", ["S11"])
+                               "Store credentials in AWS Secrets Manager (with rotation); build the connection string at start-up.",
+                               "Secrets Manager + rotation", "trivial", ["S11"])
             self.add(r, project, rp, line, f'<add name="{name}" connectionString="…password=***…" />')
         if host and not entry["localdb"] and host not in (".", "(local)", "localhost", "127.0.0.1"):
             self.endpoint(host, "sql", rp, project, line, f"connection string '{name}' -> {host}", "config")
@@ -433,12 +433,12 @@ class Scan:
             self.add(r, w["path"], w["path"] + "/web.config", 1, f"{w['pages']} pages, App_Code: {w['app_code']}")
         arts = inv.get("artefacts", {})
         for kind, rid, title, sev, why, fix, alt, db in (
-                ("ssis", "DB-SSIS", "SSIS packages", "High", "SSIS runs on RDS for SQL Server 2016-2022 via an option group (not on SQL Server 2025) and not with Babelfish.",
-                 "Inventory packages; rehost on RDS SSIS / SQL Server on EC2, or rebuild in AWS Glue / Step Functions.", "AWS Glue / Step Functions / RDS SSIS", {"rds": "limited", "babelfish": "blocker"}),
-                ("ssrs", "DB-SSRS", "SSRS reports", "Medium", "SSRS is an RDS option for SQL Server 2016-2022; from SQL Server 2025 reporting is Power BI Report Server.",
-                 "Decide report hosting (RDS SSRS option, PBIRS, EC2) and data sources.", "RDS SSRS option / PBIRS / QuickSight", {"rds": "limited", "babelfish": "blocker"}),
-                ("ssas", "DB-SSAS", "SSAS models", "High", "SSAS is not supported on RDS for SQL Server 2022+.", "Run SSAS on EC2 or move models to a managed analytics service.",
-                 "SQL Server on EC2 / Amazon Redshift + QuickSight", {"rds": "blocker", "babelfish": "blocker", "ec2": "ok"}),
+                ("ssis", "DB-SSIS", "SSIS packages", "High", "SSIS packages need SQL Server Integration Services; they do not run against PostgreSQL.",
+                 "Inventory packages; rebuild in AWS Glue / Step Functions, or keep SSIS against SQL Server while it remains.", "AWS Glue / Step Functions", {"pg": "redesign"}),
+                ("ssrs", "DB-SSRS", "SSRS reports", "Medium", "SSRS reports are bound to SQL Server data sources and the SSRS server.",
+                 "Decide where reports run and repoint data sources (PostgreSQL data source or the dual-database layer).", "PBIRS / QuickSight / SSRS on EC2", {"pg": "rework"}),
+                ("ssas", "DB-SSAS", "SSAS models", "High", "SSAS models are bound to SQL Server and do not run against PostgreSQL.", "Keep SSAS on SQL Server while it remains, or move models to a managed analytics service.",
+                 "Amazon Redshift + QuickSight", {"pg": "redesign"}),
                 ("crystal", "INT-CRYSTAL-FILES", "Crystal report definitions (.rpt)", "High", "Crystal Reports runtime is Windows/.NET Framework only.",
                  "Inventory reports; re-implement or retire.", "SSRS / PBIRS / reporting library", None),
                 ("rdlc", "INT-RDLC-FILES", "RDLC local reports", "Medium", "RDLC rendering relies on the .NET Framework ReportViewer.",

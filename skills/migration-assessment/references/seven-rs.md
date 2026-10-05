@@ -11,7 +11,7 @@ Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a 
 | **Rehost** | Lift and shift without change | Move the Windows VM / IIS site as-is to EC2 Windows (AWS Application Migration Service), or into Windows containers |
 | **Relocate** | Hypervisor-level move (e.g. VMware Cloud on AWS) | Whole VMware estate moved unchanged; rare for code-led work |
 | **Repurchase** | Replace with another product (SaaS) | Crystal → SaaS reporting, fax → cloud fax, a custom CMS → SaaS |
-| **Replatform** | Lift, tinker and shift: some optimisation | Port to .NET 10 on Linux with the **same architecture**: SDK-style projects, ASP.NET Core, Linux containers on ECS Fargate, RDS. Most code-led work lands here |
+| **Replatform** | Lift, tinker and shift: some optimisation | Port to .NET 10 on Linux with the **same architecture**: SDK-style projects, ASP.NET Core, Linux containers on ECS Fargate. Most code-led work lands here |
 | **Refactor / re-architect** | Modify architecture with cloud-native features | Rewrite the Web Forms UI, WCF → REST/gRPC, MSMQ → SQS, split a monolith, event-driven jobs |
 
 ## Draft rules (in order)
@@ -64,12 +64,11 @@ Microsoft recommends **incremental migration** (strangler fig with YARP and Syst
 | Retained .NET Framework | EC2 Windows (IIS) or ECS Windows containers; consider AWS Elastic Beanstalk Windows platform for simple sites |
 | Desktop | .NET 10 Windows Desktop on user machines; Amazon WorkSpaces / AppStream 2.0 if centrally hosted |
 
-## Client scenarios (hosting preference applied across applications)
+## Client scenarios (code side)
 
 | Scenario | What happens per application | When |
 | --- | --- | --- |
-| `modernize` (default) | The reviewed 7R decision per app; Linux containers and managed services | The client wants cost and agility gains |
-| `linux-lift` | Every server app is ported to .NET 10 with **minimal change** and runs on EC2 Linux (Kestrel + nginx/systemd). Cloud-scale findings (distributed session, logging targets, background jobs) are skipped. Apps that are Windows-bound by decision (Web Forms retained, desktop) are rehosted on EC2 Windows | The client asks for "lift and shift to Linux". A .NET Framework app cannot run on Linux unported, so this is the minimum |
-| `windows-rehost` | Every server app moves as-is to EC2 Windows (AWS MGN or redeploy). Only connectivity, configuration, secrets and security findings are costed | Fastest exit from the data centre; keeps Windows and SQL Server licences |
+| `modernize` (default) | The reviewed 7R decision per app: port to .NET 10 for Linux, replace Windows-bound parts | The client wants cost and agility gains |
+| `windows-rehost` | Every server app moves as-is from on-premises Windows to Windows EC2. Only connectivity, configuration, secrets, identity and integration findings are costed | Fastest exit from the data centre; no code port |
 
-The report's scenario table shows all three, so the client sees the trade-off between effort and licences or modernization.
+Hosting of the database and operations work are out of scope; the estimate counts coding hours only. The report's scenario table shows both, so the client sees the trade-off between code effort and modernization.

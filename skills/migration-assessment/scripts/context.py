@@ -61,7 +61,7 @@ def main():
     if est:
         t = est["totals"]
         print(f"ESTIMATE: {t['total_days'][0]}-{t['total_days'][1]} person-days (likely {t['likely_days']}), ~{t['duration_weeks']} weeks")
-    todo = [os.path.basename(p)[:-3] for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^TODO:", open(p, encoding="utf-8").read())]
+    todo = [os.path.basename(p)[:-3] for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^(?:PENDING|TODO):", open(p, encoding="utf-8").read())]
     print(f"NARRATIVES: {'all written' if not todo else 'to write: ' + ', '.join(sorted(todo))}")
     reports = glob.glob(os.path.join(OUT, "report", "*.md"))
     print(f"REPORT: {os.path.relpath(reports[0]) if reports else 'not built'}")

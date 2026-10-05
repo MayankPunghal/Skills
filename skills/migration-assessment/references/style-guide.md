@@ -23,7 +23,7 @@ The tone and wording rules for every client-facing text (narratives, reviewer no
 | --- | --- | --- |
 | Executive summary | 5–8 short paragraphs or bullets: current state, recommended path, effort/timeline range, licensing effect, top 3 risks, next step | Detailed findings, jargon without explanation |
 | Architecture | What the applications do (from code), how they connect, which systems sit outside AWS after migration | Repeating the inventory table |
-| Database | Recommended target with the evidence that drives it; what blocks Babelfish/PostgreSQL | Recommending Babelfish without a Compass run as next step |
+| Database | Recommended target with the evidence that drives it; what needs rework for PostgreSQL | Recommending PostgreSQL-only without naming the T-SQL that must be rewritten |
 | Application plans | One rationale paragraph per application; options with trade-offs (cost, risk, licence, time) | "Rewrite" as a default; options without trade-offs |
 | Risks and questions | Each risk has an owner-type and mitigation; questions are answerable by the client | Generic risks not tied to this estate |
 | Testing and merge | QA approach per wave, test data, regression scope, branch strategy tied to repository activity | Promising coverage numbers |

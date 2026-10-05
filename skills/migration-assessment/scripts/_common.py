@@ -29,7 +29,7 @@ DEFAULTS = {
     "git_activity_days": 180,
     "exclude_dirs": ["bin", "obj", "packages", "node_modules", ".git", ".vs", "TestResults", "dist", "wwwroot/lib", "bower_components"],
     "skip_repos": [],
-    "scenario": {"hosting": "modernize", "database": "auto"},  # hosting: modernize | linux-lift | windows-rehost; database: auto | rds-sqlserver | babelfish | postgresql | dual | ec2-sqlserver
+    "scenario": {"hosting": "modernize", "database": "dual"},  # hosting: modernize | windows-rehost; database: dual | postgresql | none
 }
 
 SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}

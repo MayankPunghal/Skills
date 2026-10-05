@@ -1,7 +1,7 @@
 # NuGet package map (generated)
 
 Generated from `scripts/data/package_map.json`. Matching is case-insensitive on the package id (regex, anchored), first match wins.
-With `online_package_lookup` the scanner also reads api.nuget.org: the latest version's target frameworks, deprecation (with alternative), published
+With `online_package_lookup` the scanner also reads api.nuget.org: the newest published version's target frameworks, deprecation (with alternative), published
 advisories for the versions in use, and the licence expression. Unknown packages that support .NET Standard / .NET in their latest version are marked ok.
 
 | Package id (regex) | Status | Severity | Note | Replacement | Known-vulnerable below |

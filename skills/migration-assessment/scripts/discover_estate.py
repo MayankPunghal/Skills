@@ -21,6 +21,7 @@ from collections import Counter, defaultdict
 
 from _common import (OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
                      slug, utf8_stdout, write_json)
+from _complexity import file_metrics, project_metrics
 
 CODE_EXT = {".cs": "C#", ".vb": "VB.NET", ".fs": "F#"}
 MARKUP_EXT = {".aspx", ".ascx", ".master", ".asax", ".ashx", ".asmx", ".svc", ".cshtml", ".vbhtml", ".razor", ".xaml"}
@@ -303,6 +304,8 @@ def inventory_repo(name, repo_root, cfg):
                 if ext in CODE_EXT and (GENERATED_NAME.search(base) or GENERATED_HEAD.search(read_text(f)[:1500])):
                     lang = "generated"  # designer / T4 / service-reference code: regenerated, not ported by hand
                 bucket["loc"][lang] += n
+                if ext in (".cs", ".vb") and lang != "generated" and o is not None:
+                    bucket.setdefault("cx_files", []).append(file_metrics(read_text(f), vb=(ext == ".vb")))
                 if ext in (".cs", ".vb") and o is not None and not per_proj[o["path"]]["servicebase"] and n:
                     if re.search(r"(:\s*ServiceBase\b|Inherits\s+(System\.ServiceProcess\.)?ServiceBase\b)", read_text(f)):
                         per_proj[o["path"]]["servicebase"] = True
@@ -314,6 +317,7 @@ def inventory_repo(name, repo_root, cfg):
         p["loc_handwritten"] = sum(v for k, v in b["loc"].items() if k in ("C#", "VB.NET", "F#"))
         p["loc_markup"] = b["loc"].get("markup", 0)
         p["loc_generated"] = b["loc"].get("generated", 0)
+        p["complexity"] = project_metrics(b.get("cx_files", []))
         p["languages"] = sorted(k for k in b["loc"] if k in ("C#", "VB.NET", "F#"))
         p["type"] = classify(p, b["ext"], {"servicebase": b["servicebase"]})
         p["deployable"] = p["type"] in DEPLOYABLE

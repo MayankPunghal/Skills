@@ -13,7 +13,7 @@ import shutil
 
 from _common import CONFIG_NAME, DEFAULTS, OUT, SKILL_DIR, save_config, utf8_stdout, write_json, read_json
 
-NARRATIVE = ["executive-summary", "architecture", "application-plans", "database", "risks-and-questions", "testing-and-merge", "cost"]
+NARRATIVE = ["executive-summary", "architecture", "application-plans", "database", "risks-and-questions", "testing-and-merge", "cost", "dependencies"]
 
 
 def main():
@@ -26,8 +26,8 @@ def main():
     ap.add_argument("--hosting", help="current hosting as stated by the client (VMware, Proxmox, Hyper-V, bare metal, colo)")
     ap.add_argument("--residency")
     ap.add_argument("--target", help="target framework moniker (default net10.0)")
-    ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "linux-lift", "windows-rehost"], help="client hosting preference (default modernize)")
-    ap.add_argument("--target-database", dest="scen_db", choices=["auto", "rds-sqlserver", "babelfish", "postgresql", "dual", "ec2-sqlserver"], help="database target (default auto)")
+    ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost"], help="client hosting preference (default modernize)")
+    ap.add_argument("--target-database", dest="scen_db", choices=["dual", "postgresql", "none"], help="database code scenario (default dual)")
     ap.add_argument("--online", action="store_true", help="allow api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences")
     a = ap.parse_args()
     root = os.getcwd()

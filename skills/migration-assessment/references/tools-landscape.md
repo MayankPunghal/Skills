@@ -14,7 +14,6 @@ What exists, what is deprecated, and how this skill relates to each tool. Re-che
 | **CAST Highlight** (incl. Portfolio Advisor for AWS Transform) / **CAST Imaging** | Commercial | Portfolio cloud-readiness scoring, blockers, AWS service suggestions, architecture visualisation | Optional. The tooling table explains what it adds. graphify provides the free architecture map |
 | **graphify** | In use | AST code graph, communities, hubs, query/explain/path/affected, exports, cross-repo merge | `map_graphs.py`; the reviewer queries the graph for reachability and blast radius |
 | **codebase-documenter** (sibling skill) | In use | Prerequisites, graph naming, full BA-grade documentation of an application | Prerequisite installer; optional deep documentation of high-risk apps |
-| **Babelfish Compass** | Open source (Java 8+) | Babelfish compatibility report from DDL | Required next step before any Babelfish recommendation |
 | **AWS DMS / DMS Schema Conversion / AWS SCT** | GA | Data migration; schema conversion to PostgreSQL | Named in database plans |
 | **AWS Application Migration Service (MGN)** | GA | Agent-based VM replication from any hypervisor (VMware, Hyper-V, Proxmox, physical) | Rehost path for retained apps |
 | **AWS Optimization and Licensing Assessment (OLA)** / Migration Evaluator | Free programme | Utilisation-based right-sizing and licence modelling | Cost section: numbers come from here, not from code |
