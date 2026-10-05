@@ -1,7 +1,8 @@
 ---
 name: codebase-documenter
-description: Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, surveys the stack, researches every area against the code, generates an exhaustive cross-linked reference, writes narrative docs (architecture with C4, business modules, workflows, integrations, data model, security findings, glossary), builds a searchable offline MkDocs site, verifies quality gates, adds an agent layer (AGENTS.md, a project Q&A skill, llms.txt) and packages it as one zip. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA / technical specification for, or explain a whole codebase or repository; to build a knowledge graph of a codebase; to make a project's docs usable by AI agents; or to update, resume or package such documentation.
-version: 1.1.0
+description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, surveys the stack, researches every area against the code, generates an exhaustive cross-linked reference, writes narrative docs (architecture with C4, business modules, workflows, integrations, data model, security findings, glossary), builds a searchable offline MkDocs site, verifies quality gates, adds an agent layer (AGENTS.md, a project Q&A skill, llms.txt) and packages it as one zip. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA / technical specification for, or explain a whole codebase or repository; to build a knowledge graph of a codebase; to make a project's docs usable by AI agents; or to update, resume or package such documentation."
+metadata:
+  version: 1.1.0
 user-invocable: true
 argument-hint: "[full-run · install-prerequisites · setup-workspace · build-code-graph · survey-codebase · research-area <area> · generate-reference · write-pages <section> · build-site · verify-docs · make-agent-skill · package-docs · update-docs · resume] [target]"
 license: Apache 2.0
@@ -66,7 +67,7 @@ Routing:
 - **Explicit or clearly implied command**: load its reference and follow it. Ask once if two commands fit.
 - **Questions about an already documented project**: use the project's own skill (`<slug>-docs`) created by `make-agent-skill`, not this one.
 
-All scripts live in `<skill-base-dir>/scripts/` and run with the current directory = the documentation workspace (the folder holding `codebase-docs.json`). Python 3.10+, standard library only; `install-prerequisites` installs MkDocs Material and graphify. Nothing in the skill is tied to one project: product names, folders and adapters come from `codebase-docs.json`, written by `setup-workspace`.
+All scripts live in `<skill-base-dir>/scripts/` and run with the current directory = the documentation workspace (the folder holding `codebase-docs.json`). Python 3.10+, standard library only; `install-prerequisites` installs MkDocs Material and graphify. To install the skill itself, see `install.py` (usage in the README). Nothing in the skill is tied to one project: product names, folders and adapters come from `codebase-docs.json`, written by `setup-workspace`.
 
 ## Maintaining this skill
 
