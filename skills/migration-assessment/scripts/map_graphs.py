@@ -252,7 +252,7 @@ def analyse(repo, gj, inv):
                 + (f" (and tests: {', '.join(test_w)})" if test_w else "") + f"; read by {', '.join(row['readers']) or '-'}")
         # the DDL file when the table has one, otherwise one write site per writing project (EF / code-only schemas)
         sites = [{"file": row["file"], "line": row.get("line") or 1}] if row.get("file") else \
-            [next(w for w in row.get("write_sites", []) if w["project"] == pr) for pr in row["writers"]
+            [next(w for w in row.get("write_sites", []) if w["project"] == pr) for pr in row["app_writers"]
              if any(w["project"] == pr for w in row.get("write_sites", []))]
         for site in sites:
             if site["file"] not in f["files"]:
@@ -316,7 +316,7 @@ def db_coupling(nodes, edges, file_of, project, tests=frozenset()):
                     and r["kind"] not in ("TRIGGER", "SECURITY POLICY") and r["name"] not in referenced)  # run on table events
     by_project = Counter(p for r in rows for p in r["projects"])
     return {"objects": len(rows), "shared": shared[:200], "shared_count": len(shared),
-            "multi_writer": [r["name"] for r in shared if len(r["app_writers"]) > 1], "test_projects": sorted(tests),
+            "multi_writer": [r["name"] for r in shared if len(r["app_writers"]) > 1], "test_projects": sorted({p for r in rows for p in r["projects"] if p in tests}),
             "unused_in_code": unused[:300], "unused_count": len(unused), "objects_per_project": dict(by_project.most_common()),
             "usage": sorted(rows, key=lambda r: (-len(r["projects"]), -r["code_sites"]))[:500]}
 

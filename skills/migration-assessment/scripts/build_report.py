@@ -1100,10 +1100,12 @@ def value_tag(m):
     {{v:inventory.clientapp.applications[FulfillmentHub.Web].loc}} (matches name, id, rule, repo or kind). On a dict, [key]
     reads a key that contains dots or slashes: {{v:graph.clientapp.database.objects_per_project[FulfillmentHub.Data]}}."""
     cur = VALUES
-    for part in re.findall(r"[^.\[\]]+(?:\[[^\]]+\])?", m.group(1).strip()):
-        key, _, sel = part.partition("[")
-        sel = sel.rstrip("]")
-        for step in ([key] if key else []) + ([("sel", sel)] if sel else []):
+    path, part_re = m.group(1).strip(), r"[^.\[\]]+(?:\[[^\]]+\])*"
+    if not re.fullmatch(rf"{part_re}(?:\.{part_re})*", path):  # stray dots or brackets: fail rather than guess
+        return f"**[value {m.group(1)} not found]**"
+    for part in re.findall(part_re, path):
+        key = part.split("[", 1)[0]
+        for step in [key] + [("sel", s) for s in re.findall(r"\[([^\]]+)\]", part)]:
             if isinstance(step, tuple) and isinstance(cur, dict):  # a key with dots or slashes: objects_per_project[FulfillmentHub.Data]
                 if step[1] not in cur:
                     return f"**[value {m.group(1)} not found]**"
