@@ -32,7 +32,14 @@ def tested():
 
 
 def vtuple(v):
-    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:4])
+    """Comparable version: the release numbers, then 1 for a plain release or 0 for a pre-release (1.0.0rc1 < 1.0.0)."""
+    m = re.match(r"\s*v?(\d+(?:\.\d+)*)(.*)", v or "")
+    if not m:
+        return ()
+    nums = [int(x) for x in m.group(1).split(".")][:4]
+    nums += [0] * (4 - len(nums))
+    pre = re.match(r"[.-]?(a|b|rc|alpha|beta|pre|dev)", m.group(2), re.I)
+    return tuple(nums) + (0 if pre else 1,)
 
 
 def installed(name, spec):

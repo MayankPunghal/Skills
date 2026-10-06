@@ -81,6 +81,7 @@ def pip_install(*pkgs):
     if sys.prefix == sys.base_prefix:  # not a virtualenv: install for this user only
         args.append("--user")
     code, out = run(args + list(pkgs), timeout=1800)
+    LAST_OUT[0] = out
     if code and "externally-managed" in out:
         print("  this Python is managed by the OS (PEP 668): create a virtual environment and rerun with its python:\n"
               "    python3 -m venv ~/.venvs/codebase-documenter && ~/.venvs/codebase-documenter/bin/python " + os.path.abspath(__file__))
@@ -94,18 +95,31 @@ def pinned(name, pkg):
     return f"{pkg}=={tool_updates.tested()[name]['tested']}"
 
 
+LAST_OUT = [""]  # output of the last pip / uv install, to tell "no build of that version" from other failures
+NO_BUILD = ("No matching distribution", "Could not find a version", "No solution found", "no version of")
+
+
+def no_build():
+    return any(s in LAST_OUT[0] for s in NO_BUILD)
+
+
 def pip_pinned(name, pkg):
-    """The tested version; when it has no build for this Python, the newest release instead, said aloud."""
+    """The tested version; only when it has no build for this Python, the newest release instead, said aloud. Any other
+    failure (network, proxy, an OS-managed Python) stops here, so a hiccup never ends with an untested release."""
     if pip_install(pinned(name, pkg)):
         return True
-    print(f"  {name}: the tested version does not install here; installing the newest release (untested with this skill)")
+    if not no_build():
+        return False
+    print(f"  {name}: the tested version has no build for this Python; installing the newest release (untested with this skill)")
     return pip_install(pkg)
 
 
 def graphify_pinned():
     if install_graphify(pinned("graphify", GRAPHIFY_PKG)):
         return True
-    print("  graphify: the tested version does not install here; installing the newest release (untested with this skill)")
+    if not no_build():
+        return False
+    print("  graphify: the tested version has no build for this Python; installing the newest release (untested with this skill)")
     return install_graphify(GRAPHIFY_PKG)
 
 
@@ -137,6 +151,7 @@ def install_graphify(pkg=GRAPHIFY_PKG):
     if tool_exe("uv") or run(PY + ["-m", "uv", "--version"])[0] == 0:
         uv = [tool_exe("uv")] if tool_exe("uv") else PY + ["-m", "uv"]
         code, out = run(uv + ["tool", "install", "--force", pkg], timeout=1800)
+        LAST_OUT[0] = out
         if code == 0:
             run(uv + ["tool", "update-shell"])  # adds the uv tool folder to PATH for future shells
             return True
