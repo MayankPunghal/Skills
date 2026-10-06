@@ -76,7 +76,7 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
 - Zero-warning MkDocs builds are achievable; every warning had a root cause in a generator.
 - `use_directory_urls: false` + the offline plugin = the site opens from a zip without a server.
 - A sticky table header only sticks to its nearest scrolling ancestor. Material wraps every table in a horizontally scrolling box, so `position: sticky` alone never sticks to the page: give that box a max height (`readability.css`) and the header sticks inside it.
-- An offline, confidential site should not load Google Fonts: the requests fail offline and tell a third party who reads the docs. Use system fonts (`font: false`).
+- An offline, confidential site should not load Google Fonts: the requests fail offline and send each reader's IP address and the page address to a third party. Use system fonts (`font: false`).
 - Skill-owned site files (CSS, the reader's guide) are refreshed on every build, so improvements reach existing workspaces; files written once at setup (`extra.css`) never do.
 
 ## Agent layer
