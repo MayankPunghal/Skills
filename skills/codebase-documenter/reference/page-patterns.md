@@ -143,3 +143,4 @@ The narrative over the generated `reference/dependency-injection.md` (C#, generi
 - Mermaid only (renders in MkDocs and GitHub); real names; ≤ ~15 nodes per diagram; split otherwise.
 - Context: `flowchart LR` users / system / externals. Containers: `flowchart TB`. Sequences: `sequenceDiagram` with `autonumber`. Data: `erDiagram` with the 10–20 core entities.
 - `graphify export callflow-html` output is a starting point; verify every arrow before reusing it.
+- Syntax traps MkDocs never reports (the diagram only fails in the browser; `verify_docs.py` lints them): no `;` in a sequence message or an unquoted label (it ends the statement: write `,` or `#59;`); quote labels with spaces or symbols and write a `"` inside one as `#quot;`; never use `end` as a node id (`End`, `end_`); keep `[ ] ( ) { }` balanced on each flowchart line.

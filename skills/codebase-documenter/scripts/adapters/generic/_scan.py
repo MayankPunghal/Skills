@@ -147,6 +147,24 @@ def global_filters():
     return out
 
 
+_VENDORED = []
+
+
+def vendored():
+    """Relative paths of copied third-party files (scripts/vendor_files.py: configured graph.vendor_dirs, detected library
+    folders, banners). URLs, environment reads and calls inside them belong to the library, not to the application."""
+    if not _VENDORED:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+        try:
+            import vendor_files
+            _VENDORED.append(set(vendor_files.scan(ROOT)))
+        except Exception as e:  # never fail an adapter over this: say so and treat nothing as vendored
+            print(f"note: vendor file detection unavailable ({e}); third-party files are scanned too")
+            _VENDORED.append(set())
+    return _VENDORED[0]
+
+
 def write_page(name, lines):
     os.makedirs(OUT, exist_ok=True)
     open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")

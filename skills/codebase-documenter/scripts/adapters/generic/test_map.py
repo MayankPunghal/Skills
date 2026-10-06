@@ -1,7 +1,8 @@
 """Test map: which production methods the tests reach through the call graph, and which nothing tests.
 
 Writes docs/reference/test-map.md from docs/agent/methods.json (the method map; run after generic-graph / generic-methods).
-A test method is any method in a test file or folder (adapter_options.generic-tests.test_regex). From every test the
+A test method is any method in a .NET test project (one that references a test framework or the test SDK) or in a file
+named / placed like a test (adapter_options.generic-tests.test_regex) that holds at least one test case. From every test the
 call graph is followed (up to max_depth calls, default 8, INFERRED edges included); every production method on the way
 is "reached". This is static reachability, not run-time coverage. For C# with generic-di, calls through DI registrations,
 interfaces, overrides, messages, events and stored delegates are followed; reflection, HTTP and SQL are not, so
@@ -21,8 +22,32 @@ DEPTH = OPT.get("max_depth", 8)
 MAX_TESTS_SHOWN = 4
 # a test case, not a helper in a test file: xUnit / NUnit / MSTest attributes, JUnit @Test, test_* / Test* functions, it( / test(
 CASE = re.compile(r"\[\s*(?:\w+\.)*(Fact|Theory|Test|TestMethod|DataTestMethod|TestCase\w*|TestCaseSource|Property)\b|@(Test|ParameterizedTest)\b|"
-                  r"^\s*(?:async\s+)?def\s+test_|^\s*func\s+Test\w*\(|\b(?:it|test)\s*\(\s*['\"`]")
+                  r"^\s*(?:async\s+)?def\s+test_|^\s*func\s+Test\w*\(|\b(?:it|test)\s*\(\s*['\"`]", re.M)
+# a .NET project that references a test framework or the test SDK is a test project, whatever its files are called
+TEST_PKG = re.compile(r"(?i)Microsoft\.NET\.Test\.Sdk|\b(?:xunit|nunit|MSTest\.TestFramework|MSTest\.Sdk)\b|"
+                      r"Microsoft\.VisualStudio\.(?:QualityTools\.)?UnitTest")
 _lines = {}
+_test_proj = {}
+
+
+def test_project(f):
+    p = project_of(f)
+    if p not in _test_proj:
+        d = os.path.join(ROOT, p) if p != "." else ROOT
+        try:
+            manifests = [x for x in os.listdir(d) if re.search(r"(?i)\.(cs|vb|fs)proj$|^packages\.config$", x)]
+        except OSError:
+            manifests = []
+        _test_proj[p] = any(TEST_PKG.search(read(os.path.join(d, x))) for x in manifests)
+    return _test_proj[p]
+
+
+def test_file(f, _cache={}):
+    """A file of tests: in a .NET test project, or named / placed like a test AND holding a test case. A business feature
+    called "Backtest" (Models/Backtest.cs, Scripts/BackTesting/BackTest.js) matches the name pattern but has no test case."""
+    if f not in _cache:
+        _cache[f] = test_project(f) or bool(TEST_RX.search(f) and CASE.search(read(os.path.join(ROOT, f))))
+    return _cache[f]
 
 
 def is_case(x):
@@ -39,7 +64,7 @@ def main():
     if not m.data:
         print("test-map: docs/agent/methods.json not found (needs generic-graph or generic-methods earlier in the adapters)")
         return
-    tests = [a for a, x in m.data.items() if TEST_RX.search(x["file"])]
+    tests = [a for a, x in m.data.items() if test_file(x["file"])]
     tset = set(tests)
     prod = {a for a in m.data if a not in tset}
     reached = defaultdict(set)  # production method -> tests that reach it

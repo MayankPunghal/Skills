@@ -2,7 +2,12 @@
 that read it. Formats: web.config / app.config (appSettings, connectionStrings), appsettings*.json and other *.json
 config, .env*, application.properties, *.yml / *.yaml (keys by indentation), *.toml, settings.py (UPPER_CASE names).
 
-Writes docs/reference/configuration.md (anchors cfg-<file>-<key>). Run by build_site.py (cwd = workspace root).
+Also lists configuration the code reads by literal name ("Read in code", anchors cfg-code-<key>): environment variables
+(Environment.GetEnvironmentVariable with its target, wrappers that pass their parameter to it, os.environ / getenv /
+process.env), AppSettings["X"], ConnectionStrings["X"], IConfiguration["X"]; option env_helpers names more wrappers.
+
+Writes docs/reference/configuration.md (anchors cfg-<file>-<key>) and docs/agent/config-reads.json. Run by build_site.py
+(cwd = workspace root).
 """
 import json
 import os
@@ -14,6 +19,7 @@ from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
 OUT = os.path.join(CFG.get("docs_dir", "docs"), "reference")
+OPT = CFG.get("adapter_options", {}).get("generic-config", {})
 SKIP = {"bin", "obj", "node_modules", "packages", ".git", "dist", "build", "vendor", "graphify-out", ".vs", "__pycache__"}
 CONFIG = re.compile(r"(?i)^(web|app)\.config$|^appsettings.*\.json$|^\.env(\..+)?$|^application(-\w+)?\.(properties|ya?ml)$|"
                     r"^(config|settings)(\.\w+)?\.(json|ya?ml|toml)$|^settings\.py$|^docker-compose.*\.ya?ml$")
@@ -139,8 +145,72 @@ def readers(cfg_path, kind, key, code, cfg_text):
 
 SCRIPTS = []  # (path, text) of shell / PowerShell / batch scripts: they read .env variables too
 
+# configuration read in code by literal name: (regex with the name in group "k", source label)
+CODE_READS = [
+    (r"\bEnvironment\s*\.\s*GetEnvironmentVariable\s*\(\s*\"(?P<k>[^\"]+)\"\s*(?:,\s*EnvironmentVariableTarget\s*\.\s*(?P<t>\w+))?",
+     "environment variable"),
+    (r"\b(?:os\.environ\s*(?:\[|\.get\s*\()|os\.getenv\s*\(|System\.getenv\s*\(|os\.Getenv\s*\(|ENV\s*\[|getenv\s*\()\s*[\"'](?P<k>[^\"']+)[\"']",
+     "environment variable"),
+    (r"\bprocess\.env(?:\.(?P<k>[A-Za-z_]\w*)|\[\s*[\"'](?P<k2>[^\"']+)[\"']\s*\])", "environment variable"),
+    (r"\bAppSettings\s*(?:\[|\.Get\s*\()\s*\"(?P<k>[^\"]+)\"", "appSettings"),
+    (r"\bConnectionStrings\s*\[\s*\"(?P<k>[^\"]+)\"|\bGetConnectionString\s*\(\s*\"(?P<k2>[^\"]+)\"", "connection string"),
+    (r"\b(?:_?[cC]onfig(?:uration)?|_?[cC]fg)\s*\[\s*\"(?P<k>[^\"]+)\"\s*\]|\bGetValue\s*<[^>]+>\s*\(\s*\"(?P<k2>[^\"]+)\"", "IConfiguration"),
+]
+MEMBER = re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:(?:public|private|protected|internal|static|readonly|const|async|override|virtual|"
+                    r"Public|Private|Friend|Shared|ReadOnly|def|function|func)\s+)+[\w<>\[\],.? ]*?\b(\w+)\s*(?:\(|\{|=>|=|$)")
+
+
+def member_at(text, pos):
+    """Name of the member (method, property, field) declared nearest above pos: the code that reads the key."""
+    lines = text[:pos].splitlines()[-40:]
+    for ln in reversed(lines):
+        m = MEMBER.match(ln)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def env_helpers(code):
+    """{method name: target} for wrappers that pass their string parameter straight to Environment.GetEnvironmentVariable
+    (static string Env(string name) => Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Machine))."""
+    out = {}
+    rx = re.compile(r"\b(\w+)\s*\(\s*string\s+(\w+)[^)]*\)\s*(?:=>|\{)[^{}]{0,400}?Environment\s*\.\s*GetEnvironmentVariable\s*\(\s*(\w+)"
+                    r"\s*(?:,\s*EnvironmentVariableTarget\s*\.\s*(\w+))?")
+    for _, t in code:
+        if "GetEnvironmentVariable" in t:
+            for m in rx.finditer(t):
+                if m.group(2) == m.group(3):
+                    out[m.group(1)] = (m.group(4) or "").lower()
+    return out
+
+
+def code_reads(code):
+    """{(key, source): [(file, line, member)]} for configuration read in code by literal name."""
+    found = defaultdict(list)
+    helpers = env_helpers(code)
+    pats = [(re.compile(p), s) for p, s in CODE_READS]
+    if helpers:
+        pats.append((re.compile(r"(?<![\w.])(?P<h>" + "|".join(map(re.escape, helpers)) + r")\s*\(\s*\"(?P<k>[^\"]+)\"\s*\)"),
+                     "environment variable"))
+    extra = OPT.get("env_helpers", [])  # adapter option: more wrapper names whose first string argument is a variable name
+    if extra:
+        pats.append((re.compile(r"(?<![\w.])(?:" + "|".join(map(re.escape, extra)) + r")\s*\(\s*\"(?P<k>[^\"]+)\""), "environment variable"))
+    for fp, t in code:
+        for rx, src in pats:
+            for m in rx.finditer(t):
+                gd = m.groupdict()
+                k = gd.get("k") or gd.get("k2")
+                if not k or len(k) > 120:
+                    continue
+                target = gd.get("t") or (helpers.get(gd["h"]) if gd.get("h") else "")
+                label = src + (f" ({target.lower()})" if target else "")
+                found[(k, label)].append((fp, t.count("\n", 0, m.start()) + 1, member_at(t, m.start())))
+    return found
+
 
 def main():
+    from _scan import vendored  # copied libraries (highcharts reads NODE_ENV) are not the application's configuration
+    lib = vendored()
     cfgs, code = [], []
     for d, dirs, files in os.walk(ROOT):
         dirs[:] = [x for x in dirs if x not in SKIP and not x.startswith(".")]
@@ -154,7 +224,7 @@ def main():
                     SCRIPTS.append((r, read(p)))
                 except OSError:
                     pass
-            elif f.endswith(CODE_EXT) and not re.search(r"\.min\.js$|\.designer\.cs$", f, re.I):
+            elif f.endswith(CODE_EXT) and not re.search(r"\.min\.js$|\.designer\.cs$", f, re.I) and r not in lib:
                 try:
                     code.append((r, read(p)))
                 except OSError:
@@ -181,10 +251,39 @@ def main():
             shown = ", ".join(f"`{u.split('/')[-1]}`" for u in users[:6]) + (f" (+{len(users) - 6})" if len(users) > 6 else "")
             shown = "; ".join(x for x in (shown, note) if x)
             body.append(f'| <a id="{slug("cfg", r, k)}"></a>`{k}` | {kind} | {shown or "_no reader found in code_ (a framework, deployment tool or reflection may still read it)"} |')
+    # configuration the code reads by name: environment variables above all, which no config file in the repository lists
+    in_files = defaultdict(list)
+    for r, p in cfgs:
+        for _, k in keys_of(p):
+            in_files[k.lower()].append(r)
+            in_files[re.split(r":|__|\.", k)[-1].lower()].append(r)
+    # keys a config file declares already have their readers in that file's table: keep env vars and undeclared keys only
+    reads = {ks: v for ks, v in code_reads(code).items() if ks[1].startswith("environment") or ks[0].lower() not in in_files}
+    if reads:
+        env = sum(1 for k, s in reads if s.startswith("environment"))
+        out.append(f"| [Read in code](#cfg-code) | {len(reads)} |")
+        body += ["", '<a id="cfg-code"></a>', "", "## Read in code", "", "[↑ Back to index](#index)", "",
+                 f"Configuration the code reads by literal name ({env} environment variables). Environment variables live on the "
+                 "server (the target in brackets: machine, user or process), not in the repository: the deployment has to set "
+                 "every one of them. \"Also in\" names config files of the repository that declare the same key.", "",
+                 "| Key | Source | Read by | Also in |", "| --- | --- | --- | --- |"]
+        for (k, src), sites in sorted(reads.items(), key=lambda kv: (not kv[0][1].startswith("environment"), kv[0][0].lower())):
+            shown = ", ".join(f"`{f.split('/')[-1]}:{ln}`" + (f" ({m})" if m else "") for f, ln, m in sites[:4])
+            shown += f" (+{len(sites) - 4})" if len(sites) > 4 else ""
+            also = sorted(set(in_files.get(k.lower(), []) or in_files.get(re.split(r":|__", k)[-1].lower(), [])))
+            body.append(f'| <a id="{slug("cfg-code", k)}"></a>`{k}` | {src} | {shown} | '
+                        + (", ".join(f"`{a}`" for a in also[:3]) or "—") + " |")
+        total += len(reads)
+    agent = os.path.join(CFG.get("docs_dir", "docs"), "agent")
+    os.makedirs(agent, exist_ok=True)
+    open(os.path.join(agent, "config-reads.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(
+        [{"key": k, "source": s, "reads": [{"file": f, "line": ln, "member": m} for f, ln, m in v]} for (k, s), v in sorted(reads.items())],
+        ensure_ascii=False, indent=1))
     os.makedirs(OUT, exist_ok=True)
     open(os.path.join(OUT, "configuration.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out + body) + "\n")
-    stat("configuration", keys=total, files=len(cfgs))
-    print(f"config-reference: {total} keys in {sum(1 for _ in cfgs)} files")
+    env_n = sum(1 for k, s in reads if s.startswith("environment"))
+    stat("configuration", keys=total, files=len(cfgs), env_vars=env_n, read_in_code=len(reads))
+    print(f"config-reference: {total} keys in {sum(1 for _ in cfgs)} files" + (f"; {len(reads)} read in code ({env_n} environment variables)" if reads else ""))
 
 
 if __name__ == "__main__":
