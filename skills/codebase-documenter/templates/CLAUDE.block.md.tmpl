@@ -3,7 +3,9 @@
 Before explaining, reviewing or changing {{code_name}} code, follow `AGENTS.md`:
 
 - page map `{{docs_dir}}/llms.txt`; index `{{docs_dir}}/agent/entities.jsonl`
-- `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--find TEXT] [--src PATH]` — run from the workspace root; prints clickable `doc:` / `src:` path:line links
+- `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--find TEXT] [--src PATH]` — run from the workspace root; prints clickable `doc:` / `src:` path:line links, the code and its connections
+- `python {{docs_dir}}/_tools/lookup.py --search "<question in words>"` when you know the topic but not the name
+- `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry]` — callees, callers, and what starts it
 - skill: `.claude/skills/{{skill_name}}` (loads for {{code_name}} tasks; or `/{{skill_name}}`)
 - graphify (if `graphify-out/` exists): `graphify query "<question>"` before grepping; `graphify update .` after code changes
 

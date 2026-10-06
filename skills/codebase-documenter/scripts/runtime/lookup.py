@@ -4,11 +4,17 @@ Usage (run from the folder Claude Code / your editor is opened in, so printed pa
   python docs/_tools/lookup.py Order_Calculate_Totals            # exact / partial name, any kind
   python docs/_tools/lookup.py Order --kind table                # restrict kind (table, routine, controller, action,
                                                                  #   class, method, project, package, endpoint, ui-trigger, entry-point, db-access, error, runbook, view, enum, seed, claim, role, script, report, page, section)
-  python docs/_tools/lookup.py "send to billing" --list          # list matches only, no bodies
+  python docs/_tools/lookup.py "send to billing" --list          # list name / summary matches only, no bodies (several
+                                                                 #   words without --list or --fuzzy rank by keywords)
   python docs/_tools/lookup.py BillingService --find invoice_id        # lines in the source file matching text
   python docs/_tools/lookup.py Order --fuzzy                     # an exact name shows only itself; --fuzzy adds partial
                                                                  #   and summary matches
   python docs/_tools/lookup.py SEC-02                            # finding ids (SEC-, DEF-, TD-) and narrative rows
+  python docs/_tools/lookup.py --search "where are coupons validated"   # a question in words: ranked docs + code items
+
+--search ranks the retrieval cards (docs/agent/cards.jsonl: every documented item and every narrative section) by
+keyword relevance (BM25 over names, identifier words and text) and prints the best matches with their doc and source
+locations; a name that matches nothing falls back to it. Use it when you know the topic but not the name.
 
 Each match prints:
   doc:  <path>:<line>     where it is documented
@@ -16,7 +22,9 @@ Each match prints:
 then the doc entry, then the code: the whole declaration for classes, methods, procedures, tables ... (attributes and doc
 comments included, at most --code-lines, default 40) or, for call sites, errors and settings, each cited source line; the
 first --code-matches (3) matches only, none with --no-code or --list. A "note:" line flags a source file changed after the
-docs were built.
+docs were built. The first match also gets its connections (callers, callees, tables read and written, code that uses
+it, entry points ... from its card), the related items with their source locations, and the findings that name it
+(--no-related turns this off).
 Paths are relative to the current folder, with forward slashes, so they open as links.
 The source root is --src, DOCS_SOURCE_ROOT, codebase-docs.json source_root, or found automatically (a folder containing the
 source_markers listed in codebase-docs.json).
@@ -24,15 +32,20 @@ Built for coding agents: output is plain text, bounded in size.
 """
 import argparse
 import json
+import math
 import os
 import re
+from collections import Counter
 
 # Paths resolve from this script's own location (<root>/docs/_tools/lookup.py), so it works from any working directory
 # and wherever the docs were unpacked (repo root, repo-kit/, a docs-only workspace ...).
 BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 INDEX = os.path.join(BASE, "docs", "agent", "entities.jsonl")
-SRC_EXT = (r"[\w./ -]+\.(?:cs|vb|sql|cshtml|razor|js|mjs|cjs|jsx|ts|tsx|vue|svelte|py|java|kt|kts|scala|go|rb|php|rs|swift|"
-           r"c|cc|cpp|h|hpp|m|rdl|rdlc|config|asmx|aspx|json|xml|ya?ml|toml|graphql|proto)")
+CARDS = os.path.join(BASE, "docs", "agent", "cards.jsonl")
+EXTS = (r"\.(?:cs|vb|sql|cshtml|razor|js|mjs|cjs|jsx|ts|tsx|vue|svelte|py|java|kt|kts|scala|go|rb|php|rs|swift|"
+        r"c|cc|cpp|h|hpp|m|rdl|rdlc|config|asmx|aspx|json|xml|ya?ml|toml|graphql|proto)")
+SRC_EXT = r"[\w./ -]+" + EXTS   # inside backticks, where a path may hold spaces
+BARE_EXT = r"[\w./-]+" + EXTS   # in running text, where a space ends the path
 _lines_cache = {}
 
 
@@ -146,7 +159,7 @@ def source_path(ent, lines, i, text):
 
 
 LOC_TICK = re.compile(r"`(" + SRC_EXT + r"):(\d+)`")              # `src/X.cs:73` in reference pages
-LOC_BARE = re.compile(r"(?<![\w/.-])(" + SRC_EXT + r"):(\d+)\b")  # src/X.cs:73 in index summaries
+LOC_BARE = re.compile(r"(?<![\w/.-])(" + BARE_EXT + r"):(\d+)\b")  # src/X.cs:73 in index summaries and cards
 DECLARED = ("table", "routine", "class", "controller", "function", "method", "enum", "action", "endpoint", "view", "script")
 
 
@@ -286,9 +299,150 @@ def decl_line(ent, src_lines):
     return 1
 
 
+_cards = None
+
+
+def cards():
+    """Retrieval cards by id (empty when the docs predate gen_rag_cards.py)."""
+    global _cards
+    if _cards is None:
+        _cards = {}
+        if os.path.exists(CARDS):
+            for line in open(CARDS, encoding="utf-8"):
+                c = json.loads(line)
+                _cards[c["id"]] = c
+    return _cards
+
+
+STOP = set("a an and are as at be by can do does for from how i in is it its of on or the to what when where which who "
+           "why with this that these those there get set use used using code app".split())
+
+
+def words(text):
+    """Search terms: identifiers split at case changes, underscores and dots; lower case; one common suffix dropped, so
+    "validated coupons" meets ValidateCoupon."""
+    out = []
+    for w in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", text):
+        w = w.lower()
+        if len(w) < 2 or w in STOP:
+            continue
+        for suf in ("ing", "ed", "es", "e", "s"):
+            if w.endswith(suf) and len(w) - len(suf) >= 3 and not w.endswith("ss"):
+                w = w[:-len(suf)]
+                break
+        out.append(w)
+    return out
+
+
+def search(query, limit):
+    """Cards ranked by BM25 over title (x3), identifier keys (x2) and text. Only cards whose text holds a query stem are
+    tokenized (a big repository has tens of thousands of cards); length is normalized by characters, so the cards skipped
+    still count in the average."""
+    q = set(words(query))
+    cs = list(cards().values())
+    if not q or not cs:
+        return []
+    blobs = [(c["title"] + " " + " ".join(c.get("keys") or []) + " " + (c.get("text") or "")) for c in cs]
+    avg = sum(len(b) for b in blobs) / len(blobs)
+    docs = []
+    for c, b in zip(cs, blobs):
+        low = b.lower()
+        if any(w in low for w in q):
+            docs.append((c, len(b), Counter(words(c["title"]) * 3 + words(" ".join(c.get("keys") or [])) * 2
+                                            + words(c.get("text") or ""))))
+    df = Counter(w for _, _, d in docs for w in q if w in d)
+    scored = []
+    for c, n, d in docs:
+        s = sum(math.log(1 + (len(cs) - df[w] + 0.5) / (df[w] + 0.5)) * d[w] * 2.2 / (d[w] + 1.2 * (0.25 + 0.75 * n / avg))
+                for w in q if w in d)
+        if s:
+            scored.append((s * (0.5 + 0.5 * sum(w in d for w in q) / len(q)), c))  # favour cards holding more of the words
+    return [c for _, c in sorted(scored, key=lambda t: -t[0])[:limit]]
+
+
+def slug(heading):
+    return re.sub(r"\s+", "-", re.sub(r"[^\w\- ]", "", heading).strip().lower())
+
+
+def doc_loc(doc):
+    """Clickable docs path:line for a card's "page.md#anchor"."""
+    page, _, anchor = doc.partition("#")
+    path = os.path.join(BASE, "docs", page)
+    lines = read_lines(path) or []
+    for i, line in enumerate(lines):
+        if anchor and (f'id="{anchor}"' in line or (line.startswith("#") and slug(line.lstrip("#")) == anchor)):
+            return f"{rel(path)}:{i + 1}"
+    return f"{rel(path)}:1"
+
+
+def src_loc(loc, src_root):
+    """`path:line` under the source root as a clickable path, unchanged when the code is not here."""
+    m = re.fullmatch(r"(.+):(\d+)", loc or "")
+    if not m or not src_root or not os.path.exists(os.path.join(src_root, m.group(1))):
+        return loc or ""
+    return f"{rel(os.path.join(src_root, m.group(1)))}:{m.group(2)}"
+
+
+def linkify(text, src_root):
+    """Every bare path:line in card text, made clickable under the source root."""
+    return LOC_BARE.sub(lambda m: src_loc(f"{m.group(1)}:{m.group(2)}", src_root), text)
+
+
+def print_search(query, limit, src_root):
+    found = search(query, limit)
+    if not found:
+        print("no match (no card shares a word with the query)")
+        return
+    print(f'search "{query}": best {len(found)} of {len(cards())} cards by keyword relevance; check each with lookup.py <name>\n')
+    for k, c in enumerate(found, 1):
+        lines = [l for l in (c.get("text") or "").splitlines()[1:] if l.strip() and not l.startswith("Defined in")]
+        print(f"{k}. [{c['kind']}] {c['title']}")
+        print(f"   doc: {doc_loc(c['doc'])}" + (f"   src: {src_loc(c['source'], src_root)}" if c.get("source") else ""))
+        if lines:
+            print("   " + linkify(lines[0], src_root)[:220])
+
+
+CONTEXT_SKIP = ("Defined in", "Declaration:", "Parameters:", "Returns:", "Columns:")  # already in the entry or the code
+
+
+def related(e, src_root):
+    """Connections of an entry from its card, the related cards with their source, and the findings naming it."""
+    out = []
+    c = cards().get(e.get("anchor") or "")
+    if c:
+        lines = [l for l in c["text"].splitlines()[1:] if l.strip() and not l.startswith(CONTEXT_SKIP)]
+        if lines:
+            out.append("connections:")
+            out += [f"   {linkify(l, src_root)[:600]}" for l in lines[:15]]
+        rel_cards = [cards()[r] for r in c.get("related") or [] if r in cards()]
+        if rel_cards:
+            out.append("related:")
+            out += [f"   [{r['kind']}] {r['title']}  " + (src_loc(r["source"], src_root) or doc_loc(r["doc"])) for r in rel_cards[:10]]
+            if len(rel_cards) > 10:
+                out.append(f"   ... {len(rel_cards) - 10} more")
+    short = e["name"].split(".")[-1].split(" ")[0]
+    named = ("class", "controller", "method", "function", "action", "table", "routine", "db-access", "config-key", "enum",
+             "view", "module", "project", "package")  # identifier names; an endpoint's first word is its HTTP verb
+    if len(short) >= 4 and e["kind"] in named:
+        rx = re.compile(r"(?<![\w.])" + re.escape(short) + r"(?!\w)", re.I)
+        hits = [f for f in ENTS if f["kind"] == "finding" and rx.search(f["summary"])]
+        if hits:
+            out.append(f"findings that mention '{short}' (a name match: check the finding is about this item before citing it):")
+            for f in hits[:5]:
+                lines = read_lines(os.path.join(BASE, f["file"])) or []
+                at = anchor_line(f, lines)
+                out.append(f"   {f['name'][:110]}  ({rel(os.path.join(BASE, f['file']))}:{(at or 0) + 1})")
+    return out
+
+
+ENTS = []
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("query")
+    ap.add_argument("query", nargs="?")
+    ap.add_argument("--search", metavar="WORDS", help="rank docs and code items by keyword relevance to a question")
+    ap.add_argument("--no-related", action="store_true", help="skip the first match's connections, related items and findings")
     ap.add_argument("--kind")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--limit", type=int, default=8)
@@ -301,8 +455,16 @@ def main():
     a = ap.parse_args()
     import sys
     sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
+    if not a.query and not a.search:
+        ap.error("give a name, or --search \"words\"")
+    if a.search:
+        src_root = find_source_root(a.src)
+        print(f"source root: {rel(src_root) if src_root else 'NOT FOUND (set DOCS_SOURCE_ROOT or --src)'}")
+        print_search(a.search, a.limit, src_root)
+        return
     q = a.query.lower()
     ents = [json.loads(l) for l in open(INDEX, encoding="utf-8")]
+    ENTS[:] = ents
     if a.kind:
         ents = [e for e in ents if e["kind"] == a.kind]
     exact = [e for e in ents if e["name"].lower() == q]
@@ -310,9 +472,22 @@ def main():
     text = [e for e in ents if q in e["summary"].lower() and e not in exact and e not in part]
     # an exact name answers the question: partial / summary matches ("ManageController" -> 10 others) only with --fuzzy
     hits = exact if exact and not a.fuzzy else exact + part + text
-    if not hits:
-        print("no match"); return
     src_root = find_source_root(a.src)
+    topic = not exact and " " in q.strip() and not a.fuzzy and not a.list and not a.kind
+    if topic and part:
+        # several words that are part of item names ("POST /Orders"): those items; the pages that merely contain the
+        # phrase (whole sections) give way to a short keyword ranking after them
+        hits, text = part, []
+    elif topic:
+        # several words and no item name holds them: a topic. Ranked cards answer it better than every page that contains
+        # the phrase; --fuzzy or --list keeps the substring matches
+        print(f"no item is named '{a.query}'; ranking by keywords (--fuzzy for substring matches):")
+        print_search(a.query, a.limit, src_root)
+        return
+    if not hits:  # a topic rather than a name: the closest items by keywords
+        print(f"no name matches '{a.query}'" + (f" (kind {a.kind})" if a.kind else "") + "; closest by keywords:")
+        print_search(a.query, min(a.limit, 5), src_root)
+        return
     print(f"{len(hits)} match(es); showing {min(len(hits), a.limit)}")
     print(f"source root: {rel(src_root) if src_root else 'NOT FOUND (set DOCS_SOURCE_ROOT or --src) - code paths are relative to the repository root'}\n")
     built = os.path.getmtime(INDEX)
@@ -367,12 +542,19 @@ def main():
             print(b)
             if code:
                 print("\n".join(code))
+            if n_hit == 0 and not a.no_related:
+                ctx = related(e, src_root)
+                if ctx:
+                    print("\n".join(ctx))
             print()
     if len(hits) > a.limit:
         print(f"... {len(hits) - a.limit} more (use --limit or --kind)")
     others = len(part) + len(text)
     if exact and not a.fuzzy and others:
         print(f"({others} partial / summary match(es) not shown: add --fuzzy)")
+    if topic and part:
+        print("\nalso by keywords:")
+        print_search(a.query, 3, src_root)
 
 
 if __name__ == "__main__":

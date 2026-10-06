@@ -67,7 +67,7 @@ ADAPTER_SCRIPTS = {
     "aspnet-mvc-ssdt": ["aspnet-mvc-ssdt/gen_reference.py", "aspnet-mvc-ssdt/gen_seeds.py",
                         "aspnet-mvc-ssdt/gen_inventory.py", "aspnet-mvc-ssdt/gen_ssrs.py"],
 }
-RUNTIME = ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py")
+RUNTIME = ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py", "trace_calls.py")
 
 
 def main():

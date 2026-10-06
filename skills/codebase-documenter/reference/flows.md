@@ -29,6 +29,7 @@ The debugging questions ("what does this button call?", "what starts this method
 | `reference/db-access.md` | per table and routine, every call site: method, operation (read, insert, update, delete, merge, exec) and technology (ADO.NET, Dapper, EF Core / EF6 LINQ or raw SQL, NHibernate, JPA, JDBC …), following SQL held in name constants |
 
 - `trace_flow.py <Class.Method> --entry` prints every entry point that reaches a method, one call path each, and the buttons / links / scripts that call those endpoints: the fastest answer to "how does a user get here?".
+- The same call trees ship with the docs as `docs/_tools/trace_calls.py` (callees, `--up`, `--entry`), so an agent answering questions from the package can trace without the skill.
 - `methods.json` gains `entry_points` and `flows` per method; `entry-points.json` holds the entries and UI triggers for tools.
 - Tags: `[[ui:...]]` is rarely needed in prose; link a screen's actions from its module page with `[[page:reference/ui-map.md|UI map]]` and name endpoints with `[[ep:POST /orders/ship]]`.
 - Static analysis: for C#, `generic-di` adds dependency injection, overrides, message buses, events, stored delegates, jobs and filters to the graph; reflection and URLs built at run time are still not followed (sites listed under "Limits" in the dependency-injection reference). "No entry point found" means "not shown by the code" (dead code, or dispatch the scanner cannot see): check before calling it dead.
