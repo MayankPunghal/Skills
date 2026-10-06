@@ -38,5 +38,5 @@ The tone and wording rules for every client-facing text (narratives, reviewer no
 ## Formatting
 
 - **Tables** for anything with more than three items of the same shape. **Bullets** for steps and short lists. **Prose** for reasoning.
-- **Refs:** findings are referred to as `F-012`, applications by name, packages by `Id version`.
+- **Refs:** findings are referred to as `F-012` in the report, applications by name, packages by `Id version`. In narratives, decisions and review notes write the tag `{{f:RULE-ID}}` (or `{{f:RULE-ID@project-or-app}}` when the rule fires in several projects), never a raw `F-012`: F-numbers are positions in the sorted findings and change on every rescan. `build_report.py` turns tags into the current numbers and `verify_report.py` fails on raw numbers or tags that match nothing.
 - **Headings** come from the template. Narratives start directly with content; don't repeat the heading.

@@ -274,6 +274,7 @@ def main():
 <script>{JS}</script></body></html>"""
     name = a.out or f"{slug(client).title().replace('-', '')}-AWS-Migration-Assessment.html"
     path = os.path.join(OUT, "report", name)
+    page = BR.FTAG.sub(BR.finding_tag, page)  # {{f:RULE}} tags anywhere (narratives, decisions, review notes)
     write_text(path, page)
     mark_step(root, "html-report")
     print(f"html report: {path} ({len(page) // 1024} KB; {sum(len(g['tabs']) for g in groups)} tabs, {len(d['findings'])} findings, {len(d['apps'])} applications, {len(d['packages'])} packages)")

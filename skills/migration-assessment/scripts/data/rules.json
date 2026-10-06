@@ -156,7 +156,8 @@
    "refs": [
     "S2"
    ],
-   "question": "Which COM components are installed on the current servers, and who owns them?"
+   "question": "Which COM components are installed on the current servers, and who owns them?",
+   "in_strings": true
   },
   {
    "id": "WIN-PINVOKE-WIN32",
@@ -487,7 +488,8 @@
    "effort": "large-change",
    "refs": [
     "S1"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "API-CAS",
@@ -516,7 +518,8 @@
    "refs": [
     "S1",
     "S2"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "API-ENTERPRISESERVICES",
@@ -802,7 +805,8 @@
     "S1",
     "S9",
     "S18"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-WEBFORMS-AJAX",
@@ -830,7 +834,8 @@
    "baseline": true,
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-GLOBAL-ASAX",
@@ -879,7 +884,8 @@
    "baseline": true,
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-OWIN",
@@ -981,7 +987,8 @@
     "S1",
     "S17"
    ],
-   "question": "Which external systems call these SOAP endpoints, and can they change contract?"
+   "question": "Which external systems call these SOAP endpoints, and can they change contract?",
+   "in_strings": true
   },
   {
    "id": "WEB-REPORTVIEWER",
@@ -1007,7 +1014,8 @@
    "effort": "medium-change",
    "refs": [
     "S12"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-SIGNALR-LEGACY",
@@ -1032,7 +1040,8 @@
    "effort": "medium-change",
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WCF-SERVICE",
@@ -1060,7 +1069,8 @@
     "S1",
     "S23"
    ],
-   "question": "Who consumes these WCF services (internal apps, partners) and which bindings/security modes do they use?"
+   "question": "Who consumes these WCF services (internal apps, partners) and which bindings/security modes do they use?",
+   "in_strings": true
   },
   {
    "id": "WCF-BINDING",
@@ -1110,7 +1120,8 @@
    "effort": "small-change",
    "refs": [
     "S1"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "DESK-WINFORMS",
@@ -1159,7 +1170,8 @@
    "baseline": true,
    "refs": [
     "S3"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "DATA-EF6-EDMX",
@@ -1174,10 +1186,9 @@
    ],
    "pat": [
     "\\.edmx\"",
-    "<EntityDeploy\\b",
-    "\\bObjectContext\\b"
+    "<EntityDeploy\\b"
    ],
-   "why": "EF6 (6.4+) runs on modern .NET, but the EDMX designer workflow is not supported in SDK-style projects and EF Core has no EDMX; metadata must be embedded or the model moved to code.",
+   "why": "An .edmx model is in the project. EF6 (6.4+) runs on modern .NET, but the EDMX designer workflow is not supported in SDK-style projects and EF Core has no EDMX; the metadata must be embedded or the model moved to code.",
    "fix": "Short term: EF 6.5 on .NET 10 with embedded EDMX metadata. Long term: EF Core 10 (scaffold from database).",
    "alt": "EF 6.5 on .NET 10; EF Core 10",
    "effort": "medium-change",
@@ -1197,9 +1208,10 @@
    ],
    "pat": [
     "^\\s*using\\s+System\\.Data\\.Entity\\s*;",
-    "^\\s*Imports\\s+System\\.Data\\.Entity\\b"
+    "^\\s*Imports\\s+System\\.Data\\.Entity\\b",
+    "\\bObjectContext\\b"
    ],
-   "why": "EF6 works on .NET 10 but is in maintenance; EF Core is the strategic ORM (and AWS Transform can port EF code).",
+   "why": "EF6 works on .NET 10 but is in maintenance; EF Core is the strategic ORM (and AWS Transform can port EF code). ObjectContext / IObjectContextAdapter code has no EF Core equivalent and is rewritten in an EF Core move.",
    "fix": "Keep EF 6.5 for the first move; plan EF Core as a follow-up.",
    "alt": "EF Core 10",
    "effort": "trivial",
@@ -1253,7 +1265,8 @@
    "effort": "medium-change",
    "refs": [
     "S3"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "DATA-ODBC",
@@ -1277,7 +1290,8 @@
    "effort": "small-change",
    "refs": [
     "S3"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "DATA-ORACLE-UNMANAGED",
@@ -1353,7 +1367,8 @@
    },
    "refs": [
     "S14"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "DATA-INTEGRATED-SECURITY",
@@ -1379,7 +1394,8 @@
     "S8",
     "S11"
    ],
-   "question": "Must database access keep using Windows (Kerberos) identities for audit/compliance?"
+   "question": "Must database access keep using Windows (Kerberos) identities for audit/compliance?",
+   "in_strings": true
   },
   {
    "id": "DB-CLR",
@@ -1846,7 +1862,8 @@
    "baseline": true,
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "AUTH-MACHINEKEY",
@@ -1893,7 +1910,8 @@
    "refs": [
     "S9"
    ],
-   "question": "Which identity provider (ADFS version, Entra ID) issues tokens, and will it be reachable from AWS?"
+   "question": "Which identity provider (ADFS version, Entra ID) issues tokens, and will it be reachable from AWS?",
+   "in_strings": true
   },
   {
    "id": "AUTH-IDENTITY2",
@@ -2085,7 +2103,8 @@
    "refs": [
     "S10"
    ],
-   "question": "Which SMTP relay is used today and are there allow-listed sender IPs?"
+   "question": "Which SMTP relay is used today and are there allow-listed sender IPs?",
+   "in_strings": true
   },
   {
    "id": "NET-FTP",
@@ -2113,7 +2132,8 @@
    "refs": [
     "S10"
    ],
-   "question": "Which partners exchange files, and do they allow-list our IP addresses?"
+   "question": "Which partners exchange files, and do they allow-list our IP addresses?",
+   "in_strings": true
   },
   {
    "id": "NET-PROXY",
@@ -2137,7 +2157,8 @@
    "effort": "trivial",
    "refs": [
     "S10"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "HV-HARDWARE-ID",
@@ -2162,7 +2183,8 @@
    "refs": [
     "S10"
    ],
-   "question": "Is any software licensed to a MAC address, host ID or BIOS serial on the current VMs?"
+   "question": "Is any software licensed to a MAC address, host ID or BIOS serial on the current VMs?",
+   "in_strings": true
   },
   {
    "id": "HV-MACHINE-NAME",
@@ -2311,7 +2333,8 @@
    "effort": "per-occurrence-small",
    "refs": [
     "S7"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "FILE-LOCAL-WRITE",
@@ -2631,7 +2654,8 @@
    "refs": [
     "S10"
    ],
-   "question": "List every scheduled task on the current servers (the repository rarely contains all of them)."
+   "question": "List every scheduled task on the current servers (the repository rarely contains all of them).",
+   "in_strings": true
   },
   {
    "id": "BG-HANGFIRE-QUARTZ",
@@ -2680,7 +2704,8 @@
    "effort": "trivial",
    "refs": [
     "S10"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "LOG-ELMAH",
@@ -2703,7 +2728,8 @@
    "effort": "trivial",
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "LOG-TRACE",
@@ -2824,7 +2850,8 @@
    "refs": [
     "S12"
    ],
-   "question": "How many Crystal reports are in use, and can any be retired?"
+   "question": "How many Crystal reports are in use, and can any be retired?",
+   "in_strings": true
   },
   {
    "id": "INT-SSRS-CLIENT",
@@ -2848,7 +2875,8 @@
    "effort": "small-change",
    "refs": [
     "S12"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "INT-PDF-WINDOWS",
@@ -2877,7 +2905,8 @@
    "effort": "small-change",
    "refs": [
     "S6"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "INT-SHAREPOINT-EXCHANGE",
@@ -2994,7 +3023,8 @@
    "effort": "trivial",
    "refs": [
     "S7"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "SEC-OLD-TLS",
@@ -3264,7 +3294,7 @@
   {
    "id": "FE-VIEWSTATE",
    "cat": "front-end",
-   "title": "ViewState reliance",
+   "title": "ViewState / postback page model",
    "sev": "Medium",
    "conf": "Confirmed",
    "types": [
@@ -3284,7 +3314,8 @@
    "baseline": true,
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "HOST-HTTPSYS-IIS-INPROC",
@@ -3424,7 +3455,8 @@
    "effort": "small-change",
    "refs": [
     "S2"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "INT-SMTP-PICKUP-IIS",
@@ -3838,7 +3870,8 @@
    "effort": "small-change",
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-OUTPUT-CACHE",
@@ -3863,7 +3896,8 @@
    "effort": "per-occurrence-small",
    "refs": [
     "S9"
-   ]
+   ],
+   "in_strings": true
   },
   {
    "id": "WEB-RESPONSE-END",
@@ -4177,7 +4211,8 @@
    "db": {
     "pg": "rework"
    },
-   "db_only": true
+   "db_only": true,
+   "in_strings": true
   },
   {
    "id": "DATA-ISOLATION",
@@ -4232,7 +4267,7 @@
   {
    "id": "DATA-EF-PROVIDER-SPECIFIC",
    "cat": "data-access",
-   "title": "EF configuration specific to SQL Server",
+   "title": "ORM configuration specific to SQL Server (EF Core, linq2db and similar)",
    "sev": "Medium",
    "conf": "Confirmed",
    "types": [
@@ -4252,7 +4287,7 @@
     "\\.EnableRetryOnFailure\\s*\\(",
     "\\.ToTable\\s*\\([^)]*IsTemporal"
    ],
-   "why": "These model settings and functions only exist in the SQL Server provider (rowversion, SQL Server default functions, clustered / memory-optimized, temporal tables, full-text, DateDiff); the PostgreSQL model needs equivalents.",
+   "why": "These settings and functions exist only for SQL Server (UseSqlServer, rowversion, SQL Server default functions, clustered / memory-optimized, temporal tables, full-text, DateDiff, SQL Server retry); the PostgreSQL configuration needs equivalents.",
    "fix": "Keep provider-specific configuration in one place (per-provider model configuration or separate migrations assemblies): xmin for concurrency, now() / gen_random_uuid() defaults, tsvector for full-text.",
    "alt": "Per-provider model configuration (Npgsql: xmin, now(), tsvector)",
    "effort": "small-change",
@@ -4345,7 +4380,8 @@
    "effort": "small-change",
    "refs": [
     "S1"
-   ]
+   ],
+   "in_strings": true
   }
  ],
  "_doc_parsed": "parsed: for rules on SQL, the T-SQL parser facts that raise the finding instead of the regular expressions (construct labels from sqlscan, or called procedure names by prefix). When a parser is available the rule's patterns are not run on .sql files; the parser also applies the rule to SQL embedded in C#."

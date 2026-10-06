@@ -80,6 +80,7 @@ def _slim(o, file):
         out["columns"] = len(o["columns"])
         out["column_types"] = sorted({(c.get("type") or "").split("(")[0].strip().lower() for c in o["columns"] if c.get("type")})
     out["constructs"] = dict(o.get("constructs") or {})
+    out["construct_lines"] = dict(o.get("construct_lines") or {})
     return out
 
 
@@ -121,14 +122,18 @@ def inventory(root, skip_dirs=()):
         for s in code_sql:
             sc = s.get("script") or {}
             cons = dict(sc.get("constructs") or {})
+            clines = dict(sc.get("construct_lines") or {})  # line inside the SQL text
             for o in s.get("objects", []):  # DDL in code (EF migrations, installers): count its constructs too
                 for k, v in (o.get("constructs") or {}).items():
                     cons[k] = cons.get(k, 0) + v
+                for k, v in (o.get("construct_lines") or {}).items():
+                    clines.setdefault(k, v)
             res["code_sql"].append({"file": s["file"], "line": s["line"], "reads": sc.get("reads", []), "writes": sc.get("writes", []),
                                     "calls": sc.get("calls", []), "functions": sc.get("functions", []), "dynamic": s.get("dynamic", False),
                                     "dynamic_sql": sc.get("dynamic_sql", False), "statements": sc.get("statements", []),
                                     "objects": [{"kind": o.get("kind"), "name": o.get("name")} for o in s.get("objects", [])],
-                                    "constructs": cons, "context": s.get("context", [])})
+                                    "constructs": cons, "context": s.get("context", []),
+                                    "construct_lines": {k: s["line"] + v - 1 for k, v in clines.items()}})
     # object NAMES passed as whole C# string literals (CommandType.StoredProcedure, TVP type names, name constants)
     res["name_sites"] = []
     if eng and res["objects"]:

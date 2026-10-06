@@ -58,7 +58,8 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
         options.append("Refactor to a web front end if the business wants browser access (large).")
     elif "netcore" in fam and not any(x.endswith("-windows") for x in tfms) and not bound and not linux_issues:
         r7 = "Replatform"
-        target = t["linux-container" if typ in ("aspnet-core",) else ("linux-batch" if typ == "console" else "linux-container")].format(target=target_fw)
+        target = t["linux-batch" if typ in ("console", "netcore-console") else "linux-worker" if typ in ("windows-service", "netcore-worker")
+                   else "linux-container"].format(target=target_fw)
         rationale.append("Already on cross-platform .NET with no Windows-only blockers found: move to Linux hosting directly.")
         if "out-of-support" in tfm_status or "ending-soon" in tfm_status:
             rationale.append(f"Target framework {', '.join(tfms)} is out of (or ending) support: retarget to {target_fw} in the same step.")
@@ -88,9 +89,12 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
     elif typ == "windows-service":
         r7, target = "Replatform", t["linux-worker"].format(target=target_fw)
         rationale.append("Windows service becomes a .NET Worker Service (BackgroundService) on Linux.")
-    elif typ == "console":
+    elif typ in ("console", "netcore-console"):
         r7, target = "Replatform", t["linux-batch"].format(target=target_fw)
         rationale.append("Console/batch application: port and run as a scheduled container task.")
+    elif typ == "netcore-worker":
+        r7, target = "Replatform", t["linux-worker"].format(target=target_fw)
+        rationale.append("Worker Service on modern .NET: retarget and run as a long-running container service.")
     elif typ == "website":
         r7, target = "Rehost", t["windows-retain"]
         rationale.append("Web Site project without a project file: convert to a Web Application project before any port (AWS Transform requirement).")

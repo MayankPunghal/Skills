@@ -121,6 +121,9 @@ INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|L
                           r"""\bapp\.Run\s*\(\s*["'](https?://[^"']+)["']|\.listen\s*\(\s*(\d{2,5})""")
 
 
+SCRIPT_EXTS = {".ps1", ".psm1", ".psd1", ".bat", ".cmd", ".sh", ".bash"}
+SCRIPT_MESSAGE = re.compile(r"(?i)^\s*(@?echo\b|Write-\w+|throw\b|Read-Host\b|Out-Host\b|printf?\b|Show-\w+)")
+
 ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match wins
     (r"^(smtps?|imaps?|pop3s?)\b|mail|smtp|sendgrid|mailgun|\bses\b|email\.[\w-]+\.amazonaws", "Mail server (SMTP)"),
     (r"^(sftp|ftps?|ssh)\b|sftp|\bftp", "File transfer (SFTP / FTP)"),
@@ -291,6 +294,8 @@ class Scan:
                     self.drives.append({"drive": dm.group(1).upper() + ":", "key": "", "file": rp, "line": i})
             if "://" not in line or i in inbound_lines or (cm and cm.match(line)) or re.search(r"(?i)xmlns|schemaLocation|<!DOCTYPE|\$schema", line):
                 continue
+            if ext in SCRIPT_EXTS and SCRIPT_MESSAGE.match(line):
+                continue  # Write-Host / echo / throw: a help or download link printed to the user, not a connection
             if ext in (".cs", ".vb") and line.lstrip().startswith(("///", "'''", "[assembly:", "<Assembly:")):
                 continue
             for m in URL.finditer(line):

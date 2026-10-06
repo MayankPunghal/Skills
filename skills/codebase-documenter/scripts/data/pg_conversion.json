@@ -589,7 +589,7 @@
     },
     "table hints": {
       "level": "auto",
-      "pg": "remove (PostgreSQL has no table hints; pg_hint_plan extension if a plan must be forced)",
+      "pg": "remove: plan and granularity hints (INDEX, FORCESEEK, NOEXPAND, ROWLOCK ...) have no PostgreSQL form; pg_hint_plan extension if a plan must be forced",
       "hours": [
         0.03,
         0.06
@@ -601,6 +601,30 @@
       "hours": [
         0.03,
         0.1
+      ]
+    },
+    "locking hints": {
+      "level": "rewrite",
+      "pg": "UPDLOCK / XLOCK / HOLDLOCK / SERIALIZABLE / TABLOCK(X) change locking: SELECT ... FOR UPDATE (or FOR SHARE, NOWAIT), LOCK TABLE, or SERIALIZABLE isolation; removing them silently changes concurrency",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "READPAST": {
+      "level": "rewrite",
+      "pg": "queue pattern: SELECT ... FOR UPDATE SKIP LOCKED (with LIMIT in a subquery for UPDATE / DELETE); removing the hint makes concurrent workers block or claim the same rows",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "TOP in INSERT / UPDATE / DELETE": {
+      "level": "rewrite",
+      "pg": "no TOP / LIMIT on INSERT, UPDATE or DELETE: WHERE key IN (SELECT key ... LIMIT n [FOR UPDATE SKIP LOCKED]) or a CTE",
+      "hours": [
+        0.25,
+        0.75
       ]
     },
     "UPDATE ... FROM": {

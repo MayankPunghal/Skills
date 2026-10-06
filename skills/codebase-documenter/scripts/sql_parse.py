@@ -291,6 +291,7 @@ def scan_files(root, skip_dirs=None, prefer=None):
                 for key in ("line", "end_line"):
                     if isinstance(o.get(key), int):
                         o[key] += off
+                o["construct_lines"] = {k: v + off for k, v in (o.get("construct_lines") or {}).items()}
                 m["objects"].append(o)
             m["errors"] += [dict(e, line=e["line"] + off) for e in p.get("errors", [])]
             scripts[fid].append(p.get("script") or {})

@@ -115,7 +115,10 @@ def parse_project(path, repo_root):
             p["references"].append(inc.split(",")[0].strip())
         elif t == "PackageReference" and inc:
             ver = e.get("Version") or next((c.text for c in e if local(c.tag) == "Version" and c.text), "") or ""
-            p["packages"].append({"id": inc, "version": ver.strip(), "source": "PackageReference", "file": p["path"]})
+            pa = e.get("PrivateAssets") or next((c.text for c in e if local(c.tag) == "PrivateAssets" and c.text), "") or ""
+            # PrivateAssets="all": a build-time package (reference assemblies, analyzers, source link): nothing ships with the application
+            p["packages"].append({"id": inc, "version": ver.strip(), "source": "PackageReference", "file": p["path"],
+                                  "build_only": pa.strip().lower() == "all"})
         elif t == "ProjectReference" and inc:
             target = os.path.normpath(os.path.join(os.path.dirname(path), inc.replace("\\", os.sep)))
             p["project_references"].append(rel(target, repo_root))
@@ -128,7 +131,8 @@ def parse_project(path, repo_root):
             for e in ET.fromstring(read_text(pc).encode("utf-8")).iter():
                 if local(e.tag) == "package" and e.get("id"):
                     p["packages"].append({"id": e.get("id"), "version": e.get("version", ""), "source": "packages.config",
-                                          "file": rel(pc, repo_root), "targetFramework": e.get("targetFramework", "")})
+                                          "file": rel(pc, repo_root), "targetFramework": e.get("targetFramework", ""),
+                                          "build_only": (e.get("developmentDependency") or "").lower() == "true"})
         except ET.ParseError:
             p["packages_config_error"] = True
     p["tfm_support"] = [tfm_info(t) for t in p["target_frameworks"]]
@@ -167,7 +171,7 @@ def classify(p, files_by_ext, code_hits):
     if sdk.endswith("sdk.web") or sdk.endswith("sdk.razor") or sdk.endswith("sdk.blazorwebassembly"):
         return "aspnet-core"  # also ASP.NET Core 2.x on .NET Framework (a half-way port)
     if sdk.endswith("sdk.worker"):
-        return "netcore-other"
+        return "netcore-worker"
     if "netcore" in fam and "netfx" not in fam:
         if p.get("use_wpf"):
             return "wpf"
@@ -175,6 +179,8 @@ def classify(p, files_by_ext, code_hits):
             return "winforms"
         if sdk.endswith(".web") or sdk.endswith("web"):
             return "aspnet-core"
+        if p.get("output_type", "").lower() in ("exe", "winexe"):  # an executable on modern .NET is deployed on its own
+            return "netcore-worker" if code_hits.get("hosted") else "netcore-console"
         return "netcore-other"
     if fam == "netstandard":
         return "class-library"
@@ -211,6 +217,7 @@ def classify(p, files_by_ext, code_hits):
 
 NON_DEPLOYABLE_NOTE = "web-library: references ASP.NET MVC / Web API but has no web.config, Global.asax or Web Application project type"
 DEPLOYABLE = {"aspnet-mvc", "aspnet-webapi", "aspnet-webforms", "wcf-service", "windows-service", "console", "winforms", "wpf",
+              "netcore-console", "netcore-worker",
               "aspnet-core", "website", "database"}
 
 
@@ -291,7 +298,7 @@ def inventory_repo(name, repo_root, cfg):
                 return p
         return None
 
-    per_proj = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0, "servicebase": False})
+    per_proj = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0, "servicebase": False, "hosted": False})
     artefacts = defaultdict(list)
     loose = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0})
     for f in all_files:
@@ -316,6 +323,9 @@ def inventory_repo(name, repo_root, cfg):
                 if ext in (".cs", ".vb") and o is not None and not per_proj[o["path"]]["servicebase"] and n:
                     if re.search(r"(:\s*ServiceBase\b|Inherits\s+(System\.ServiceProcess\.)?ServiceBase\b)", read_text(f)):
                         per_proj[o["path"]]["servicebase"] = True
+                if ext in (".cs", ".vb") and o is not None and not per_proj[o["path"]]["hosted"] and n:
+                    if re.search(r"\b(AddHostedService\s*<|BackgroundService\b|IHostedService\b|UseWindowsService\s*\(|AddWindowsService\s*\()", read_text(f)):
+                        per_proj[o["path"]]["hosted"] = True
     for p in projects:
         b = per_proj[p["path"]]
         pdir = os.path.dirname(os.path.join(repo_root, p["path"]))
@@ -328,7 +338,7 @@ def inventory_repo(name, repo_root, cfg):
         p["loc_generated"] = b["loc"].get("generated", 0)
         p["complexity"] = project_metrics(b.get("cx_files", []))
         p["languages"] = sorted(k for k in b["loc"] if k in ("C#", "VB.NET", "F#"))
-        p["type"] = classify(p, b["ext"], {"servicebase": b["servicebase"]})
+        p["type"] = classify(p, b["ext"], {"servicebase": b["servicebase"], "hosted": b["hosted"]})
         p["deployable"] = p["type"] in DEPLOYABLE
     # Web Site projects: folders with web.config + pages but no project file owning them
     websites = []

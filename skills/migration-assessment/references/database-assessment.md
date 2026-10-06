@@ -65,6 +65,6 @@ Findings raised from the inventory are flagged `db.priced_by_inventory`, so they
 
 ## Writing the recommendation
 
-- **Lead with the scenario and the evidence** ("F-031 CLR assembly in `Db/Assemblies/Crypto.sql:12` has no PostgreSQL equivalent and must be rewritten in application code").
+- **Lead with the scenario and the evidence** ("{{f:DB-CLR}} CLR assembly in `Db/Assemblies/Crypto.sql:12` has no PostgreSQL equivalent and must be rewritten in application code").
 - **State the trade-off.** Dual support doubles the long-term cost of every database change; recommend it only when a customer contract or a staged migration needs both engines. PostgreSQL-only is cheaper to maintain but is a larger one-time conversion.
 - **If no database code was available,** say so and list what is needed.
