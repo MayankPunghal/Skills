@@ -37,11 +37,16 @@ def upgrade_stock_theme(docs):
     old_tmpl = os.path.join(tdir, "legacy", "extra.css.v1.tmpl")
     if os.path.exists(extra) and os.path.exists(old_tmpl):
         pat = re.escape(open(old_tmpl, encoding="utf-8").read().strip()).replace(re.escape("{{accent_hex}}"), r"(#[0-9a-fA-F]{3,8})")
-        m = re.fullmatch(pat, open(extra, encoding="utf-8").read().replace("\r\n", "\n").strip())
+        cur = open(extra, encoding="utf-8").read().replace("\r\n", "\n")
+        m = re.fullmatch(pat, cur.strip())
         if m:
             accent = DEFAULT_ACCENT if m.group(1).lower() == OLD_DEFAULT_ACCENT else m.group(1)
             new = open(os.path.join(tdir, "extra.css.tmpl"), encoding="utf-8").read().replace("{{accent_hex}}", accent)
             open(extra, "w", encoding="utf-8", newline="\n").write(new)
+        elif re.search(r"--md-primary-fg-color\s*:|\.md-header\b[^{]*\{[^}]*background", cur):
+            # an edited copy is the project's: flag it, never rewrite it
+            print("note: docs/assets/extra.css still sets the header colours from an older template (--md-primary-fg-color / "
+                  ".md-header background); site-theme.css now styles the header, so remove those lines to use it.")
     logo = os.path.join(docs, "assets", "logo.svg")
     old_logo = os.path.join(tdir, "legacy", "logo.v1.svg")
     if os.path.exists(logo) and os.path.exists(old_logo) and open(logo, encoding="utf-8").read().strip() == open(old_logo, encoding="utf-8").read().strip():

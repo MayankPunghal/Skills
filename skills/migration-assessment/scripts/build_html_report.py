@@ -25,6 +25,8 @@ import _findings as F
 import build_report as BR
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
+# fixed English month names: strftime("%B") follows the machine's locale and would mix languages in the title block
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 
 # Small line icons (stroke = currentColor), so no Unicode glyph stands in for an icon.
@@ -306,7 +308,7 @@ def main():
                 today = datetime.date.today()
                 note = brand.get("confidential_note", "").replace("{client}", client)
                 cover = (f'<div class="cover"><h1>{html.escape(cfg.get("engagement", "AWS Migration & Modernization Assessment"))}</h1>'
-                         f'<div class="meta">Prepared for <b>{html.escape(client)}</b>{" by <b>" + html.escape(company) + "</b>" if company else ""} · {today.day} {today:%B %Y} · '
+                         f'<div class="meta">Prepared for <b>{html.escape(client)}</b>{" by <b>" + html.escape(company) + "</b>" if company else ""} · {today.day} {MONTHS[today.month - 1]} {today.year} · '
                          f'target {html.escape(BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")))} on AWS</div>'
                          + (f'<div class="conf">{ICON["lock"]}<span>{html.escape(note)}</span></div>' if note else "") + "</div>")
                 h2cls = ' class="sr"'

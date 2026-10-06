@@ -76,11 +76,11 @@ html { scrollbar-color: var(--dsh-line-2) transparent; }
 :focus-visible { outline-color: var(--md-accent-fg-color); }
 
 /* Header and tabs: part of the page, separated by hairlines, not a dark band */
-.md-header { background-color: var(--dsh-canvas); color: var(--dsh-ink); box-shadow: none; border-bottom: 1px solid var(--dsh-line); }
+html .md-header { background-color: var(--dsh-canvas); color: var(--dsh-ink); box-shadow: none; border-bottom: 1px solid var(--dsh-line); }
 .md-header--shadow { box-shadow: none; }
 .md-header__topic:first-child { font-weight: 600; letter-spacing: -.005em; }
 .md-header__button.md-logo img, .md-header__button.md-logo svg { height: 1.3rem; }
-.md-tabs { background-color: var(--dsh-canvas); color: var(--dsh-ink-2); border-bottom: 1px solid var(--dsh-line); }
+html .md-tabs { background-color: var(--dsh-canvas); color: var(--dsh-ink-2); border-bottom: 1px solid var(--dsh-line); }
 .md-tabs__item { height: 2.3rem; padding-inline: .6rem; }
 .md-tabs__link { font-size: .7rem; font-weight: 500; opacity: 1; color: var(--dsh-ink-3); margin-top: .7rem; transition: color .15s; }
 .md-tabs__link:hover { color: var(--dsh-ink); }
@@ -108,7 +108,7 @@ html { scrollbar-color: var(--dsh-line-2) transparent; }
 .md-typeset h2 { font-size: 1.15rem; font-weight: 600; line-height: 1.3; letter-spacing: -.012em; color: var(--dsh-ink); margin: 2.2em 0 .7em; border-bottom: 0; padding-bottom: 0; }
 .md-typeset h3 { font-size: .95rem; font-weight: 600; line-height: 1.35; letter-spacing: -.008em; margin: 1.8em 0 .6em; }
 .md-typeset h4 { font-size: .8rem; font-weight: 600; margin: 1.6em 0 .5em; }
-.md-typeset h1 + p { font-size: .9rem; color: var(--dsh-ink-2); }
+.md-typeset h1 + p { color: var(--dsh-ink-2); }
 .md-typeset strong { font-weight: 600; }
 .md-typeset a { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
 .md-typeset a:hover { color: var(--md-typeset-a-color); text-decoration-color: currentColor; }
