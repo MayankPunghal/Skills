@@ -12,6 +12,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 DOCS = CFG.get("docs_dir", "docs")
@@ -114,6 +115,7 @@ def main():
             out += ["**Classes & functions:** " + ", ".join(cls_tag(n, a) for n, a in sorted(set(v["classes"]))), ""]
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     open(OUT, "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    stat("areas", areas=len(areas))
     print(f"area-map: {len(areas)} areas -> {OUT}")
 
 

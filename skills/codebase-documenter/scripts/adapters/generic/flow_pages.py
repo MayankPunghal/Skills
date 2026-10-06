@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from collections import defaultdict
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 DOCS = CFG.get("docs_dir", "docs")
@@ -161,6 +162,7 @@ def main():
     open(VIEWER, "w", encoding="utf-8", newline="\n").write(html)
     nsteps = sum(len(fl["steps"]) for fl in flows)
     linked = sum(1 for fl in flows for s in fl["steps"] if s["links"])
+    stat("flows", flows=len(flows), steps=nsteps)
     print(f"flows: {len(flows)} flows, {nsteps} steps ({linked} linked to code), viewer {VIEWER}")
     if errors:
         print("\n".join("ERROR " + e for e in errors))

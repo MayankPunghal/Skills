@@ -133,9 +133,10 @@ def profiles(g, labels_old=None):
                 if lab.endswith(suf) and lab != suf:
                     roles[role] += 1
                     break
-        role = roles.most_common(1)[0][0] if roles and roles.most_common(1)[0][1] >= max(1, len(classes) * 0.34) else ""
+        # a role only when it is true of most types ("mostly controllers" for 1 controller out of 2 types is not)
+        role = roles.most_common(1)[0][0] if roles and roles.most_common(1)[0][1] >= 2 and roles.most_common(1)[0][1] > len(classes) * 0.5 else ""
         top_ext = exts.most_common(1)[0][0] if exts else ""
-        if not role and top_ext in EXT_ROLE and exts[top_ext] >= 0.5 * sum(exts.values()):
+        if not role and top_ext in EXT_ROLE and exts[top_ext] > 0.5 * sum(exts.values()):
             role = EXT_ROLE[top_ext]
         if not role and all(re.search(r"(^|/)tests?(/|$)|Tests?/", nodes[i].get("source_file") or "", re.I) for i in ids if nodes[i].get("source_file")):
             role = "Tests"

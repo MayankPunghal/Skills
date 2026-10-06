@@ -16,6 +16,8 @@ Tags (text after | is optional display text):
   [[js:app.js]]                   -> Custom JavaScript
   [[rpt:Sales_Summary]]           -> SSRS report
   [[page:security/findings.md#anchor|text]] -> another documentation page (checked to exist)
+  [[n:db-access.sites]]           -> a headline number from docs/agent/stats.json (written by the adapters), so a page
+                                     never carries a count copied from a generated page that goes stale on the next build
 
   [[<prefix>:Name]]               -> any other anchor prefix (exact, then suffix match)
 
@@ -171,6 +173,8 @@ def main():
     unlink_missing_anchors()
     anchors = load_anchors()
     idx = build_suffix_index(anchors)
+    sp = os.path.join(DOCS, "agent", "stats.json")
+    stats = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
     unresolved = defaultdict(set)
     mentions = defaultdict(set)  # (kind, anchor) -> pages
     written = []
@@ -188,6 +192,13 @@ def main():
 
             def sub(m):
                 kind, target, label = m.group(1), m.group(2), m.group(3)
+                if kind == "n":
+                    area, _, key = target.strip().partition(".")
+                    v = (stats.get(area) or {}).get(key)
+                    if v is None:
+                        unresolved["n"].add(f"{target} (in {relp}; known: {', '.join(sorted(stats)) or 'none'})")
+                        return f"**[number {target} not found]**"
+                    return f"{v:,}" if isinstance(v, int) else str(v)
                 if kind == "page":
                     path, _, frag = target.partition("#")
                     if not os.path.exists(os.path.join(SRC, path)) and not os.path.exists(os.path.join(DOCS, path)):

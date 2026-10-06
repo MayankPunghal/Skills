@@ -1457,7 +1457,10 @@ def reflection(model):
     out = []
     for p, src in model.files.items():
         for m in REFLECTION.finditer(src.mask):
-            out.append({"text": re.sub(r"\s+", " ", src.code[m.start():m.end()])[:120], "file": p, "line": src.line(m.start())})
+            text = src.code[m.start():m.end()]
+            if re.search(r"\bnameof\s*\(", text):
+                continue  # GetMethod(nameof(X)) (EF HasDbFunction etc.): the compiler checks the name, so it is not decided at run time
+            out.append({"text": re.sub(r"\s+", " ", text)[:120], "file": p, "line": src.line(m.start())})
     return out
 
 

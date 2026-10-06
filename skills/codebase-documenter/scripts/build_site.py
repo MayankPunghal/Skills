@@ -103,6 +103,9 @@ def main():
             code, out = run([sys.executable, sql_scripts[0]])
             print(f"{'ok  ' if code == 0 else 'FAIL'} sql-graph: {' | '.join(l.strip() for l in out.strip().splitlines()[-2:])[:300]}")
             failed |= code != 0
+        stats = os.path.join(docs, "agent", "stats.json")  # headline numbers for [[n:...]] tags: only this run's adapters
+        if os.path.exists(stats):
+            os.remove(stats)
         for name in names:
             scripts = ([name.split(":", 1)[1]] if name.startswith("custom:") else ADAPTER_SCRIPTS.get(name))
             if not scripts:

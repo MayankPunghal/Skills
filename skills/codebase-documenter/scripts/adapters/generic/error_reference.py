@@ -17,6 +17,7 @@ import re
 from collections import Counter, defaultdict
 
 from _scan import BACK, DOCS, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-errors")
 MAXLEN = OPT.get("max_message", 180)
@@ -52,6 +53,64 @@ def message_of(groups):
     return vals[-1] if vals else ""
 
 
+def literal_at(text, q):
+    """(contents, end) of the double-quoted literal whose opening quote is at q; an interpolated $"..." keeps its {holes}
+    whole, including strings nested inside them ($"expected [{string.Join(", ", e)}]")."""
+    interp = text[max(0, q - 2):q].replace("@", "").endswith("$")
+    verbatim = "@" in text[max(0, q - 2):q]
+    i, depth, out = q + 1, 0, []
+    while i < len(text) and text[i] != "\n" or (verbatim and i < len(text)):
+        ch = text[i]
+        if depth:
+            if ch == '"':  # a string inside the hole
+                j = i + 1
+                while j < len(text) and text[j] not in '"\n':
+                    j += 2 if text[j] == "\\" else 1
+                out.append(text[i:j + 1])
+                i = j + 1
+                continue
+            depth += (ch == "{") - (ch == "}")
+        elif interp and ch == "{":
+            if text.startswith("{{", i):
+                out.append("{")
+                i += 2
+                continue
+            depth = 1
+        elif ch == "\\" and not verbatim:
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        elif ch == '"':
+            if verbatim and text.startswith('""', i):
+                out.append('"')
+                i += 2
+                continue
+            return "".join(out), i + 1
+        out.append(ch)
+        i += 1
+    return "".join(out), i
+
+
+def with_concat(text, end, msg):
+    """Follow "a" + name + "b" (VB &) on to the closing ")" so the message reads 'a{name}b' instead of stopping at the first piece."""
+    for _ in range(8):
+        m = re.match(r"\s*[+&]\s*", text[end:end + 20])
+        if not m:
+            return msg
+        k = end + m.end()
+        if text[k:k + 1] == '"' or text[k:k + 2] in ('$"', '@"'):
+            q = text.index('"', k)
+            part, end = literal_at(text, q)
+            msg += part
+            continue
+        ident = re.match(r"[\w.]+(?:\(\))?", text[k:])
+        if not ident:
+            return msg + " …"
+        msg += "{" + ident.group(0) + "}"
+        end = k + ident.end()
+    return msg
+
+
 def kind_label(kind, groups, msg):
     first = next((g for g in groups if g and g != msg), "")
     if kind == "http" and re.fullmatch(r"[45]\d\d", first or ""):
@@ -78,14 +137,21 @@ def main():
             text = text if text is not None else read(full)
             for hit in rx.finditer(text):
                 msg = message_of(hit.groups()).replace("''", "'").strip()
+                gi = max((k for k, g in enumerate(hit.groups(), 1) if g), default=0)
+                end = hit.end()
+                if gi and ext != ".sql" and text[hit.start(gi) - 1:hit.start(gi)] == '"':  # read the whole literal, then any concatenation
+                    msg, end = literal_at(text, hit.start(gi) - 1)
+                    msg = with_concat(text, end, msg).strip()
+                elif re.match(r"\s*\+", text[hit.end():hit.end() + 4]):  # 'Connection string ' + name (single-quoted, JS / Python)
+                    msg += " …"
                 if len(msg) < 3 or not re.search(r"[A-Za-z]{2}", msg):
                     continue
+                if kind == "exception" and re.fullmatch(r"[A-Za-z_]\w*", msg) and re.search(r"Argument(Null|OutOfRange)?Exception", hit.group(0)):
+                    continue  # ArgumentNullException("blogPost"): a parameter name, not a message anyone reads
                 line = line_at(text, hit.start())
                 if (line, msg) in seen:
                     continue
                 seen.add((line, msg))
-                if re.match(r"\s*\+", text[hit.end():hit.end() + 4]):  # "Connection string '" + name + "' is missing."
-                    msg += " …"
                 rows.append({"kind": kind, "type": kind_label(kind, hit.groups(), msg), "message": msg[:MAXLEN] + ("…" if len(msg) > MAXLEN else ""),
                              "file": path, "line": line, "method": m.enclosing(path, line) if ext != ".sql" else None})
     if not rows:
@@ -117,6 +183,7 @@ def main():
         r["anchor"] = slug("err", os.path.splitext(os.path.basename(r["file"]))[0], r["line"])
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
     open(os.path.join(DOCS, "agent", "errors.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(rows, ensure_ascii=False, indent=1))
+    stat("errors", errors=len(rows), projects=len(by_proj))
     print(f"errors: {len(rows)} in {len(by_proj)} projects (" + ", ".join(f"{k} {v}" for k, v in kinds.most_common()) + ")")
 
 

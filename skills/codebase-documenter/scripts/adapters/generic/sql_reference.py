@@ -31,6 +31,7 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import sql_parse  # noqa: E402
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
@@ -572,6 +573,8 @@ def main():
         db.tables_page, db.routines_page = tp, rp
         nt, nr = generate(db, tp, rp)
         dbs.append(db)
+        stat("sql-" + slug(name), tables=nt, routines=nr,  # plus one count per object kind: procedure, function, trigger, view ...
+             **{k.lower().replace(" ", "_"): v for k, v in Counter(o["kind"] for o in db.objects).items()})
         print(f"generic-sql [{name}] tables {nt}, routines and other objects {nr}" + (f", {len(db.errors)} parse errors" if db.errors else "") + f" ({eng})")
     code_sql, stats = sql_parse.scan_code(ROOT, SKIP_DIRS) if dbs else ([], {})
     if dbs and PG_NOTES:

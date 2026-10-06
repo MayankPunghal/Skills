@@ -70,6 +70,9 @@ class Ctx:
         self.wp = {w["id"]: w for w in self.est.get("work_packages", [])}
         for i, f in enumerate(self.findings, 1):
             f["ref"] = f"F-{i:03d}"
+        VALUES.clear()  # {{v:path}} tags: numbers in narratives come from the data, so a rescan cannot leave them stale
+        VALUES.update({"estimate": self.est, "classification": self.cls, "inventory": self.inv, "scan": self.scan,
+                       "findings": {"total": len(self.findings), **{s.lower(): n for s, n in Counter(f["severity"] for f in self.findings).items()}}})
         FINDING_REFS.clear()  # rule -> findings, for {{f:RULE}} tags in narratives (F-numbers change whenever findings change)
         for f in self.findings:
             FINDING_REFS.setdefault(f["rule"].lower(), []).append(f)
@@ -1081,7 +1084,32 @@ def pretty_tfm(t):
 
 
 FINDING_REFS = {}
+VALUES = {}
 FTAG = re.compile(r"\{\{f:([\w.:\-]+)(?:@([^}]+))?\}\}")
+VTAG = re.compile(r"\{\{v:([^}|]+)(?:\|(\w+))?\}\}")
+
+
+def value_tag(m):
+    """{{v:estimate.totals.likely_hours}} -> 370; {{v:path|len}} counts a list or dict; numbers keep a thousands separator."""
+    cur = VALUES
+    for part in m.group(1).strip().split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        elif isinstance(cur, list) and part.lstrip("-").isdigit() and -len(cur) <= int(part) < len(cur):
+            cur = cur[int(part)]
+        else:
+            return f"**[value {m.group(1)} not found]**"
+    if m.group(2) == "len":
+        cur = len(cur) if isinstance(cur, (list, dict)) else cur
+    if isinstance(cur, bool) or cur is None or isinstance(cur, (dict, list)):
+        return f"**[value {m.group(1)} is not a number or text]**"
+    if isinstance(cur, float):
+        return f"{cur:,.1f}".rstrip("0").rstrip(".") if cur != int(cur) else f"{int(cur):,}"
+    return f"{cur:,}" if isinstance(cur, int) else str(cur)
+
+
+def tags(text):
+    return VTAG.sub(value_tag, FTAG.sub(finding_tag, text))
 
 
 def finding_tag(m):
@@ -1100,7 +1128,7 @@ def narrative(name):
     t = open(p, encoding="utf-8").read()
     t = re.sub(r"(?s)<!--.*?-->", "", t).strip()
     t = re.sub(r"^#\s.*\n", "", t)  # the template supplies the heading
-    t = FTAG.sub(finding_tag, t)
+    t = tags(t)
     return t or f"_Narrative '{name}' not written yet._"
 
 
@@ -1189,7 +1217,7 @@ def main():
     report = re.sub(r"\{\{(meta|block|narrative):([\w-]+)\}\}", sub, tpl)
     rdir = os.path.join(OUT, "report")
     name = a.out or f"{slug(meta['client']).title().replace('-', '')}-AWS-Migration-Assessment.md"
-    report = FTAG.sub(finding_tag, report)  # tags in decisions / reviews too
+    report = tags(report)  # tags in decisions / reviews too
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)
     mark_step(root, "report")

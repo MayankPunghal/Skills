@@ -133,15 +133,16 @@ def main():
     missing_n = re.findall(r"_Narrative '([\w-]+)' not written yet\._", report)
     results.append(("narratives written", not todo and not missing_n, f"PENDING in: {', '.join(todo) or 'none'}; missing: {', '.join(missing_n) or 'none'}"))
     # 5b finding references: F-numbers are positions in the sorted findings and move on every rescan; narratives cite {{f:RULE}} tags
-    raw, unresolved = [], re.findall(r"\*\*\[finding ([^\]]+) not found\]\*\*", report)
+    raw = []
+    unresolved = re.findall(r"\*\*\[finding ([^\]]+) not found\]\*\*", report) + re.findall(r"\*\*\[value ([^\]]+?) (?:not found|is not a number or text)\]\*\*", report)
     for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) + [os.path.join(OUT, "decisions.json")] + glob.glob(os.path.join(OUT, "reviews", "*.json")):
         if not os.path.exists(p):
             continue
         body = re.sub(r"(?s)<!--.*?-->", "", open(p, encoding="utf-8").read())
         if re.search(r"\bF-\d{3}\b", body):
             raw.append(os.path.basename(p))
-    results.append(("finding references current", not raw and not unresolved,
-                    f"raw F-numbers in: {', '.join(raw) or 'none'} (use {{{{f:RULE}}}} tags); unresolved tags: {', '.join(sorted(set(unresolved))) or 'none'}"))
+    results.append(("finding references and values current", not raw and not unresolved,
+                    f"raw F-numbers in: {', '.join(raw) or 'none'} (use {{{{f:RULE}}}} tags); unresolved {{{{f:}}}} / {{{{v:}}}} tags: {', '.join(sorted(set(unresolved))) or 'none'}"))
     # 6 secrets
     vals = set()
     for inv in invs.values():

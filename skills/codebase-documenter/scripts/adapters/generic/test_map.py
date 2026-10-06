@@ -12,12 +12,26 @@ import re
 from collections import defaultdict, deque
 
 from _scan import BACK, OUT, ROOT, Methods, esc, options, project_of, read, slug, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-tests")
 TEST_RX = re.compile(OPT.get("test_regex", r"(^|/)(tests?|specs?|__tests__|testing)(/|$)|[._-](tests?|spec)\.\w+$|Tests?\.\w+$|"
                                           r"(^|/)test_\w+\.py$|_test\.(go|py)$|IntegrationTests?|UnitTests?"), re.I)
 DEPTH = OPT.get("max_depth", 8)
 MAX_TESTS_SHOWN = 4
+# a test case, not a helper in a test file: xUnit / NUnit / MSTest attributes, JUnit @Test, test_* / Test* functions, it( / test(
+CASE = re.compile(r"\[\s*(?:\w+\.)*(Fact|Theory|Test|TestMethod|DataTestMethod|TestCase\w*|TestCaseSource|Property)\b|@(Test|ParameterizedTest)\b|"
+                  r"^\s*(?:async\s+)?def\s+test_|^\s*func\s+Test\w*\(|\b(?:it|test)\s*\(\s*['\"`]")
+_lines = {}
+
+
+def is_case(x):
+    """Is the method at x['file']:x['line'] a test case? Reads the declaration and the attribute lines above it."""
+    f = x["file"]
+    if f not in _lines:
+        _lines[f] = read(os.path.join(ROOT, f)).splitlines()
+    ln = x.get("line") or 0
+    return bool(ln) and any(CASE.search(t) for t in _lines[f][max(0, ln - 4):ln])
 
 
 def main():
@@ -50,8 +64,10 @@ def main():
         by_proj[project_of(m.data[a]["file"])].append(a)
     total = len(prod)
     hit = len(reached)
+    cases = sum(1 for t in tests if is_case(m.data[t]))
+    helpers = len(tests) - cases
     out = ["# Test map", "",
-           f"{len(tests)} test methods reach {hit} of {total} production methods ({(100 * hit // total) if total else 0}%) through the "
+           f"{cases} test cases" + (f" (and {helpers} helper method{'s' if helpers != 1 else ''} in test files)" if helpers else "") + f" reach {hit} of {total} production methods ({(100 * hit // total) if total else 0}%) through the "
            "call graph. This is static reachability, not run-time coverage: calls resolved from the code (including, for C#, "
            "dependency injection, interfaces, overrides, messages and events) are followed; reflection, HTTP calls to the "
            "application and SQL are not. Treat \"not reached\" as \"no test calls it in a way the code shows\" and "
@@ -95,7 +111,8 @@ def main():
             out.append("")
         out.append(f"**Not reached by any test ({len(miss)}):** " + (", ".join(m.link(a) for a in miss) or "none"))
     write_page("test-map.md", out)
-    print(f"test-map: {len(tests)} tests reach {hit}/{total} production methods")
+    stat("tests", tests=cases, test_file_methods=len(tests), methods_reached=hit, methods=total)
+    print(f"test-map: {cases} test cases ({len(tests)} methods in test files) reach {hit}/{total} production methods")
 
 
 if __name__ == "__main__":

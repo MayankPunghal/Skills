@@ -40,6 +40,14 @@ SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd
 TRIVIAL_VALUE = re.compile(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|\{.*\}|xxx+|\*+|changeme|[a-z][\w+.-]*://[^@\s]*)\s*")
 # __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
 TOKEN_SHAPED = re.compile(r"^__\w+__$")
+try:  # shared with the codebase-documenter (portability page): matches inside string literals are not API uses
+    _d = documenter_dir()
+    if _d and os.path.join(_d, "scripts") not in sys.path:
+        sys.path.insert(0, os.path.join(_d, "scripts"))
+    from code_text import code_match
+except ImportError:  # documenter not installed: keep every match
+    def code_match(rx, line, vb=False):
+        return True
 MAX_EVIDENCE = 25
 # a script line that only prints or raises a message: URLs in it are help links (download pages, docs), not connections
 SCRIPT_MESSAGE = re.compile(r"(?i)^\s*(@?echo\b|Write-\w+|throw\b|Read-Host\b|Out-Host\b|printf?\b|Show-\w+)")
@@ -108,72 +116,6 @@ def load_rules():
         r["_not"] = re.compile(r["not"]) if r.get("not") else None
         r["_types"] = set(r["types"])
     return rules
-
-
-def string_spans(line, vb=False):
-    """(start, end) of the contents of each string literal on one C# / VB line ("..", @"..", $"..", raw \"\"\"..\"\"\", '.' chars)."""
-    spans, i, n = [], 0, len(line)
-    while i < n:
-        c = line[i]
-        if c == '"':
-            if not vb and line.startswith('"""', i):
-                j = line.find('"""', i + 3)
-                j = n if j < 0 else j
-                spans.append((i + 3, j))
-                i = j + 3
-                continue
-            verbatim = vb or (i > 0 and line[i - 1] == "@") or (i > 1 and line[i - 2:i] in ("@$", "$@"))
-            interp = not vb and ((i > 0 and line[i - 1] == "$") or (i > 1 and line[i - 2:i] in ("@$", "$@")))
-            j, start, depth = i + 1, i + 1, 0
-            while j < n:
-                ch = line[j]
-                if interp and ch == "{":
-                    if depth == 0 and j + 1 < n and line[j + 1] == "{":
-                        j += 2  # {{ is a literal brace
-                        continue
-                    if depth == 0:
-                        spans.append((start, j))  # text before the hole; the hole itself is code
-                    depth += 1
-                    j += 1
-                    continue
-                if interp and ch == "}" and depth:
-                    depth -= 1
-                    if depth == 0:
-                        start = j + 1
-                    j += 1
-                    continue
-                if depth:
-                    j += 1
-                    continue
-                if ch == "\\" and not verbatim:
-                    j += 2
-                    continue
-                if ch == '"':
-                    if verbatim and j + 1 < n and line[j + 1] == '"':
-                        j += 2
-                        continue
-                    break
-                j += 1
-            spans.append((start, j))
-            i = j + 1
-            continue
-        if c == "'" and not vb:
-            j = line.find("'", i + 2 if i + 1 < n and line[i + 1] == "\\" else i + 1)
-            if 0 < j - i <= 8:
-                i = j + 1
-                continue
-        i += 1
-    return spans
-
-
-def code_match(rx, line, vb=False):
-    """True when at least one match of rx starts outside a string literal (a pattern that includes the quote starts at it)."""
-    spans = None
-    for m in rx.finditer(line):
-        spans = string_spans(line, vb) if spans is None else spans
-        if not any(a <= m.start() < b for a, b in spans):
-            return True
-    return False
 
 
 def blank_comments(text, ftype):

@@ -14,6 +14,7 @@ import re
 from collections import Counter, defaultdict
 
 from _scan import BACK, DOCS, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-api")
 CONVENTIONAL = OPT.get("conventional_mvc", True)
@@ -46,6 +47,31 @@ def lambda_params(text):
 CS_CLASS = re.compile(r"((?:\s*\[[^\]]+\]\s*)*)\s*(?:public\s+|internal\s+)?(?:sealed\s+|abstract\s+|partial\s+)*class\s+(\w+)(?:\s*\([^)]*\))?\s*(?::\s*([^{]+))?\{", re.S)
 CS_METHOD = re.compile(r"((?:[ \t]*\[[^\]\n]+\][ \t]*\r?\n)*)[ \t]*public\s+(?!class\b)(?:(?:async|virtual|override|new|sealed)\s+)*[\w<>\[\],.?() ]+?\s+(\w+)\s*(?:<[^>]*>)?\s*\(")
 HTTP_ATTR = re.compile(r"\[(?:\w+,\s*)*Http(Get|Post|Put|Delete|Patch)(?:\s*\(\s*(?:template:\s*)?\"([^\"]*)\"[^)]*\))?", re.I)
+
+
+def sig_params(text, open_paren):
+    """Parameters of the signature whose "(" is at open_paren, read from the text itself (overloads share one method-map
+    entry, so Create() and [HttpPost] Create(CouponForm form) would otherwise both show the first one's parameters)."""
+    depth, out, cur, quote = 0, [], "", ""
+    for ch in text[open_paren:open_paren + 2000]:
+        if quote:  # inside a default value's string / char literal: brackets there do not nest
+            cur += ch
+            quote = "" if ch == quote and not cur.endswith("\\" + ch) else quote
+            continue
+        if ch in "\"'" and depth >= 1:
+            quote = ch
+            cur += ch
+            continue
+        depth += (ch in "(<[{") - (ch in ")>]}")
+        if depth == 0:
+            break
+        if ch == "," and depth == 1:
+            out.append(cur)
+            cur = ""
+        elif depth >= 1 and not (depth == 1 and ch == "("):
+            cur += ch
+    out.append(cur)
+    return [p for p in (re.sub(r"\[[^\]]*\]", "", re.sub(r"\s+", " ", x)).strip() for x in out) if p]
 
 
 def attr_route(attrs):
@@ -83,6 +109,7 @@ def dotnet(path, text):
             mroute = attr_route(attrs)
             auth = auth_of(attrs) or cauth
             handler = M.next_after(path, line, within=0) or M.enclosing(path, line)
+            params = sig_params(body, m.end() - 1)
 
             def tokens(r):
                 return r.replace("[controller]", ctl).replace("[action]", meth).replace("[area]", area.group(1) if area else "")
@@ -91,33 +118,35 @@ def dotnet(path, text):
                 for verb, tmpl in (verbs or [("ANY", "")]):
                     t = tmpl or mroute or ""
                     if not t and not prefix and not is_api:  # [HttpPost] on an MVC action: a verb filter, conventional route
-                        add(verb, conventional, "ASP.NET MVC (conventional)", path, line, handler, auth=auth,
+                        add(verb, conventional, "ASP.NET MVC (conventional)", path, line, handler, params=params, auth=auth,
                             note="route from the default {controller}/{action} convention")
                         continue
                     full = t if t.startswith(("/", "~/")) else f"{prefix}/{t}" if prefix else t
-                    add(verb, tokens(full), "ASP.NET", path, line, handler, auth=auth)
+                    add(verb, tokens(full), "ASP.NET", path, line, handler, params=params, auth=auth)
             elif CONVENTIONAL and not is_api and not re.search(r"\boverride\b", m.group(0)) and re.search(
                     r"ActionResult|IActionResult|Task<|JsonResult|ViewResult|\bstring\b|\bvoid\b", m.group(0)):
                 add("ANY", conventional, "ASP.NET MVC (conventional)", path, line,
-                    handler, auth=auth, note="route from the default {controller}/{action} convention")
+                    handler, params=params, auth=auth, note="route from the default {controller}/{action} convention")
     groups = {g.group(1): g.group(2) for g in re.finditer(r"(\w+)\s*=\s*[\w.]+\.MapGroup\(\s*\"([^\"]*)\"", text)}
     for m in re.finditer(r"(\w+)\s*\.\s*Map(Get|Post|Put|Delete|Patch|Methods|Fallback)\s*\(\s*\"([^\"]*)\"", text):
         recv, verb, route = m.group(1), m.group(2), m.group(3)
         line = line_at(text, m.start())
         handler_text = text[m.end():m.end() + 400]
         mg = re.match(r"\s*,\s*([\w.]+)\s*\)", handler_text)
-        target = minimal_handler(path, line, text, m.start(), mg.group(1) if mg else None)
+        target, ncalls = minimal_handler(path, line, text, m.start(), mg.group(1) if mg else None)
         lp = lambda_params(handler_text)
+        calls = " (calls the linked method)" if ncalls == 1 else f" (first of {ncalls} methods it calls is linked)"
         add("ANY" if verb in ("Methods", "Fallback") else verb, f"{groups.get(recv, '')}/{route}", "ASP.NET minimal API", path, line,
             handler=target or False, inline_params=lp,
             params=[x.strip() for x in lp.split(",") if x.strip()] if (target and not mg and lp is not None) else None,
-            note=(f"handler {mg.group(1)}" if mg else "inline lambda" + (" (calls the linked method)" if target else
+            note=(f"handler {mg.group(1)}" if mg else "inline lambda" + (calls if target else
                   f", registered in {M.data.get(M.enclosing(path, line), {}).get('name', 'top-level code')}")))
 
 
 def minimal_handler(path, line, text, start, group):
-    """Method behind a minimal-API endpoint: the method group (MapGet("/x", Health)), else the first call the lambda makes on
-    one of its typed parameters or on a type (runner.RunAllAsync(..), ScenarioRunner.Find(..))."""
+    """(method, calls) behind a minimal-API endpoint: the method group (MapGet("/x", Health)), else the first call the lambda
+    makes on one of its typed parameters or on a type (runner.RunAllAsync(..), ScenarioRunner.Find(..)) and how many distinct
+    known methods it calls, so a lambda that runs several is not presented as a thin wrapper around one."""
     by_name = {}
     for a, x in M.data.items():
         by_name.setdefault(x["name"], []).append(a)
@@ -126,7 +155,7 @@ def minimal_handler(path, line, text, start, group):
         cands = [a for n, al in by_name.items() if n.endswith("." + parts[-1]) and (len(parts) == 1 or n.startswith(parts[-2] + "."))
                  for a in al]
         same = [a for a in cands if M.data[a]["file"] == path]
-        return (same or cands or [None])[0]
+        return (same or cands or [None])[0], 1
     p = text.find("(", start)
     depth, end = 0, len(text)
     for k in range(p, len(text)):
@@ -142,11 +171,12 @@ def minimal_handler(path, line, text, start, group):
         mm = re.match(r"([\w.]+)(?:<[^>]*>)?\??\s+(\w+)$", prm)
         if mm:
             ptypes[mm.group(2)] = mm.group(1).split(".")[-1]
+    found = []
     for mm in re.finditer(r"(?<![\w.])(\w+)\s*\.\s*(\w+)\s*(?:<[^()]*>)?\s*\(", body):
         owner = ptypes.get(mm.group(1)) or (mm.group(1) if mm.group(1)[:1].isupper() else None)
-        if owner and by_name.get(f"{owner}.{mm.group(2)}"):
-            return by_name[f"{owner}.{mm.group(2)}"][0]
-    return None
+        if owner and by_name.get(f"{owner}.{mm.group(2)}") and by_name[f"{owner}.{mm.group(2)}"][0] not in found:
+            found.append(by_name[f"{owner}.{mm.group(2)}"][0])
+    return (found[0], len(found)) if found else (None, 0)
 
 
 # ---------------------------------------------------------------- JS / TS
@@ -284,6 +314,7 @@ def main():
     for r in rows:
         r["anchor"] = slug("ep", r["verb"] + " " + r["route"])
     open(os.path.join(DOCS, "agent", "endpoints.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(rows, ensure_ascii=False, indent=1))
+    stat("endpoints", endpoints=len(rows), projects=len(by_proj))
     print(f"endpoints: {len(rows)} in {len(by_proj)} projects (" + ", ".join(f"{k} {v}" for k, v in fw.most_common()) + ")")
 
 

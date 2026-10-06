@@ -20,6 +20,7 @@ import re
 from collections import Counter, defaultdict
 
 from _scan import BACK, CFG, DOCS, Methods, esc, esc_text, slug, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 GRAPH_DIR = CFG.get("graph_dir", "graphify-out")
 M = Methods()
@@ -264,6 +265,7 @@ def main():
     slim["anchors"] = {"hosts": {h: slug("di-host", h) for h in by_host}, "messages": {n: slug("di-msg", n) for n in msgs},
                        "sections": {a: t for t, a, _ in sections}}
     open(os.path.join(agent, "di.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(slim, ensure_ascii=False, separators=(",", ":")))
+    stat("di", registrations=len(regs), hosts=len(hosts), services=len(svc_names), findings=len(d.get("findings", [])))
     print(f"dependency-injection: {len(regs)} registrations in {len(hosts)} hosts, {len(svc_names)} services, {len(cons)} classes with "
           f"dependencies, {len(msgs)} messages, {len(d.get('pipeline', []))} pipeline items, {len(d.get('findings', []))} findings, "
           f"{sum(d.get('edges_added', {}).values())} graph calls added")

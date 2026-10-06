@@ -11,6 +11,7 @@
 | No secrets | no secret patterns and **no secret value from the source config files** found in docs / index / llms.txt | Remove the value, name the key instead; re-check notes |
 | Research complete | every area ticked in PROGRESS | Finish or consciously drop (with a note) |
 | Page hygiene | one H1, no empty sections, no TBD/lorem/FIXME, no raw `Community N` labels | Edit the page |
+| (NOTE) typed counts | a number in a hand-written page equals a generated headline number (`docs/agent/stats.json`) | Replace it with the suggested `[[n:area.key]]` tag |
 
 Then, by reading (the scripts cannot judge these):
 
