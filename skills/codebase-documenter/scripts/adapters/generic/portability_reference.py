@@ -60,7 +60,7 @@ def rules_path():
 
 def file_type(name):
     low = name.lower()
-    if low.startswith("appsettings") and low.endswith(".json"):
+    if re.search(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$", low):
         return "config"
     return TYPE_BY_EXT.get(os.path.splitext(low)[1])
 

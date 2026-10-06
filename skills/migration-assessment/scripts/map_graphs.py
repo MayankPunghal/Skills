@@ -59,6 +59,14 @@ def doc_script(name):
     return p if p and os.path.exists(p) else None
 
 
+def stale(out, *scripts):
+    """True when the output is missing or older than a script that writes it: an upgraded skill refreshes existing graphs."""
+    if not os.path.exists(out):
+        return True
+    paths = [doc_script(x) for x in scripts]
+    return any(p and os.path.getmtime(p) > os.path.getmtime(out) for p in paths)
+
+
 def resolve(repo, src):
     """C# calls graphify misses (codebase-documenter csharp_resolve.py). Idempotent: replaces its own earlier edges."""
     script = doc_script("csharp_resolve.py")
@@ -465,11 +473,16 @@ def main():
             continue
         graphs.append(gj)
         gout = os.path.join(graph_dir(name), "graphify-out")
-        if how == "existing" and not os.path.exists(os.path.join(gout, "csharp-resolve.json")):
-            resolve(name, inv["root"])     # graph built before the resolver existed
-        if how == "existing" and not os.path.exists(os.path.join(gout, "sql-graph.json")):
-            sql_layer(name, inv["root"])   # graph built before the database layer existed
-            how = "existing+sql"
+        if how == "existing":  # graph built before a layer existed, or by an older version of it: refresh that layer
+            refresh = []
+            if stale(os.path.join(gout, "csharp-resolve.json"), "csharp_resolve.py"):
+                resolve(name, inv["root"])
+                refresh.append("resolve")
+            if refresh or stale(os.path.join(gout, "sql-graph.json"), "sql_graph.py", "sql_parse.py"):
+                sql_layer(name, inv["root"])
+                refresh.append("sql")
+            if refresh:
+                how = "existing+" + "+".join(refresh)
         if a.label or how != "existing" or not os.path.exists(os.path.join(gout, "community-summaries.json")):
             label(name, a.label)
         if a.exports:

@@ -45,7 +45,7 @@ def secret_values(inv_root):
                         vals.update(v for k, v in mk.attrib.items() if k.lower().endswith("key"))
                 elif low.endswith((".cs", ".vb")) and os.path.getsize(p) < 2_000_000:
                     vals.update(m.group(3) for m in LITERAL.finditer(read_text(p)))
-                elif low.startswith("appsettings") and low.endswith(".json"):
+                elif re.search(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$", low):
                     vals.update(re.findall(r'(?i)"[^"]*(?:password|secret|token|apikey|key)[^"]*"\s*:\s*"([^"]{6,})"', read_text(p)))
                     vals.update(m.strip() for m in re.findall(r"(?i)(?:password|pwd)\s*=\s*([^;\"]+)", read_text(p)))
             except (ET.ParseError, OSError, ValueError):

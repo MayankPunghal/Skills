@@ -54,7 +54,7 @@ def config_secret_values(src):
                     for k, v in re.findall(r"^\s*([\w.\-]+)\s*[=:]\s*(.+)$", open(p, encoding="utf-8", errors="ignore").read(), re.M):
                         if SECRET_KEY.search(k):
                             vals.add(v.strip().strip("'\""))
-                elif low.startswith("appsettings") and low.endswith(".json"):
+                elif re.search(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$", low):
                     def walk(o):
                         if isinstance(o, dict):
                             for k, v in o.items():
@@ -126,7 +126,7 @@ def main():
     for p in glob.glob(os.path.join(docs, "_src", "**", "*.md"), recursive=True):
         t = open(p, encoding="utf-8").read()
         r = os.path.relpath(p, os.path.join(docs, "_src")).replace("\\", "/")
-        body = re.sub(r"```.*?```", "", t, flags=re.S)
+        body = re.sub(r"```.*?```", "(code block)", t, flags=re.S)  # a diagram or code block is section content
         if len(re.findall(r"^# ", body, re.M)) != 1:
             issues.append(f"{r}: H1 count")
         heads = [(i, len(m.group(1))) for i, l in enumerate(body.splitlines()) for m in [re.match(r"^(#{2,6}) ", l)] if m]

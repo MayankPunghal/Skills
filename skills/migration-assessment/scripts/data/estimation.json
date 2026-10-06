@@ -1,9 +1,17 @@
 {
- "_doc": "Coding-effort engine (v4). Hours are developer hours for CODE and SQL work only: porting projects, fixing findings, converting database code and data access. QA, DevOps / infrastructure, project management, parallel-development drift and contingency are deliberately NOT estimated. Every number is a [low, high] range of manual-equivalent hours; 'likely' = low + likely_position x (high - low). Calibration anchor: AWS reported 143,000 lines of .NET Framework ported with about 270 developer hours saved (about 1.9 manual hours per KLOC for a clean mechanical port, AWS Transform for .NET case study, Caribbean Examinations Council); human-designed work (UI rewrite, auth, interop) is far slower, hence the higher rates for those project types. Recalibrate from your own actuals here, never in code. See references/estimation-model.md.",
- "version": "2026-10-v5-scale-redesign",
+ "_doc": "Coding-effort engine (v4). Hours are developer hours for CODE and SQL work only: porting projects, fixing findings, converting database code and data access. QA, DevOps / infrastructure, project management, parallel-development drift and contingency are deliberately NOT estimated. Every number is a [low, high] range of manual-equivalent hours with its mode at low + likely_position x (high - low); totals are rolled up by Monte Carlo (\"rollup\"): the range is P10-P90, 'likely' is P50 and P80 is the commitment figure. Calibration anchor: AWS reported 143,000 lines of .NET Framework ported with about 270 developer hours saved (about 1.9 manual hours per KLOC for a clean mechanical port, AWS Transform for .NET case study, Caribbean Examinations Council); human-designed work (UI rewrite, auth, interop) is far slower, hence the higher rates for those project types. Recalibrate from your own actuals here, never in code. See references/estimation-model.md.",
+ "version": "2026-10-v6-montecarlo-sprints",
  "hours_per_day": 8,
  "likely_position": 0.4,
  "likely_position_large": 0.5,
+ "rollup": {
+  "_doc": "Monte Carlo roll-up (_montecarlo.py). Adding every item's low and every item's high assumes all items land at the same extreme together; that range widens with every item and the AI factors stack on top (v5 gave a 4x spread). Industry practice sums expectations and combines spreads: each item is a triangular three-point estimate (low, mode at likely_position, high); items share one driver with correlation 'correlation' (0.3 = the default of the DoD / NASA Joint Agency Cost and Schedule Risk Handbook, cited in GAO-20-195G); the AI factors are systemic (one draw per iteration for every item, mode at factor_position of their range). Reported: P10-P90 range (the 80% interval AACE 18R-97 uses), P50 likely, P80 commitment; the old sums stay as bounds_hours. Fixed seed: reruns give the same numbers.",
+  "iterations": 4000,
+  "seed": 20261006,
+  "correlation": 0.3,
+  "factor_position": 0.5,
+  "label": "P10-P90"
+ },
  "scale": {
   "_doc": "Diseconomy of scale (COCOMO II: effort grows as size^B with B about 1.10). Project conversion hours in a repository are multiplied by max(1, (repository hand-written KLOC / reference_kloc) ^ exponent): a 360 KLOC repository pays about 1.4x per KLOC what a 10 KLOC one pays. Repositories of at least large_kloc also put 'likely' at likely_position_large instead of likely_position. Evidence: references/estimation-validation.md (the Smartstore port).",
   "reference_kloc": 10,
@@ -646,6 +654,12 @@
   "_doc": "Coding timeline only: waves of applications after the shared libraries, database code in parallel with the last waves. Wave overlap lets the next wave start before the previous one ends.",
   "wave_size_apps": 3,
   "wave_overlap": 0.3
+ },
+ "sprints": {
+  "_doc": "Coding sprint plan (estimate_effort.py sprint_plan). Sprint 1 starts on the day the team gets codebase access (assessment.json scenario.start_date or --start-date; without a date the plan counts weeks). Capacity per sprint = engineers x days_per_week x length_weeks x hours_per_day x team.efficiency; work is planned at P50 and listed in dependency order: shared libraries, then application waves, with database code in its own lane (db_engineers) when the scenario changes database code. onboarding_days at the start of Sprint 1 cover clone, restore, baseline build and the existing tests on the current stack: calendar time only, not in the coding estimate.",
+  "length_weeks": 2,
+  "onboarding_days": 2,
+  "db_engineers": 1
  },
  "activity_thresholds": {
   "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",

@@ -117,6 +117,10 @@ static class Objects
             {
                 var o = O("SECURITY POLICY", sp.Name, "create");
                 o["targets"] = sp.SecurityPredicateActions.Select(a => Util.Name(a.TargetObjectName)).Distinct().ToList();
+                // the predicate functions (inline TVFs) the policy runs on every row
+                o["predicates"] = sp.SecurityPredicateActions.Where(a => a.FunctionCall != null).Select(a => a.FunctionCall.CallTarget is MultiPartIdentifierCallTarget mp
+                    ? string.Join(".", mp.MultiPartIdentifier.Identifiers.Select(i => i.Value)) + "." + a.FunctionCall.FunctionName.Value
+                    : a.FunctionCall.FunctionName.Value).Distinct().ToList();
                 return o;
             }
             case CreateAggregateStatement ag:

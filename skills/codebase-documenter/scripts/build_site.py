@@ -91,6 +91,14 @@ def main():
             code, out = run([sys.executable, os.path.join(SKILL_DIR, "scripts", "csharp_resolve.py")])
             print(f"{'ok  ' if code == 0 else 'FAIL'} csharp-resolve: {' | '.join(l.strip() for l in out.strip().splitlines()[-2:])[:300]}")
             failed |= code != 0
+        sg = os.path.join(cfg.get("graph_dir", ""), "sql-graph.json")
+        sql_scripts = [os.path.join(SKILL_DIR, "scripts", f) for f in ("sql_graph.py", "sql_parse.py")]
+        if os.path.exists(os.path.join(cfg.get("graph_dir", ""), "graph.json")) and \
+                (not os.path.exists(sg) or any(os.path.getmtime(p) > os.path.getmtime(sg) for p in sql_scripts)):
+            # database layer missing, or written by an older sql_graph.py: refresh it before the adapters read graph.json
+            code, out = run([sys.executable, sql_scripts[0]])
+            print(f"{'ok  ' if code == 0 else 'FAIL'} sql-graph: {' | '.join(l.strip() for l in out.strip().splitlines()[-2:])[:300]}")
+            failed |= code != 0
         for name in names:
             scripts = ([name.split(":", 1)[1]] if name.startswith("custom:") else ADAPTER_SCRIPTS.get(name))
             if not scripts:
