@@ -198,10 +198,13 @@ class Scan:
                                 every = f"every {n} {u}{'' if n == '1' or not u else 's'}".strip() + (" by default" if km.group(2) else "")
                         if every:
                             break
-                en = re.search(r"""GetValue\s*(?:<[^>]+>)?\s*\(\s*["']([\w:.\-]*Enabled)["']""", body)
+                en = re.search(r"""GetValue\s*(?:<[^>]+>)?\s*\(\s*["']([\w:.\-]*Enabled)["']\s*(?:,\s*(true|false))?""", body)
+                off = False
                 if en:
-                    cfg = (cfg + ", " if cfg else "") + f"`{en.group(1)}` switches it on"
-                self.add("Hosted / background service", cls, every or "runs continuously while the application runs", cls, rp,
+                    off = en.group(2) == "false"
+                    cfg = (cfg + ", " if cfg else "") + f"`{en.group(1)}` switches it on" + (" (default false: off unless configured)" if off else "")
+                sched = every or "runs continuously while the application runs"
+                self.add("Hosted / background service", cls, ("off by default; when enabled " + sched) if off else sched, cls, rp,
                          _line(text, m.start()), False, cfg or "registered with AddHostedService")
             if re.search(r"\.UseWindowsService\s*\(", text):
                 i = text.find("UseWindowsService")

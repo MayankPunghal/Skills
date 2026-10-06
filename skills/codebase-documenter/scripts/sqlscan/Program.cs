@@ -274,6 +274,8 @@ sealed class Collector : TSqlFragmentVisitor
     readonly SortedSet<string> functions = new(StringComparer.OrdinalIgnoreCase);
     readonly SortedSet<string> temps = new(StringComparer.OrdinalIgnoreCase);
     readonly SortedDictionary<string, int> constructs = new();
+    readonly SortedDictionary<string, int> constructLines = new();  // first line of each construct, for file:line evidence
+    int curLine;
     int resultSets;
     bool returnValue, dynamicSql;
 
@@ -283,7 +285,7 @@ sealed class Collector : TSqlFragmentVisitor
         ["OutputClause"] = "OUTPUT clause", ["OutputIntoClause"] = "OUTPUT clause", ["PivotedTableReference"] = "PIVOT",
         ["UnpivotedTableReference"] = "UNPIVOT", ["XmlForClause"] = "FOR XML", ["JsonForClause"] = "FOR JSON",
         ["OpenJsonTableReference"] = "OPENJSON", ["OpenXmlTableReference"] = "OPENXML", ["RaiseErrorStatement"] = "RAISERROR",
-        ["ThrowStatement"] = "THROW", ["TopRowFilter"] = "TOP", ["WaitForStatement"] = "WAITFOR", ["GoToStatement"] = "GOTO",
+        ["ThrowStatement"] = "THROW", ["WaitForStatement"] = "WAITFOR", ["GoToStatement"] = "GOTO",
         ["SaveTransactionStatement"] = "savepoint", ["BeginTransactionStatement"] = "transactions",
         ["SetIdentityInsertStatement"] = "IDENTITY_INSERT", ["DeclareTableVariableStatement"] = "table variable",
         ["IIfCall"] = "IIF", ["TryConvertCall"] = "TRY_CONVERT", ["TryCastCall"] = "TRY_CAST", ["ParseCall"] = "PARSE",
@@ -328,10 +330,15 @@ sealed class Collector : TSqlFragmentVisitor
         "ROWCOUNT_BIG", "SERVERPROPERTY", "DATABASEPROPERTYEX", "FILESTREAM", "PATHNAME", "GET_FILESTREAM_TRANSACTION_CONTEXT",
     };
 
-    void Count(string label, int n = 1) => constructs[label] = constructs.GetValueOrDefault(label) + n;
+    void Count(string label, int n = 1)
+    {
+        constructs[label] = constructs.GetValueOrDefault(label) + n;
+        if (curLine > 0 && !constructLines.ContainsKey(label)) constructLines[label] = curLine;
+    }
 
     public override void Visit(TSqlFragment node)
     {
+        if (node.StartLine > 0) curLine = node.StartLine;  // visited before the node's own Visit overloads
         if (NodeConstructs.TryGetValue(node.GetType().Name, out var label)) Count(label);
         base.Visit(node);
     }
@@ -378,8 +385,13 @@ sealed class Collector : TSqlFragmentVisitor
     {
         var name = Util.Name(node.SchemaObject);
         if (node.Alias != null) aliases[node.Alias.Value] = name;
-        if (node.TableHints.Count > 0) Count("table hints", node.TableHints.Count);
+        // NOLOCK, locking hints and READPAST change behaviour and are counted on their own; only plan / granularity hints are just removed
+        var plain = node.TableHints.Count(h => h.HintKind is not (TableHintKind.NoLock or TableHintKind.ReadUncommitted or TableHintKind.ReadPast)
+                                               && !LockingHints.Contains(h.HintKind));
+        if (plain > 0) Count("table hints", plain);
         if (node.TableHints.Any(h => h.HintKind is TableHintKind.NoLock or TableHintKind.ReadUncommitted)) Count("NOLOCK");
+        if (node.TableHints.Any(h => h.HintKind == TableHintKind.ReadPast)) Count("READPAST");
+        if (node.TableHints.Any(h => LockingHints.Contains(h.HintKind))) Count("locking hints");
         if (node.SchemaObject?.DatabaseIdentifier != null) Count(node.SchemaObject.ServerIdentifier != null ? "linked server" : "cross-database");
         if (node.TemporalClause != null) Count("temporal query");
         if (targets.Contains(node)) return;
@@ -408,9 +420,25 @@ sealed class Collector : TSqlFragmentVisitor
         }
     }
 
-    public override void Visit(InsertSpecification node) => Target(node.Target, "insert");
-    public override void Visit(UpdateSpecification node) { Target(node.Target, "update"); if (node.FromClause != null) Count("UPDATE ... FROM"); }
-    public override void Visit(DeleteSpecification node) { Target(node.Target, "delete"); if (node.FromClause != null) Count("DELETE ... FROM"); }
+    static readonly HashSet<TableHintKind> LockingHints = new()
+    {
+        TableHintKind.UpdLock, TableHintKind.XLock, TableHintKind.HoldLock, TableHintKind.Serializable, TableHintKind.RepeatableRead,
+        TableHintKind.TabLock, TableHintKind.TabLockX, TableHintKind.PagLock, TableHintKind.NoWait, TableHintKind.ReadCommittedLock,
+    };
+
+    public override void Visit(InsertSpecification node) { Target(node.Target, "insert"); if (node.TopRowFilter != null) Count("TOP in INSERT / UPDATE / DELETE"); }
+    public override void Visit(UpdateSpecification node)
+    {
+        Target(node.Target, "update");
+        if (node.FromClause != null) Count("UPDATE ... FROM");
+        if (node.TopRowFilter != null) Count("TOP in INSERT / UPDATE / DELETE");
+    }
+    public override void Visit(DeleteSpecification node)
+    {
+        Target(node.Target, "delete");
+        if (node.FromClause != null) Count("DELETE ... FROM");
+        if (node.TopRowFilter != null) Count("TOP in INSERT / UPDATE / DELETE");
+    }
     public override void Visit(MergeSpecification node) => Target(node.Target, "merge");
     public override void Visit(TruncateTableStatement node) => writes.Add((Util.Name(node.TableName), "truncate"));
 
@@ -487,6 +515,11 @@ sealed class Collector : TSqlFragmentVisitor
         if (node.SecondExpression is StringLiteral s && s.Value.IndexOf('[') is var a && a >= 0 && s.Value.IndexOf(']', a + 1) > a + 1) Count("LIKE character class");
     }
 
+    public override void Visit(QuerySpecification node)
+    {
+        if (node.TopRowFilter != null) Count("TOP");
+    }
+
     public override void Visit(TopRowFilter node)
     {
         if (node.WithTies) Count("TOP WITH TIES");
@@ -503,7 +536,7 @@ sealed class Collector : TSqlFragmentVisitor
         {
             ["reads"] = r, ["writes"] = w, ["calls"] = calls.ToList(), ["functions"] = functions.ToList(),
             ["temp_tables"] = temps.ToList(), ["result_sets"] = resultSets, ["return_value"] = returnValue,
-            ["dynamic_sql"] = dynamicSql, ["constructs"] = constructs,
+            ["dynamic_sql"] = dynamicSql, ["constructs"] = constructs, ["construct_lines"] = constructLines,
         };
     }
 }

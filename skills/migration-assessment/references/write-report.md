@@ -14,8 +14,10 @@ Write per [style-guide.md](style-guide.md).
 3. **Write the narratives** in this order: `architecture`, `dependencies`, `database`, `application-plans`, `testing-and-merge`, `risks-and-questions`, `cost`, and **`executive-summary` last**.
    - Delete each stub's `PENDING:` line.
    - Use `graphify explain "<entry class>" --graph …` and the dependency table to describe what each application does. Read entry points (controllers, pages, service contracts, `Main`), not whole folders.
-   - Cite findings as `F-nnn`. The references are stable until the next build, so rebuild before final proofreading.
+   - Cite findings with the tag `{{f:RULE-ID}}` (or `{{f:RULE-ID@project}}`), never a raw `F-nnn`: F-numbers are positions in the sorted findings and move on every rescan. The build turns tags into the current numbers; `verify_report.py` fails on raw numbers and on tags that match nothing.
    - **Copy numbers from `estimate.json` / the report tables. Never compute or invent them in prose.**
+   - **Every factual sentence must be checkable in the code or a generated table.** Before writing a count (pages, registrations, KLOC, calls), a technology label (EDMX, WCF, Hangfire) or "no X found", open the evidence. Say "the scanner found" rather than "there is no" when absence is only what the scan saw. If you cannot verify a claim, leave it out or turn it into an open question. A confident wrong sentence costs more trust than a missing one.
+   - Rerun the narratives' facts after a rescan: new applications, renamed findings and changed counts make old prose wrong.
 4. **Run `build_report.py` and `build_html_report.py` again, then `verify_report.py`.** The HTML report is what PMs, BAs and the client usually open. Its sections, intros, branding and glossary come from [html-layout.json](html-layout.json). Fix every failure at its source: evidence, review, decisions, narratives, or a secret leak.
 
 ## Decisions file
@@ -24,7 +26,7 @@ Write per [style-guide.md](style-guide.md).
 
 ```json
 {"<app id>": {"r7": "Retain", "target": ".NET Framework 4.8.1 on EC2 Windows (IIS); shared libraries to netstandard2.0",
-  "rationale": ["Web Forms UI (184 pages, F-004) tightly coupled to System.Web.UI; rewrite deferred to phase 2.", "..."],
+  "rationale": ["Web Forms UI (184 pages, {{f:WEB-WEBFORMS-UI}}) tightly coupled to System.Web.UI; rewrite deferred to phase 2.", "..."],
   "options": ["Refactor UI to Blazor with AWS Transform (+120-180 p-d)"], "by": "reviewer", "date": "2026-10-02"}}
 ```
 

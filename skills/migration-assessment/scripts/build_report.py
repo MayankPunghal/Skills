@@ -70,6 +70,9 @@ class Ctx:
         self.wp = {w["id"]: w for w in self.est.get("work_packages", [])}
         for i, f in enumerate(self.findings, 1):
             f["ref"] = f"F-{i:03d}"
+        FINDING_REFS.clear()  # rule -> findings, for {{f:RULE}} tags in narratives (F-numbers change whenever findings change)
+        for f in self.findings:
+            FINDING_REFS.setdefault(f["rule"].lower(), []).append(f)
 
 
 # ------------------------------------------------------------------ blocks
@@ -1077,6 +1080,19 @@ def pretty_tfm(t):
     return f".NET {m.group(1)}" + (f".{m.group(2)}" if m.group(2) != "0" else "")
 
 
+FINDING_REFS = {}
+FTAG = re.compile(r"\{\{f:([\w.:\-]+)(?:@([^}]+))?\}\}")
+
+
+def finding_tag(m):
+    """{{f:RULE}} -> the current F-number(s) of that rule; {{f:RULE@text}} -> only those whose project / applications contain text."""
+    rule, where = m.group(1).lower(), (m.group(2) or "").strip().lower()
+    fs = FINDING_REFS.get(rule, [])
+    if where:
+        fs = [f for f in fs if where in (f.get("project") or "").lower() or any(where in a.lower() for a in f.get("apps") or [])]
+    return ", ".join(f["ref"] for f in fs) if fs else f"**[finding {m.group(1)}{'@' + m.group(2) if m.group(2) else ''} not found]**"
+
+
 def narrative(name):
     p = os.path.join(OUT, "narrative", f"{name}.md")
     if not os.path.exists(p):
@@ -1084,6 +1100,7 @@ def narrative(name):
     t = open(p, encoding="utf-8").read()
     t = re.sub(r"(?s)<!--.*?-->", "", t).strip()
     t = re.sub(r"^#\s.*\n", "", t)  # the template supplies the heading
+    t = FTAG.sub(finding_tag, t)
     return t or f"_Narrative '{name}' not written yet._"
 
 
@@ -1172,6 +1189,7 @@ def main():
     report = re.sub(r"\{\{(meta|block|narrative):([\w-]+)\}\}", sub, tpl)
     rdir = os.path.join(OUT, "report")
     name = a.out or f"{slug(meta['client']).title().replace('-', '')}-AWS-Migration-Assessment.md"
+    report = FTAG.sub(finding_tag, report)  # tags in decisions / reviews too
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)
     mark_step(root, "report")

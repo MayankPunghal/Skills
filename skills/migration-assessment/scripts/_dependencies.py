@@ -203,7 +203,7 @@ def _entry_points(root, inv):
     rx_service = re.compile(r"(?m)class\s+(\w+)\s*:\s*[^{;]*\b(" + "|".join(map(re.escape, sorted(contracts))) + r")\b") if contracts else None
     for p in inv["projects"]:
         pdir = os.path.join(root, os.path.dirname(p["path"]))
-        is_exe = (p.get("output_type") or "").lower() in ("exe", "winexe") or p["type"] in ("aspnet-core", "netcore-other")
+        is_exe = (p.get("output_type") or "").lower() in ("exe", "winexe") or p["type"] in ("aspnet-core", "netcore-other", "netcore-console", "netcore-worker")
         for d, dirs, files in os.walk(pdir):
             dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and x.lower() not in ("bin", "obj") and not x.startswith(".")]
             for fn in files:

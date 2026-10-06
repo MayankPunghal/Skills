@@ -41,6 +41,8 @@ TRIVIAL_VALUE = re.compile(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|
 # __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
 TOKEN_SHAPED = re.compile(r"^__\w+__$")
 MAX_EVIDENCE = 25
+# a script line that only prints or raises a message: URLs in it are help links (download pages, docs), not connections
+SCRIPT_MESSAGE = re.compile(r"(?i)^\s*(@?echo\b|Write-\w+|throw\b|Read-Host\b|Out-Host\b|printf?\b|Show-\w+)")
 CONF_ORDER = {"Confirmed": 0, "Likely": 1, "Needs verification": 2}
 MAX_FILE_BYTES = 2_500_000
 TYPE_BY_EXT = {".cs": "cs", ".vb": "vb", ".aspx": "markup", ".ascx": "markup", ".master": "markup", ".asax": "markup", ".ashx": "markup",
@@ -106,6 +108,72 @@ def load_rules():
         r["_not"] = re.compile(r["not"]) if r.get("not") else None
         r["_types"] = set(r["types"])
     return rules
+
+
+def string_spans(line, vb=False):
+    """(start, end) of the contents of each string literal on one C# / VB line ("..", @"..", $"..", raw \"\"\"..\"\"\", '.' chars)."""
+    spans, i, n = [], 0, len(line)
+    while i < n:
+        c = line[i]
+        if c == '"':
+            if not vb and line.startswith('"""', i):
+                j = line.find('"""', i + 3)
+                j = n if j < 0 else j
+                spans.append((i + 3, j))
+                i = j + 3
+                continue
+            verbatim = vb or (i > 0 and line[i - 1] == "@") or (i > 1 and line[i - 2:i] in ("@$", "$@"))
+            interp = not vb and ((i > 0 and line[i - 1] == "$") or (i > 1 and line[i - 2:i] in ("@$", "$@")))
+            j, start, depth = i + 1, i + 1, 0
+            while j < n:
+                ch = line[j]
+                if interp and ch == "{":
+                    if depth == 0 and j + 1 < n and line[j + 1] == "{":
+                        j += 2  # {{ is a literal brace
+                        continue
+                    if depth == 0:
+                        spans.append((start, j))  # text before the hole; the hole itself is code
+                    depth += 1
+                    j += 1
+                    continue
+                if interp and ch == "}" and depth:
+                    depth -= 1
+                    if depth == 0:
+                        start = j + 1
+                    j += 1
+                    continue
+                if depth:
+                    j += 1
+                    continue
+                if ch == "\\" and not verbatim:
+                    j += 2
+                    continue
+                if ch == '"':
+                    if verbatim and j + 1 < n and line[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            spans.append((start, j))
+            i = j + 1
+            continue
+        if c == "'" and not vb:
+            j = line.find("'", i + 2 if i + 1 < n and line[i + 1] == "\\" else i + 1)
+            if 0 < j - i <= 8:
+                i = j + 1
+                continue
+        i += 1
+    return spans
+
+
+def code_match(rx, line, vb=False):
+    """True when at least one match of rx starts outside a string literal (a pattern that includes the quote starts at it)."""
+    spans = None
+    for m in rx.finditer(line):
+        spans = string_spans(line, vb) if spans is None else spans
+        if not any(a <= m.start() < b for a, b in spans):
+            return True
+    return False
 
 
 def blank_comments(text, ftype):
@@ -194,6 +262,7 @@ class Scan:
             label = f"{o.get('kind', '')} {o.get('name', '')}".strip() if where == "database" else "SQL embedded in code"
             calls = [c.split(".")[-1].lower() for c in o.get("calls", [])]
             cons = o.get("constructs") or {}
+            cl = o.get("construct_lines") or {}  # exact line of each construct (file line), else the object's first line
             for r in mapped:
                 p = r["parsed"]
                 hit_c = {k: cons[k] for k in p.get("constructs", []) if cons.get(k)}
@@ -201,7 +270,8 @@ class Scan:
                 n = sum(hit_c.values()) + len(hit_p)
                 if n:
                     what = ", ".join([f"{k} x{v}" for k, v in hit_c.items()] + hit_p)
-                    f = self.add(dict(r, db=dict(r.get("db") or {}, priced_by_inventory=True)), project, o["file"], o.get("line", 0),
+                    at = min([cl[k] for k in hit_c if k in cl] or [o.get("line", 0)])
+                    f = self.add(dict(r, db=dict(r.get("db") or {}, priced_by_inventory=True)), project, o["file"], at,
                                  f"{label}: {what}", count=n, extra={"parsed": True})
                     f["source"] = "sql-parse"
             for k, v in cons.items():
@@ -213,7 +283,7 @@ class Scan:
                                    "by a different design before the object (or the SQL in code) can work on PostgreSQL.",
                                    c["pg"], effort="db-object-small", refs=["S11", "S12", "S14"],
                                    db={"pg": "redesign", "priced_by_inventory": True}, db_only=True)
-                f = self.add(r, project, o["file"], o.get("line", 0), f"{label}: {k} x{v}", count=v, extra={"parsed": True})
+                f = self.add(r, project, o["file"], cl.get(k, o.get("line", 0)), f"{label}: {k} x{v}", count=v, extra={"parsed": True})
                 f["source"] = "sql-parse"
         for e in dbi.get("parse_errors", [])[:200]:
             r = self.synthetic("DB-SQL-SYNTAX", "database", "SQL script does not parse", "Medium", "Confirmed",
@@ -278,6 +348,8 @@ class Scan:
                 if cl and cl.match(line):
                     continue
                 if r["_any"].search(line) and not (r["_not"] and r["_not"].search(line)):
+                    if ftype in ("cs", "vb") and not r.get("in_strings") and not code_match(r["_any"], line, ftype == "vb"):
+                        continue  # every match sits inside a string literal (a message, a test title): not a use of the API
                     if r["id"] == "DATA-INTEGRATED-SECURITY" and re.search(r"(?i)\(localdb\)|AttachDbFilename|\bSQLEXPRESS\b", line):
                         self.add(LOCALDB_RULE, project, rp, i, line)  # developer database: production auth is unknown
                         continue
@@ -334,6 +406,8 @@ class Scan:
         for i, line in enumerate(text.splitlines(), 1):
             if cl and cl.match(line):
                 continue
+            if ftype == "script" and SCRIPT_MESSAGE.match(line):
+                continue  # a printed message: links and addresses in it are help text
             if "://" in line:
                 for m in URL_RX.finditer(line):
                     scheme, host = m.group(1).lower(), m.group(2)
@@ -416,15 +490,21 @@ class Scan:
         self.facts["secret_settings"].append({"file": rp, "key": key, "git_ignored": ignored})
         if ignored:  # not committed: exists on this copy only (same rule as CFG-LOCAL-DB-PASSWORD, no finding)
             return
-        token = bool(TOKEN_SHAPED.match(val.strip()))
-        r = self.synthetic("CFG-SECRET-SETTING", "configuration-secrets", "Secret-like value stored in configuration", "High",
-                           "Needs verification" if token else "Likely",
-                           "Secrets in committed configuration files are copied to every server and every repository clone."
-                           + (" The value has a __token__ shape: confirm whether a release step replaces it (then it is a placeholder) "
-                              "or it is the real secret." if token else ""),
-                           "Move to AWS Secrets Manager / Parameter Store SecureString; rotate the value.", "AWS Secrets Manager", "trivial", ["S21"],
-                           question=f"Is the __token__-shaped value of '{key}' replaced at deployment, and by what?" if token else None)
-        self.add(r, project, rp, self.line_of(text, key if key in text else key.split(":")[-1]), shown + (" (value has a __token__ shape)" if token else ""))
+        ln = self.line_of(text, key if key in text else key.split(":")[-1])
+        if TOKEN_SHAPED.match(val.strip()):  # __name__: a placeholder, not a credential; the real value comes from somewhere else
+            r = self.synthetic("CFG-SECRET-PLACEHOLDER", "configuration-secrets", "Secret setting holds a placeholder (real value supplied outside the file)",
+                               "Low", "Confirmed",
+                               "The committed value is a __token__ placeholder, not a secret. The real value must come from a release step that "
+                               "replaces the token, an environment variable that overrides the key, or a secret store; none of that is visible "
+                               "in the code. If nothing supplies it, the application runs with the placeholder and fails.",
+                               "On AWS, supply the value from Secrets Manager / Parameter Store (environment variable or configuration provider).",
+                               "AWS Secrets Manager", "trivial", ["S21"], question=f"How is the real value of '{key}' supplied in each environment today?")
+            self.add(r, project, rp, ln, shown + " (placeholder)")
+            return
+        r = self.synthetic("CFG-SECRET-SETTING", "configuration-secrets", "Secret-like value stored in configuration", "High", "Likely",
+                           "Secrets in committed configuration files are copied to every server and every repository clone.",
+                           "Move to AWS Secrets Manager / Parameter Store SecureString; rotate the value.", "AWS Secrets Manager", "trivial", ["S21"])
+        self.add(r, project, rp, ln, shown)
 
     def connection(self, rp, project, name, cs, provider, line):
         parts = {}
@@ -457,17 +537,24 @@ class Scan:
                                "Keep local credentials out of git (as now); use Secrets Manager or environment variables for deployed environments.",
                                "User secrets / environment variables locally", "trivial", ["S11"])
             self.add(r, project, rp, line, f'{name}: "…password=***…" (git-ignored local file)')
-        elif has_pwd:
-            token = bool(TOKEN_SHAPED.match(pwd))
-            r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High",
-                               "Needs verification" if token else "Confirmed",
-                               "Plain-text database credentials in config files are a compliance finding and block credential rotation."
-                               + (" The value has a __token__ shape: confirm whether a release step replaces it (then it is a placeholder) "
-                                  "or it is the real password." if token else ""),
-                               "Store credentials in AWS Secrets Manager (with rotation); build the connection string at start-up.",
+        elif has_pwd and TOKEN_SHAPED.match(pwd):  # __name__: a placeholder, not a credential
+            entry["auth"] = "sql-login (placeholder password)"
+            entry["password_in_config"] = False
+            r = self.synthetic("CFG-DB-PASSWORD-PLACEHOLDER", "configuration-secrets", "Connection string with a placeholder password (real password supplied outside the file)",
+                               "Low", "Confirmed",
+                               "The committed password is a __token__ placeholder, not a credential. The real password must come from a release step "
+                               "that replaces the token, an environment variable that overrides the connection string (ConnectionStrings__<name>), or "
+                               "a secret store; none of that is visible in the code. SQL logins still need a secure source on AWS.",
+                               "Supply the connection string (or the password) from AWS Secrets Manager with rotation; build it at start-up.",
                                "Secrets Manager + rotation", "trivial", ["S11"],
-                               question="Is the __token__-shaped password in the committed configuration replaced at deployment, and by what?" if token else None)
-            self.add(r, project, rp, line, f'{name}: "…password=***…"' + (" (value has a __token__ shape)" if token else ""))
+                               question="How is the real database password supplied to each environment today (token replacement, environment variable, secret store)?")
+            self.add(r, project, rp, line, f'{name}: "…password=<placeholder>…"')
+        elif has_pwd:
+            r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High", "Confirmed",
+                               "Plain-text database credentials in config files are a compliance finding and block credential rotation.",
+                               "Store credentials in AWS Secrets Manager (with rotation); build the connection string at start-up.",
+                               "Secrets Manager + rotation", "trivial", ["S11"])
+            self.add(r, project, rp, line, f'{name}: "…password=***…"')
         if host and not entry["localdb"] and host not in (".", "(local)", "localhost", "127.0.0.1"):
             self.endpoint(host, "sql", rp, project, line, f"connection string '{name}' -> {host}", "config")
 
@@ -485,6 +572,8 @@ class Scan:
         for p in self.inv["projects"]:
             for k in p.get("packages", []):
                 a = allp[k["id"]]
+                a.setdefault("build_only", True)
+                a["build_only"] = a["build_only"] and bool(k.get("build_only"))
                 a["versions"].add(k.get("version", ""))
                 a["projects"].add(p["path"])
                 a["files"].append(k.get("file", p["path"]))
@@ -514,7 +603,8 @@ class Scan:
                     row["note"] = (row["note"] + " " if row["note"] else "") + f"Version in use is marked {n['used_version_deprecated']} on nuget.org; latest is {n.get('latest')}."
                 if n.get("deprecated") and row["status"] in ("unknown", "ok"):
                     row["status"], row["severity"] = "replace", "Medium"
-                    row["note"] = (row["note"] + " " if row["note"] else "") + f"Deprecated on nuget.org: {n['deprecated']}"
+                    row["note"] = f"Deprecated on nuget.org: {n['deprecated']}."
+                    row["replacement"] = n.get("deprecated_alt") or "the successor named on nuget.org (none given: check the package page)"
                 if row["status"] == "unknown" and n.get("found"):
                     if n.get("supports_modern"):
                         row["status"], row["note"] = "ok", f"Latest {n.get('latest')} targets {', '.join(n.get('frameworks', [])[:4])}"
@@ -544,7 +634,7 @@ class Scan:
                     row["replacement"] = row["replacement"] if row["replacement"] not in ("", "Current version") else "A cross-platform package (or a version with linux-* binaries)"
             table.append(row)
             first = a["files"][0]
-            line = self.find_line(first, pid)
+            line = self.find_line_any(first, (f'Include="{pid}"', f'id="{pid}"', pid))
             rec = row.get("recommendation") or {}
             if rec.get("action") == "downgrade":   # a suggestion, never enforced: the client may prefer to keep the version and buy the licence
                 row["replacement"] = f"Optional, saves the licence cost: {rec['version']} ({rec['why']}). Or keep {', '.join(row['versions'])} with a licence."
@@ -566,6 +656,9 @@ class Scan:
                 r["id"] = f"PKG-RISK-{slug(pid)}"
                 f = self.add(r, "(repository)", first, line, f"{pid} {', '.join(row['versions'])}", count=len(a["projects"]))
                 f["package"] = pid
+            if a.get("build_only"):  # PrivateAssets="all" / developmentDependency everywhere: used by the build only, nothing ships
+                row["status"], row["severity"] = "build-only", "Info"
+                row["note"] = "Build-time only (PrivateAssets=\"all\" / developmentDependency): not shipped with the application. " + (row["note"] or "")
             if row["status"] in ("blocker", "replace", "windows-only", "licence", "private") and row["severity"] in ("Blocker", "High", "Medium", "Low"):
                 eff = "package-blocker" if row["status"] in ("blocker", "windows-only") and row["severity"] in ("Blocker", "High") else "package-replace"
                 r = self.synthetic(f"PKG-{row['status'].upper()}", "packages", f"Package {pid} ({row['status']})", row["severity"],
@@ -594,6 +687,14 @@ class Scan:
                 r["status"], r["severity"] = "windows-only", "Medium"
                 r["note"] = f"Depends on Windows-only {', '.join(hit)}. " + (r["note"] or "")
         self.facts["packages"] = table
+
+    def find_line_any(self, relfile, needles):
+        """Line of the first needle found (a PackageReference before a comment that mentions the package)."""
+        try:
+            text = read_text(os.path.join(self.root, relfile))
+        except OSError:
+            return 1
+        return next((self.line_of(text, n) for n in needles if n and n in text), 1)
 
     def find_line(self, relfile, needle):
         try:
@@ -625,7 +726,7 @@ class Scan:
                                        f"{t['tfm']}: end of support {t['end_of_support']}. Unsupported runtimes get no security fixes.",
                                        f"Upgrade to {self.cfg.get('target_dotnet', 'net10.0')} (LTS, supported to 2028-11-14).", ".NET 10 LTS", "trivial", ["S4", "S5"])
                     self.add(r, path, path, self.find_line(path, "TargetFramework"), f"{t['tfm']} -> {t['label']} (EOS {t['end_of_support']})")
-            if p["type"] in ("aspnet-core", "netcore-other") and "netfx" in p["framework_family"]:
+            if p["type"] in ("aspnet-core", "netcore-other", "netcore-console", "netcore-worker") and "netfx" in p["framework_family"]:
                 r = self.synthetic("INV-CORE-ON-FRAMEWORK", "inventory", "ASP.NET Core / SDK-style project still targeting .NET Framework", "Medium", "Confirmed",
                                    "ASP.NET Core 2.x on .NET Framework is a half-way port: it is out of support and still Windows-only.",
                                    f"Retarget to {self.cfg.get('target_dotnet', 'net10.0')} and update ASP.NET Core packages.", ".NET 10", "small-change", ["S4"])
@@ -700,8 +801,10 @@ class Scan:
         kloc = max(self.inv["totals"]["loc"] / 1000.0, 0.001)
         self.facts["tests_per_kloc"] = round(total_tests / kloc, 2)
         if total_tests == 0 or total_tests / kloc < 2:
-            r = self.synthetic("TEST-LOW-COVERAGE", "tests", f"Little or no automated test coverage ({total_tests} test methods for {kloc:.1f} KLOC)", "High", "Confirmed",
-                               "Regression safety for the port depends on manual QA; this is the main cost and risk driver.",
+            r = self.synthetic("TEST-LOW-COVERAGE", "tests", f"Few automated tests found ({total_tests} test methods for {kloc:.1f} KLOC)", "High", "Likely",
+                               f"Only {total_tests} test methods were found in test projects (xUnit / NUnit / MSTest attributes). Without a regression "
+                               "suite, behaviour after the port has to be checked by hand. Verification the scanner does not count (in-application "
+                               "self-checks, scripts, an external QA suite) may exist: confirm with the client.",
                                "Build a characterisation/regression suite for critical workflows before porting (API + UI smoke tests), and budget QA accordingly.",
                                "xUnit/MSTest + Playwright", "medium-change", ["S9"])
             first = next(iter(tests), self.inv["projects"][0]["path"] if self.inv["projects"] else "(repository)")
@@ -715,7 +818,7 @@ class Scan:
             self.add(r, webs[0]["path"], webs[0]["path"], 1, "no MapHealthChecks / health endpoint found in web projects")
         # modern .NET hosted on Windows
         for p in self.inv["projects"]:
-            if "netcore" in p["framework_family"] and p["type"] in ("aspnet-core", "netcore-other") and not any(t.endswith("-windows") for t in p["target_frameworks"]):
+            if "netcore" in p["framework_family"] and p["type"] in ("aspnet-core", "netcore-other", "netcore-console", "netcore-worker") and not any(t.endswith("-windows") for t in p["target_frameworks"]):
                 base = os.path.dirname(p["path"])
                 win_hosting = [a for a in (self.inv["artefacts"].get("publish_profile", []) + self.inv["artefacts"].get("config", []) + self.inv["artefacts"].get("docker", []))
                                if a.startswith(base + "/") or a == base]
@@ -908,6 +1011,7 @@ def nuget_info(pid, versions, cache_dir):
     used_dep = next((e.get("deprecation") for e in entries if ver_tuple(e.get("version", "0")) in used and e.get("deprecation")), None)
     return {"found": True, "latest": latest.get("version"), "frameworks": fws, "supports_modern": modern,
             "deprecated": dep_text(latest.get("deprecation")), "used_version_deprecated": dep_text(used_dep),
+            "deprecated_alt": ((latest.get("deprecation") or {}).get("alternatePackage") or {}).get("id"),
             "vulnerable_versions": vuln, "licence": latest.get("licenseExpression"), "licence_info": licence_change(pid, entries, versions),
             "versions_meta": versions_meta(entries, versions), "platform": platform_assets(pid, entries, versions, cache_dir)}
 
