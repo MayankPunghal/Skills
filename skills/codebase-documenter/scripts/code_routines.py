@@ -39,7 +39,8 @@ VAR_ASSIGN = re.compile(r"(?:\b(?:const\s+)?(?:string|var)\s+)?\b([A-Za-z_]\w*)\
 VAR_NAME = re.compile(r"(?i)(sql|proc|sp|cmd|command|query|stored)")
 DAPPER = re.compile(r"\.\s*(?:Query|QueryAsync|QueryFirst\w*|QuerySingle\w*|QueryMultiple\w*|Execute|ExecuteAsync|ExecuteScalar\w*|"
                     r"ExecuteReader\w*)\s*(?:<[^;()]*>)?\s*\(\s*" + LIT + r"[^;]*?commandType\s*:\s*CommandType\.StoredProcedure", re.S)
-EXEC_STR = re.compile(r'"\s*(?:EXEC|EXECUTE)\s+(' + NAME + r")", re.I)
+# "EXEC Name", "EXEC dbo.Name @a, @b", $"EXEC Name {id}" -- not prose such as "execute query error"
+EXEC_STR = re.compile(r'"\s*(?:EXEC|EXECUTE)\s+(' + NAME + r')(?=\s*["; ]*$|\s*"|\s*;|\s+[@{?:]|\s+\d)', re.I | re.M)
 METHOD = re.compile(r"(?m)^[ \t]*(?:\[[^\]\n]*\][ \t]*)*(?:(?:public|private|protected|internal|static|virtual|override|async|sealed|"
                     r"new|extern|unsafe|partial)\s+)+[\w<>\[\],.? ]+?\s+([A-Z_a-z]\w*)\s*\(([^)]*)\)\s*(?:where[^{]*)?\{")
 KEYWORDS = {"if", "for", "foreach", "while", "switch", "using", "lock", "return", "catch", "new", "sizeof", "typeof", "nameof"}
@@ -127,7 +128,19 @@ def find(root, extra_helpers=None, files=None):
         consts = {}
         for m in VAR_ASSIGN.finditer(text):
             consts.setdefault(m.group(1), []).append((m.group(2), m.start()))
-        consts1 = {k: v[0][0] for k, v in consts.items() if len({x for x, _ in v}) == 1}  # ambiguous names are not followed
+
+        def value_of(var, pos):
+            """The literal a variable holds at pos: the last assignment above it in the same method (the usual
+            `const string sql = "X"; Helper(sql);`), else a class-level const declared once in the file (a name declared
+            with several values at class level is ambiguous and not followed)."""
+            body = next(((a, b) for a, b, _, _ in methods if a <= pos <= b), None)
+            hits = consts.get(var, [])
+            if body:
+                local = [v for v, at in hits if body[0] <= at < pos]
+                if local:
+                    return local[-1]
+            outside = {v for v, at in hits if not any(a <= at <= b for a, b, _, _ in methods)}
+            return outside.pop() if len(outside) == 1 else None
         if has_flag:
             for rx, via in ((NEW_CMD, "command text"), (CMD_TEXT, "command text"), (DAPPER, "Dapper / commandType")):
                 for m in rx.finditer(text):
@@ -135,19 +148,17 @@ def find(root, extra_helpers=None, files=None):
             for rx in (CMD_TEXT_VAR, NEW_CMD_VAR):
                 for m in rx.finditer(text):
                     v = m.group(1)
-                    if v in consts1 and VAR_NAME.search(v):
-                        add(consts1[v], rel, text, m.start(), f"variable {v}", methods)
+                    val = value_of(v, m.start()) if VAR_NAME.search(v) else None
+                    if val:
+                        add(val, rel, text, m.start(), f"variable {v}", methods)
             for m in EXEC_STR.finditer(text):
                 add(m.group(1), rel, text, m.start(), "EXEC in a string", methods)
         if helper_call:
             for m in helper_call.finditer(text):
                 h, lit, var = m.group(1), m.group(2), m.group(3)
-                if any(a <= m.start() <= b and mn == h for a, b, mn, _ in methods):
-                    pass  # recursive call inside the helper itself still names a procedure
-                if lit:
-                    add(lit, rel, text, m.start(), f"helper {h}", methods, helpers.get(h, ""))
-                elif var and var in consts1:
-                    add(consts1[var], rel, text, m.start(), f"helper {h} ({var})", methods, helpers.get(h, ""))
+                val = lit or (value_of(var, m.start()) if var else None)
+                if val:
+                    add(val, rel, text, m.start(), f"helper {h}" + (f" ({var})" if var else ""), methods, helpers.get(h, ""))
     return {"routines": found, "helpers": helpers, "files_with_flag": flagged}
 
 

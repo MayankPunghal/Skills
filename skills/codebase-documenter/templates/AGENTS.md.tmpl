@@ -28,7 +28,7 @@ Kinds: {{kinds}}.
 2. `lookup.py <Name>` for each named item.
 3. Narrative page for behaviour.
 4. Reference entry (`doc:` line) for exact details; `src:` line for the code; `--find` for the exact line to change.
-5. graphify for relationships and impact. For a call through an interface, base class, message, event or delegate, find what actually runs: the method map labels it (`(di registration)`, `(override)`, `(message)`, `(event)` …) and `{{docs_dir}}/reference/dependency-injection.md` (C#, when present) lists registrations per host, lifetimes, decorators, handlers and subscribers. Database objects are graph nodes too (parsed SQL): `graphify affected "<table or procedure>"` lists the routines and C# methods that read, write or run it.
+5. graphify for relationships and impact. For a call through an interface, base class, message, event or delegate, find what actually runs: the method map labels it (`(di registration)`, `(override)`, `(message)`, `(event)` …) and `{{docs_dir}}/reference/dependency-injection.md` (C#, when present) lists registrations per host, lifetimes, decorators, handlers and subscribers. {{db_graph_note}}
 6. Verify in source before editing.
 
 ## 3. Where to start
@@ -45,6 +45,6 @@ Kinds: {{kinds}}.
 - **After code changes, update the docs** (from the docs root; set `DOCS_SOURCE_ROOT` to the source root when it differs):
   1. `graphify update .` (if the graph exists)
   2. Regenerate the reference with the `codebase-documenter` skill (`build-site`), or rerun the project's generators.
-  3. Edit the affected narrative sources in `{{docs_dir}}/_src/` (link tags such as `[[table:X]]`, `[[proc:X]]`, `[[cls:X]]`).
+  3. Edit the affected narrative sources in `{{docs_dir}}/_src/` (link tags that resolve in this project: {{tag_kinds}}).
   4. `python {{docs_dir}}/_tools/build_docs.py` (0 unresolved) → `python {{docs_dir}}/_tools/gen_agent_index.py` → `python -m mkdocs build` (0 warnings).
 - Don't edit generated files: `{{docs_dir}}/reference/*`, `{{docs_dir}}/agent/*`, `{{docs_dir}}/llms.txt`, `{{docs_dir}}/appendices/coverage.md`.

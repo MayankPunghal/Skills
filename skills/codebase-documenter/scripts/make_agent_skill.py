@@ -29,6 +29,47 @@ def upsert_block(path, block):
     write(path, text)
 
 
+NAV_PREFIXES = {"index", "kind", "letter", "area", "proj", "project", "group", "section", "by", "top", "summary"}
+TAG_OF_PREFIX = {"tbl": "table", "sp": "proc"}
+
+
+def db_facts(docs, graph_dir):
+    """What the database reference and the graph really hold, so the templates never promise parsed SQL or graph nodes
+    that a code-only repository does not have."""
+    import json
+    dbj = os.path.join(docs, "agent", "db.json")
+    db = json.load(open(dbj, encoding="utf-8")) if os.path.exists(dbj) else {}
+    routines = db.get("routines", [])
+    parsed = bool(db.get("tables")) or any(r.get("defined", True) is not False for r in routines)
+    code_only = sum(1 for r in routines if r.get("defined") is False)
+    sg = os.path.join(graph_dir, "sql-graph.json")
+    sgj = json.load(open(sg, encoding="utf-8")) if os.path.exists(sg) else {}
+    return parsed, code_only, sgj.get("objects", 0), sgj.get("code_only_calls", 0)
+
+
+def tag_kinds(docs):
+    """Link-tag kinds that resolve in this project: the anchor prefixes the reference pages really carry."""
+    ref = os.path.join(docs, "reference")
+    seen = set()
+    for f in (os.listdir(ref) if os.path.isdir(ref) else []):
+        if f.endswith(".md"):
+            for p in re.findall(r'<a id="([a-z]+)-', open(os.path.join(ref, f), encoding="utf-8").read()):
+                if p not in NAV_PREFIXES:
+                    seen.add(TAG_OF_PREFIX.get(p, p))
+    first = [k for k in ("table", "proc", "cls", "mth", "ctl", "act", "ep", "enum") if k in seen]
+    return ", ".join(f"`[[{k}:X]]`" for k in first + sorted(seen - set(first))[:8] + ["page", "n"])
+
+
+def survey_stack(docs, stack):
+    """The configured stack plus anything the survey detected that it does not mention (databases, main frameworks)."""
+    import json
+    p = os.path.join(docs, "_notes", "survey.json")
+    if not os.path.exists(p):
+        return stack
+    extra = [x for x in json.load(open(p, encoding="utf-8")).get("stack_summary", []) if x.lower() not in (stack or "").lower()]
+    return ", ".join(x for x in [stack] + extra if x)
+
+
 def main():
     utf8_stdout()
     root, cfg = load_config()
@@ -48,10 +89,32 @@ def main():
         tasks.append(f"| What actually runs behind an interface, base class, message, event or delegate; DI lifetimes per host | "
                      f"`{docs}/reference/dependency-injection.md` (data: `{docs}/agent/di.json`)"
                      + (f", `{docs}/architecture/dependency-injection.md`" if os.path.exists(os.path.join(docs, "_src", "architecture", "dependency-injection.md")) else "") + " |")
-    if os.path.exists(os.path.join(docs, "reference", "db-routines.md")):
-        tasks.append(f"| What a procedure / function / trigger reads, writes and calls; which code runs it | "
-                     f"`{docs}/reference/db-routines.md`, `{docs}/reference/db-tables.md`, `{docs}/reference/db-access.md` "
-                     f"(data: `{docs}/agent/db.json`, `{docs}/agent/db-access.json`; parsed with Microsoft's T-SQL parser) |")
+    parsed, code_only, graph_objects, graph_code_only = db_facts(docs, cfg.get("graph_dir", "graphify-out"))
+    db_pages = [f"`{docs}/reference/{p}`" for p in ("db-routines.md", "db-tables.md", "db-code-routines.md", "db-access.md")
+                if os.path.exists(os.path.join(docs, "reference", p))]
+    db_data = [f"`{docs}/agent/{p}`" for p in ("db.json", "db-access.json") if os.path.exists(os.path.join(docs, "agent", p))]
+    if parsed and db_pages:
+        tasks.append(f"| What a procedure / function / trigger reads, writes and calls; which code runs it | {', '.join(db_pages)} "
+                     f"(data: {', '.join(db_data)}; parsed with Microsoft's T-SQL parser) |")
+    elif code_only and db_pages:
+        tasks.append(f"| Which stored procedures the code runs and from where (definitions are not in the repository: "
+                     f"parameters and tables are unknown) | {', '.join(db_pages)}" + (f" (data: {', '.join(db_data)})" if db_data else "") + " |")
+    if graph_objects:
+        db_graph_note = ("Database objects are graph nodes too (parsed SQL): `graphify affected \"<table or procedure>\"` lists the "
+                         "routines and C# methods that read, write or run it.")
+        db_graph_skill_note = ("The graph also holds the database layer (nodes for tables, procedures, functions, triggers; edges "
+                               "`reads_from` / `writes_to` / `calls` from routines and from the C# methods whose SQL or procedure names "
+                               "reach them, context `embedded SQL` / `name in code`), so `graphify affected \"<table or procedure>\"` "
+                               "shows the code a schema change hits.")
+    elif graph_code_only:
+        db_graph_note = ("The repository holds no SQL: procedures the code runs by name are graph nodes without a definition "
+                         "(`graphify affected \"<procedure>\"` lists the C# methods that run it), but tables are not, so table-level "
+                         f"impact needs the schema. `{docs}/reference/db-access.md` lists every call site.")
+        db_graph_skill_note = db_graph_note
+    else:
+        db_graph_note = ("The graph holds no database objects for this project; use the database pages above "
+                         f"(`{docs}/reference/db-access.md` when present) for which code reaches which table or procedure.")
+        db_graph_skill_note = db_graph_note
     if os.path.exists(os.path.join(docs, "reference", "db-postgres.md")):
         tasks.append(f"| What converts to PostgreSQL automatically, what needs a rewrite, what has no equivalent | `{docs}/reference/db-postgres.md` |")
     if os.path.exists(os.path.join(docs, "reference", "dependencies.md")):
@@ -66,7 +129,8 @@ def main():
     if os.path.exists(os.path.join(docs, "reference", "entry-points.md")):
         tasks.append(f"| What starts a method; which tables a screen or endpoint changes | `{docs}/reference/entry-points.md`, `{docs}/reference/ui-map.md` |")
     vals = {"product": cfg["product"] or slug, "code_name": cfg.get("code_name") or cfg["product"], "slug": slug,
-            "description": cfg.get("description") or "", "stack": cfg.get("stack") or "", "docs_dir": docs,
+            "description": cfg.get("description") or "", "stack": survey_stack(docs, cfg.get("stack") or ""), "docs_dir": docs,
+            "db_graph_note": db_graph_note, "db_graph_skill_note": db_graph_skill_note, "tag_kinds": tag_kinds(docs),
             "source_root": cfg["source_root"], "kinds": ", ".join(f"`{k}`" for k in kinds) or "`table`, `routine`, `class`, `page`, `section`",
             "task_rows": "\n".join(tasks), "sensitive": ", ".join(f"`{docs}/{s}`" for s in cfg.get("sensitive", [])) or "none",
             "skill_name": f"{slug}-docs"}

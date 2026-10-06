@@ -51,6 +51,15 @@ GENERATED = re.compile(r"(?i)\.min\.(js|css)$|\.designer\.cs$|\.g\.cs$|\.g\.i\.c
 ADAPTER_HINTS = {".NET project (C#)": "generic-di (DI, messages, pipeline, events, jobs: the calls graphify cannot see), generic-api, "
                                       "generic-views",
                  "SQL Server database project (SSDT)": "generic-sql (or aspnet-mvc-ssdt when the web project is ASP.NET MVC)"}
+ENGINE_MARKERS = [("SQL Server", ("System.Data.SqlClient", "Microsoft.Data.SqlClient", "EntityFramework.SqlServer",
+                                  "Microsoft.EntityFrameworkCore.SqlServer")),
+                  ("PostgreSQL", ("Npgsql",)), ("MySQL", ("MySql.Data", "MySqlConnector", "Pomelo.EntityFrameworkCore.MySql")),
+                  ("Oracle", ("Oracle.ManagedDataAccess", "Oracle.DataAccess")), ("SQLite", ("System.Data.SQLite", "Microsoft.Data.Sqlite")),
+                  ("MongoDB", ("MongoDB.Driver",)), ("Redis", ("StackExchange.Redis",)), ("Entity Framework 6", ('"EntityFramework"', "EntityFramework.6", 'Include="EntityFramework')),
+                  ("EF Core", ("Microsoft.EntityFrameworkCore",)), ("Dapper", ('"Dapper"', 'Include="Dapper')),
+                  ("ASP.NET MVC 5", ("Microsoft.AspNet.Mvc", "System.Web.Mvc")), ("ASP.NET Web API 2", ("Microsoft.AspNet.WebApi",)),
+                  ("SignalR", ("Microsoft.AspNet.SignalR", "Microsoft.AspNetCore.SignalR"))]
+MANIFEST = re.compile(r"(?i)\.(cs|vb|fs)proj$|^packages\.config$|^(web|app)\.config$|^appsettings.*\.json$|^Directory\.Packages\.props$")
 BIG_CONTROLLER = 3000  # lines: research it as several areas (by action group)
 MVC_FEATURE_DIRS = ("Views/{stem}", "Scripts/{stem}*", "Scripts/{stem}/", "Models/{stem}*", "ViewModels/{stem}*", "Content/{stem}*")
 
@@ -138,6 +147,7 @@ def main():
     if not os.path.isdir(src):
         raise SystemExit(f"source root not found: {src}")
     exts, lines_by_ext, stacks, configs = Counter(), Counter(), defaultdict(list), []
+    engines = defaultdict(list)
     dir_files, dir_lines = Counter(), Counter()
     vend_files = vend_lines = 0
     vend_by_dir, all_by_dir = Counter(), Counter()
@@ -163,6 +173,14 @@ def main():
                     stacks[label].append(relp)
             if CONFIG_PAT.search(f):
                 configs.append(relp)
+            if MANIFEST.search(f):  # databases and main frameworks from package references and provider names
+                try:
+                    mt = open(p, encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    mt = ""
+                for label, marks in ENGINE_MARKERS:
+                    if any(mk in mt for mk in marks):
+                        engines[label].append(relp)
             if e in LANG and not GENERATED.search(f) and is_vendored(p, relp, pkgs, vdirs):
                 n = count_lines(p)
                 vend_lines += n
@@ -206,6 +224,8 @@ def main():
            "## Stacks detected", "", "| Stack | Evidence (first files) | Count |", "| --- | --- | ---: |"]
     for label, ps in sorted(stacks.items(), key=lambda kv: -len(kv[1])):
         out.append(f"| {label} | {', '.join('`' + x + '`' for x in ps[:3])} | {len(ps)} |")
+    for label, ps in engines.items():
+        out.append(f"| {label} (package / provider reference) | {', '.join('`' + x + '`' for x in ps[:3])} | {len(ps)} |")
     out += [""] + vendor_lines
     out += ["", "## Files by type", "", "| Extension | Files | Lines (code) |", "| --- | ---: | ---: |"]
     for e, n in exts.most_common(25):
@@ -290,6 +310,13 @@ def main():
     for i, ar in enumerate(areas):
         ar["id"] = f"{10 + i * 5}-{re.sub(r'[^a-z0-9]+', '-', ar['title'].lower()).strip('-')}"
     write(os.path.join(cfg["docs_dir"], "_notes", "00-survey.md"), "\n".join(out) + "\n")
+    summary = [k for k in ("ASP.NET MVC 5", "ASP.NET Web API 2", "SignalR", "Entity Framework 6", "EF Core", "Dapper") if k in engines]
+    summary += [k for k in ("SQL Server", "PostgreSQL", "MySQL", "Oracle", "SQLite", "MongoDB", "Redis") if k in engines]
+    write(os.path.join(cfg["docs_dir"], "_notes", "survey.json"), json.dumps({  # machine-readable: make_agent_skill's Stack line
+        "stacks": {k: len(v) for k, v in stacks.items()}, "languages": dict(langs.most_common(10)), "stack_summary": summary,
+        "vendored_files": vend_files, "code_lines": sum(lines_by_ext.values()),
+        "procedures_named_in_code": len(cr["routines"]), "sql_routines_defined": n_routines, "sql_tables_defined": n_tables},
+        indent=1, ensure_ascii=False))
     ap_ = os.path.join(cfg["docs_dir"], "_notes", "areas.json")
     sug = os.path.join(cfg["docs_dir"], "_notes", "areas.suggested.json")
     if a.refresh_areas and os.path.exists(ap_):

@@ -24,7 +24,10 @@ SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build"
 VENDOR_DIR = re.compile(r"(?i)(^|/)(wwwroot/lib|bower_components|jspm_packages|third[-_]?party|externals?)(/|$)")
 ASSET_EXT = (".js", ".css", ".scss", ".less")
 ASSET_PARENTS = ("scripts", "content", "wwwroot", "lib", "js", "css")
-BANNER = re.compile(r"(?i)\bv?\d+\.\d+\.\d+\b.{0,80}\b(license|\(c\)|copyright)")
+BANNER = re.compile(r"(?i)\bv?\d+\.\d+\.\d+\b.{0,80}\b(license|\(c\)|copyright)", re.S)
+# an open-source licence header: a copyright line plus a licence grant (a company's own "All rights reserved" header has no grant)
+COPYRIGHT = re.compile(r"(?i)copyright|\(c\)\s*\d{4}")
+GRANT = re.compile(r"(?i)licen[cs]ed under|released under|\bMIT\b|\bGPL\b|apache licen[cs]e|\bBSD\b|mit-license|opensource\.org")
 STEM_CUT = re.compile(r"[-.](?:\d|min\b|slim\b|bundle\b)")
 VERSIONED_DIR = re.compile(r"(?i)(?:^|[-_.v])v?\d+(?:\.\d+)+(?:[-_.]?\w+)?$|[a-z]v\d+(?:\.\d+)*$")
 MAX_ARG_CHARS = 24000  # Windows caps a command line at 32,767 characters; leave room for the rest of the graphify call
@@ -66,7 +69,8 @@ def has_banner(path):
     except OSError:
         return False
     return ("/*!" in head or "@license" in head or "NUGET: BEGIN LICENSE TEXT" in head
-            or head.lstrip("﻿").startswith("//CdnPath=") or bool(BANNER.search(head)))
+            or head.lstrip("﻿").startswith("//CdnPath=") or bool(BANNER.search(head))
+            or bool(COPYRIGHT.search(head) and GRANT.search(head)))
 
 
 def under(rel, dirs):
@@ -96,26 +100,45 @@ def is_vendored(path, rel, pkgs, dirs=()):
     return has_banner(path)
 
 
-def library_dirs(src, skip=SKIP):
-    """Folders that hold a copied library: the name carries a version and some file below has a library banner."""
+def library_dirs(src, skip=SKIP, pkgs=()):
+    """Folders that hold a copied library: (1) the name carries a version and some file below has a library banner; or
+    (2) a folder directly inside a script / style folder (Scripts/jqplot, Content/summernote) where at least half of the
+    script / style files below (and at least 3) are vendored on their own: the banner-less plugins beside them are too."""
     found = []
     for d, dirs, files in os.walk(src):
         dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")]
         rel = os.path.relpath(d, src).replace("\\", "/")
-        if rel == "." or not VERSIONED_DIR.search(rel.rsplit("/", 1)[-1]) or under(rel, found):
+        if rel == "." or under(rel, found):
             continue
+        parts = rel.lower().split("/")
+        versioned = bool(VERSIONED_DIR.search(parts[-1]))
+        in_assets = len(parts) >= 2 and parts[-2] in ASSET_PARENTS
+        if not (versioned or in_assets):
+            continue
+        assets = vend = 0
         for d2, dirs2, files2 in os.walk(d):
             dirs2[:] = [x for x in dirs2 if x not in skip and not x.startswith(".")]
-            if any(f.lower().endswith(ASSET_EXT) and has_banner(os.path.join(d2, f)) for f in files2):
-                found.append(rel)
+            for f in files2:
+                if not f.lower().endswith(ASSET_EXT):
+                    continue
+                assets += 1
+                p = os.path.join(d2, f)
+                if is_vendored(p, os.path.relpath(p, src).replace("\\", "/"), pkgs):
+                    vend += 1
+                    if versioned:
+                        break
+            if versioned and vend:
                 break
+        if (versioned and vend) or (in_assets and vend >= 3 and vend * 2 >= assets):
+            found.append(rel)
     return found
 
 
 def context(src, skip=SKIP):
     """(declared client packages, configured + detected library folders) for is_vendored()."""
     conf = configured_dirs()
-    return client_packages(src, skip), conf + [d for d in library_dirs(src, skip) if not under(d, conf)]
+    pkgs = client_packages(src, skip)
+    return pkgs, conf + [d for d in library_dirs(src, skip, pkgs) if not under(d, conf)]
 
 
 def scan(src, skip=SKIP, ctx=None):
