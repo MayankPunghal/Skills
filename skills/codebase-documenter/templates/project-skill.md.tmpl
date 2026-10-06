@@ -1,6 +1,6 @@
 ---
 name: {{skill_name}}
-description: Answer questions about and plan changes to {{product}} ({{code_name}}) using its documentation — docs/ folder, llms.txt page map, agent entity index and lookup.py, which prints clickable doc:path:line and src:path:line locations and greps source files with --find — plus the graphify code graph when present. Use before explaining, reviewing, planning or changing any {{code_name}} code, database object, endpoint, integration, status, rule or permission. Answers cite clickable file:line links; change requests end with a File / What to change / Why table. Trigger on any question or task about {{product}}, {{code_name}} or its source code.
+description: Answer questions about and plan changes to {{product}} ({{code_name}}) using its documentation — docs/ folder, llms.txt page map, agent entity index and lookup.py, which prints clickable doc:path:line and src:path:line locations with the code itself, ranks items for a question in plain words (--search) and greps source files with --find; trace_calls.py for callers, callees and entry points — plus the graphify code graph when present. Use before explaining, reviewing, planning or changing any {{code_name}} code, database object, endpoint, integration, status, rule or permission. Answers cite clickable file:line links; change requests end with a File / What to change / Why table. Trigger on any question or task about {{product}}, {{code_name}} or its source code.
 ---
 
 # {{product}} documentation skill
@@ -22,7 +22,9 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 | Rules for agents | `AGENTS.md` |
 | Page map (one line per page) | `{{docs_dir}}/llms.txt` |
 | Entity index `{kind, name, file, anchor, summary}` | `{{docs_dir}}/agent/entities.jsonl` |
-| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH] [--no-code] [--code-lines N]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding; the first 3 matches also print their code) |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH] [--no-code] [--code-lines N] [--no-related]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding; the first 3 matches also print their code; the first match also prints its connections, related items and the findings that name it) |
+| Search by topic | `python {{docs_dir}}/_tools/lookup.py --search "<question in words>"` — ranked docs sections and code items with `doc:` / `src:` links, when you know the topic but not the name (several words with no item of that name do the same) |
+| Call trees | `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry] [--depth N]` — callees, callers (`--up`: what breaks if it changes) or the endpoints, screens and jobs that reach it with one call path each (`--entry`) |
 | Narrative pages | `{{docs_dir}}/<section>/*.md` (getting-started, architecture, modules, workflows, integrations, data, shared, operations, security, appendices) |
 | Reference pages (every item, anchored) | `{{docs_dir}}/reference/*.md` |
 | Research notes (dense, verified) | `{{docs_dir}}/_notes/*.md` |
@@ -30,16 +32,34 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 
 Lookup kinds: {{kinds}}.
 
+## Question types
+
+| The user asks | Run | Then |
+| --- | --- | --- |
+| What is / where is `<Name>` | `lookup.py <Name>` | the entry, its code and connections answer it |
+| A topic without a name ("where are coupons checked?") | `lookup.py --search "<words>"` | `lookup.py` on the 1-3 best names |
+| How does `<feature>` work | `--search`, then the module or workflow page, then `trace_calls.py <entry method>` | quote each step's code |
+| How does a user get to / what starts `<method>` | `trace_calls.py <method> --entry` | name the screens and buttons |
+| What breaks if I change `<X>` | `trace_calls.py <method> --up`, the reference "used by" lists, `graphify affected` | list callers, screens, jobs, tables |
+| Who reads / writes table `<T>` | `lookup.py <T> --kind db-access` | every call site with its code line |
+| Where is this error shown | `lookup.py "<message text>" --kind error` | the raising line and the screens that reach it |
+| Is `<X>` safe / correct | `lookup.py <X>` (its findings) and the security / defects pages | cite the finding ids |
+
 ## Workflow
 
-1. **Orient.** Read `{{docs_dir}}/llms.txt`; pick the pages.
+1. **Orient.** Read `{{docs_dir}}/llms.txt`; pick the pages. For a topic without a name, `lookup.py --search "<words>"` first.
 2. **Find names.** For every named item run `lookup.py <Name>`. Each match prints `doc: <path>:<line>` (where it is documented) and `src: <path>:<line>` (declaring line in the code; path only, flagged, when the code is absent), then the doc entry, then the **code**: the whole declaration (method, class, procedure, table, up to 40 lines; `--code-lines N` for more) or, for call sites, errors and settings, each cited source line. A `note:` line means the file changed after the docs were built: the code wins. Add `--find <text>` to list matching lines of that source file (`path:line  code`) — the fastest way to the exact line to change.
 3. **Understand behaviour** from the narrative page: rules, statuses, side effects, permissions, integrations.
 4. **Exact details** from the reference entry: columns / keys / FKs / referenced-by; parameters / tables touched / callers; actions / verbs / anonymous flags; members / calls into / called by; permissions.
-5. **Relationships & impact.** With the graph: `graphify query "<question>" --budget 800`, `graphify explain "<Name>"`, `graphify path "<A>" "<B>"`, `graphify affected "<Name>" --depth 2`. Without it: the reference "called by / referenced by / used by" columns. A call through an interface, base class, message, event or delegate does not show what runs: the method map labels such calls `(di registration)`, `(di decorator)`, `(keyed service)`, `(override)`, `(message)`, `(event)`, `(method group)`, `(stored delegate)`, `(background job)`, `(redirect)`, `(filter)`, and `{{docs_dir}}/reference/dependency-injection.md` (when present) gives the implementation each host registers, its lifetime, decorators, message handlers and event subscribers. Never assume the first implementation you find is the one that runs. {{db_graph_skill_note}}
+5. **Relationships & impact.** `trace_calls.py <Class.Method>` (callees), `--up` (callers), `--entry` (endpoints, screens and jobs that reach it, with the buttons that call them). With the graph: `graphify query "<question>" --budget 800`, `graphify explain "<Name>"`, `graphify path "<A>" "<B>"`, `graphify affected "<Name>" --depth 2`. Without it: the reference "called by / referenced by / used by" columns. A call through an interface, base class, message, event or delegate does not show what runs: the method map labels such calls `(di registration)`, `(di decorator)`, `(keyed service)`, `(override)`, `(message)`, `(event)`, `(method group)`, `(stored delegate)`, `(background job)`, `(redirect)`, `(filter)`, and `{{docs_dir}}/reference/dependency-injection.md` (when present) gives the implementation each host registers, its lifetime, decorators, message handlers and event subscribers. Never assume the first implementation you find is the one that runs. {{db_graph_skill_note}}
 6. **Verify in the source** before stating anything as certain or editing; the docs describe a snapshot.
 7. **Cite** with clickable links copied **exactly** from the lookup output — `[file.md:42](path/file.md:42)`, `[Service.cs:118](path/Service.cs:118)`. Never cite a path you did not get from `lookup.py` or a file listing. Say where the docs were silent and you read the code.
-8. **Complete answers.** The reader should not need to open anything else. Quote the relevant code from the lookup output (a fenced block headed by its clickable `file:line`, trimmed to the lines that matter), then cover what applies: what calls it and what it calls, the tables it reads and writes, the settings it reads, the endpoints or screens that reach it, findings and defects about it, and caveats (dynamic SQL, dispatch the scanner cannot see, a stale snapshot).
+8. **Complete answers.** The reader should not need to open anything else. Quote the relevant code from the lookup output (a fenced block headed by its clickable `file:line`, trimmed to the lines that matter), then cover what applies: what calls it and what it calls, the tables it reads and writes, the settings it reads, the endpoints or screens that reach it, findings and defects about it, and caveats (dynamic SQL, dispatch the scanner cannot see, a stale snapshot). Answer layout, skipping parts that do not apply:
+   1. **Answer** — two or three plain sentences first.
+   2. **How it works** — the steps in order, each with its code quoted (`file:line` heading) and the decision points.
+   3. **Connections** — who calls it and how users reach it, data read and written, settings, external systems.
+   4. **Watch out** — findings, defects, PostgreSQL / platform notes, what the static analysis cannot see.
+   5. **Sources** — the doc pages and code locations used, as links.
 9. **Change requests** end with a table *File (link with :line) · What to change · Why*, one row per edit, code first, docs last. Show the code to add next to the line it goes after (read it with `--find` or at the `src:` line). Without source: give paths and the `--find` text, and say line numbers need the code.
 
 ## Where to start
@@ -48,7 +68,8 @@ Lookup kinds: {{kinds}}.
 | --- | --- |
 {{task_rows}}
 | Any named item | `lookup.py <Name>` |
-| Impact of a change | reference "called by / referenced by" + `graphify affected` |
+| A topic, no name | `lookup.py --search "<words>"` |
+| Impact of a change | `trace_calls.py <method> --up`, reference "called by / referenced by" + `graphify affected` |
 
 ## Rules
 

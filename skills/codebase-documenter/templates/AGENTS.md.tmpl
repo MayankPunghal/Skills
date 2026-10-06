@@ -15,6 +15,8 @@ This repository (or workspace) contains {{product}} ({{code_name}}) and its comp
 | Page map | `{{docs_dir}}/llms.txt` | One line per page with its purpose: read first |
 | Entity index | `{{docs_dir}}/agent/entities.jsonl` | Every documented item: `kind`, `name`, `file`, `anchor`, `summary` |
 | Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--fuzzy] [--find TEXT] [--src PATH] [--no-code]` | Prints `doc: path:line` and `src: path:line` per match, then the entry, then the code (the declaration, or each cited source line); an exact name shows only itself (`--fuzzy` adds partial matches); finding ids (`SEC-02`) and narrative table rows are indexed too; `--find` lists matching source lines |
+| Search by topic | `python {{docs_dir}}/_tools/lookup.py --search "<question in words>"` | Ranked docs sections and code items with `doc:` / `src:` links, when the topic is known but not the name |
+| Call trees | `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry]` | Callees; callers (`--up`, impact of a change); endpoints, screens and jobs that reach it (`--entry`) |
 | Narrative docs | `{{docs_dir}}/<section>/` | Behaviour, rules, flows, integrations, security |
 | Reference | `{{docs_dir}}/reference/` | Exhaustive generated catalogues with anchors |
 | Research notes | `{{docs_dir}}/_notes/` | Dense verified findings per area |
@@ -24,11 +26,11 @@ Kinds: {{kinds}}.
 
 ## 2. Lookup order
 
-1. `{{docs_dir}}/llms.txt` → pick pages.
-2. `lookup.py <Name>` for each named item.
+1. `{{docs_dir}}/llms.txt` → pick pages; a topic without a name → `lookup.py --search "<words>"`.
+2. `lookup.py <Name>` for each named item (entry, code, connections, findings that name it).
 3. Narrative page for behaviour.
 4. Reference entry (`doc:` line) for exact details; `src:` line for the code; `--find` for the exact line to change.
-5. graphify for relationships and impact. For a call through an interface, base class, message, event or delegate, find what actually runs: the method map labels it (`(di registration)`, `(override)`, `(message)`, `(event)` …) and `{{docs_dir}}/reference/dependency-injection.md` (C#, when present) lists registrations per host, lifetimes, decorators, handlers and subscribers. {{db_graph_note}}
+5. `trace_calls.py` and graphify for relationships and impact. For a call through an interface, base class, message, event or delegate, find what actually runs: the method map labels it (`(di registration)`, `(override)`, `(message)`, `(event)` …) and `{{docs_dir}}/reference/dependency-injection.md` (C#, when present) lists registrations per host, lifetimes, decorators, handlers and subscribers. {{db_graph_note}}
 6. Verify in source before editing.
 
 ## 3. Where to start
@@ -40,7 +42,7 @@ Kinds: {{kinds}}.
 ## 4. Rules
 
 - Cite every claim as a clickable link copied exactly from the lookup output; never invent a path.
-- Answer completely: quote the relevant code from the lookup output with its `file:line`, plus callers / callees, tables read and written, settings and findings that apply, so the reader needs nothing else.
+- Answer completely: quote the relevant code from the lookup output with its `file:line`, plus callers / callees, tables read and written, settings and findings that apply, so the reader needs nothing else. Layout: a plain answer first, then how it works step by step with code, connections, what to watch out for, sources.
 - Change requests end with *File (link with :line) · What to change · Why*, code files first.
 - Never copy secret values; name the configuration key only. Confidential: {{sensitive}}.
 - **After code changes, update the docs** (from the docs root; set `DOCS_SOURCE_ROOT` to the source root when it differs):

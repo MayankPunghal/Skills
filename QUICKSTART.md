@@ -45,6 +45,12 @@ To keep the docs out of git, add `docs/`, `site/`, `AGENTS.md` and `.claude/skil
 - `src: …` points into the code: docs and code are connected.
 - `src: … (file not found under the source root)`: the code was not found, so answers come from the docs only.
 
+**What Claude uses to answer.** The project skill points Claude at three tools in `docs/_tools/`. You can run them yourself too:
+
+- `lookup.py <Name>` prints the item's doc entry, its code, what it connects to, and the findings that mention it.
+- `lookup.py --search "how are refunds handled"` ranks pages and code items for a question in plain words.
+- `trace_calls.py <Class.Method> --entry` shows which screens, endpoints and jobs reach a method. `--up` shows what calls it.
+
 **Docs in a separate folder also work.** The lookup tool finds the code through:
 
 1. `--src <path>`;

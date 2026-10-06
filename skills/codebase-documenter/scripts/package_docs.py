@@ -56,8 +56,12 @@ def main():
     kit = os.path.join(pub, "repo-kit")
     shutil.copytree("site", os.path.join(pub, "website"), ignore=shutil.ignore_patterns("agent"))
     shutil.copytree(docs, os.path.join(kit, docs), ignore=shutil.ignore_patterns("__pycache__"))
-    for f in ("AGENTS.md", "mkdocs.yml", "codebase-docs.json"):
+    for f in ("AGENTS.md", "mkdocs.yml"):
         shutil.copy2(f, kit)
+    # repo-kit/ is meant to be unpacked at the repository root (docs next to the code), so the shipped source root is
+    # "." instead of this machine's path; lookup.py still finds the code by source_markers, DOCS_SOURCE_ROOT or --src
+    raw = json.load(open("codebase-docs.json", encoding="utf-8"))  # the file as written, not merged with the defaults
+    write(os.path.join(kit, "codebase-docs.json"), json.dumps(dict(raw, source_root="."), indent=2, ensure_ascii=False) + "\n")
     write(os.path.join(kit, "CLAUDE.md"), render("CLAUDE.block.md.tmpl", vals))
     # docs-only workspace (README mode B): the same block with every path under repo-kit/, copied to the package root
     write(os.path.join(kit, "CLAUDE.docs-only.md"),
