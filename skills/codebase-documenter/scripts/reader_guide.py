@@ -75,7 +75,8 @@ def write_guide(docs, cfg):
            "reference entry.", "",
            "## Two kinds of page", "",
            "- **Explanations** describe how the system works and why. They are written from the source code and checked "
-           "against it; counts in them come from the generated reference, so the two agree.",
+           "against it. Their counts are filled in from the generated reference each time the site is built, wherever the "
+           "writer used a count tag (the build flags hand-typed counts that should be tags).",
            ]
     if sections:
         out.append("  Sections: " + ", ".join(sections) + ".")

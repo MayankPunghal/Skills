@@ -13,7 +13,7 @@
 .md-typeset table:not([class]) td { font-variant-numeric: tabular-nums; }
 
 /* Prose keeps a readable line length on wide screens; tables, diagrams and code still use the full width. */
-.md-typeset > p, .md-typeset > ul, .md-typeset > ol, .md-typeset > dl, .md-typeset > blockquote { max-width: 46rem; }
+.md-typeset > p, .md-typeset > ul, .md-typeset > ol, .md-typeset > dl, .md-typeset > blockquote { max-width: 72ch; }
 
 /* Anchored headings clear the sticky header and tabs. */
 .md-typeset :is(h2, h3, h4)[id] { scroll-margin-top: 6rem; }
