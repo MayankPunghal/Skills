@@ -5,6 +5,8 @@
 - docs/assets/readability.css (sticky table headers, readable line length) and its mkdocs.yml extra_css entry;
 - the theme font: the template default (Inter from Google Fonts) becomes system fonts, so the offline site makes no
   internet requests; a font the project chose itself is left alone;
+- docs/assets/javascripts/mermaid.min.js from the copy install_prerequisites.py cached, listed under extra_javascript,
+  so diagrams render offline (offline_mermaid.py);
 - docs/_src/getting-started/how-to-use.md, a reader's guide built from the pages that actually exist.
 """
 import glob
@@ -81,6 +83,8 @@ def site_assets(docs, yml="mkdocs.yml"):
     new = re.sub(r"^  font:\n    text: Inter\n    code: JetBrains Mono\n", "  font: false\n", new, count=1, flags=re.M)
     if new != text:
         open(yml, "w", encoding="utf-8", newline="\n").write(new)
+    import offline_mermaid  # the copy cached by install_prerequisites.py: diagrams render without internet
+    offline_mermaid.ensure(docs, yml)
 
 
 def write_guide(docs, cfg):

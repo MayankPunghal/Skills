@@ -12,7 +12,8 @@ Required:  Python 3.10+, pip, MkDocs Material (site), graphify (code graph; uv, 
            sqlglot (SQL parser fallback + PostgreSQL preview; pip --user),
            .NET SDK 8+ (Microsoft's T-SQL parser for .sql files and SQL in C#; also Linux build checks in the
            assessment; installed per user with Microsoft's dotnet-install script), the ScriptDom helper (built once
-           from scripts/sqlscan, restores one NuGet package from nuget.org)
+           from scripts/sqlscan, restores one NuGet package from nuget.org), offline Mermaid (mermaid.min.js from the npm
+           package via jsDelivr, cached in ~/.cache/codebase-documenter/: site diagrams render without internet)
 Optional:  git (change detection, merge-risk analysis), Docker or WSL (assessment: real Linux builds), network access to
            api.nuget.org (assessment --online package facts), an LLM key in the environment (community naming)
 """
@@ -26,12 +27,13 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import run, tool_exe, utf8_stdout  # noqa: E402
+import offline_mermaid  # noqa: E402
 
 GRAPHIFY_PKG = "graphifyy[sql,openai]"
 SQLGLOT_PKG = "sqlglot"
 KEY_VARS = ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")
 DOTNET_SCRIPT = {"nt": "https://dot.net/v1/dotnet-install.ps1", "posix": "https://dot.net/v1/dotnet-install.sh"}
-REQUIRED = ("pip", "mkdocs-material", "graphify", "graphify SQL", "sqlglot", ".NET SDK 8+", "ScriptDom helper")
+REQUIRED = ("pip", "mkdocs-material", "graphify", "graphify SQL", "sqlglot", ".NET SDK 8+", "ScriptDom helper", "offline Mermaid")
 PY = [sys.executable]
 
 
@@ -152,6 +154,8 @@ def report(verbose=True):
             ("sqlglot", sp.has_sqlglot() or has_module("sqlglot"), "SQL parser fallback, PostgreSQL preview", True),
             (".NET SDK 8+", dm >= sp.MIN_DOTNET, f"found {dm}" if dm else "Microsoft T-SQL parser; Linux build checks", True),
             ("ScriptDom helper", bool(sp.helper_dll()), sp.helper_dll() or "built from scripts/sqlscan on first use", True),
+            ("offline Mermaid", os.path.exists(offline_mermaid.CACHE), "diagrams render without internet (mermaid.min.js, ~3 MB, MIT; "
+             "cached once, copied into every site)", True),
             ("git", bool(tool_exe("git")), "optional: change detection, merge-risk analysis", False),
             ("docker / WSL", bool(docker or wsl), "optional: real Linux builds in the assessment", False),
             ("api.nuget.org", nuget_reachable(), "optional: online package facts (assessment, on by default; --offline to skip)", False)]
@@ -215,7 +219,9 @@ def main():
     elif "graphify SQL" in missing:  # add the extra to the environment graphify already lives in
         print(f"  graphify SQL extra ({GRAPHIFY_PKG}) ...")
         if has_module("graphify"):
-            pip_install(GRAPHIFY_PKG)
+            # pin the installed version: adding the extra must not upgrade graphify under an existing workspace
+            code, ver = run(PY + ["-c", "import importlib.metadata as m; print(m.version('graphifyy'))"])
+            pip_install(GRAPHIFY_PKG + (f"=={ver.strip()}" if code == 0 and ver.strip() else ""))
         else:
             install_graphify()
     if "sqlglot" in missing:
@@ -226,6 +232,9 @@ def main():
             print("  .NET SDK: skipped (--no-dotnet); SQL is parsed with sqlglot only (procedural T-SQL partly unparsed)")
         else:
             install_dotnet()
+    if "offline Mermaid" in missing:
+        print(f"  offline Mermaid ({offline_mermaid.URL}) ...")
+        print("  " + offline_mermaid.fetch_to_cache()[1])
     sp = sql_parse()
     if not sp.helper_dll() and sp.dotnet_major() >= sp.MIN_DOTNET:
         print("  ScriptDom helper ...")

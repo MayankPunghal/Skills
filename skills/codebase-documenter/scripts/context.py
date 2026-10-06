@@ -29,6 +29,9 @@ def missing_tools():
             miss.append(".NET SDK 8+ (T-SQL parser)")
     except ImportError:
         miss.append("sql_parse.py")
+    import offline_mermaid
+    if not os.path.exists(offline_mermaid.CACHE):
+        miss.append("offline Mermaid (diagrams need internet)")
     return miss
 
 
