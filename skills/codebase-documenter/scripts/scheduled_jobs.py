@@ -66,9 +66,16 @@ def _hangfire(fn, args):
         return f"every {nums[0]} hours"
     if fn.lower() == "dayinterval" and nums:
         return f"every {nums[0]} days"
-    if nums and fn.lower() in ("daily", "weekly", "monthly", "yearly"):
-        h, mi = nums[-2:] if len(nums) >= 2 and fn.lower() == "daily" else (nums[-1], 0) if len(nums) == 1 else nums[-2:]
-        return f"{base}{' ' + day if day else ''} at {h:02d}:{mi:02d}"
+    f = fn.lower()
+    if f == "monthly" and nums:  # Cron.Monthly(day[, hour[, minute]])
+        hm = nums[1:] + [0, 0]
+        return f"monthly on day {nums[0]} at {hm[0]:02d}:{hm[1]:02d}"
+    if f == "yearly" and nums:  # Cron.Yearly(month[, day[, hour[, minute]]])
+        rest = nums[1:] + [1, 0, 0][len(nums) - 1:]
+        return f"yearly on {rest[0]}/{nums[0]} (day/month) at {rest[1]:02d}:{rest[2]:02d}"
+    if nums and f in ("daily", "weekly"):  # Cron.Daily(hour[, minute]); Cron.Weekly(DayOfWeek[, hour[, minute]])
+        hm = nums + [0]
+        return f"{base}{' ' + day if day else ''} at {hm[0]:02d}:{hm[1]:02d}"
     return base + (f" {day}" if day else "")
 
 
@@ -120,7 +127,9 @@ class Scan:
                 try:
                     if os.path.getsize(path) > MAX_BYTES:
                         continue
-                    text = open(path, encoding="utf-8-sig", errors="replace").read()
+                    raw = open(path, "rb").read()
+                    # Task Scheduler exports (schtasks /query /xml, "Export...") and some scripts are UTF-16
+                    text = raw.decode("utf-16", errors="replace") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig", errors="replace")
                 except OSError:
                     continue
                 if ext in CODE:
@@ -299,6 +308,8 @@ class Scan:
         if ext == ".json" and re.search(r"(?i)(settings|appsettings|jobsettings|config)[\w.\-]*\.json$", os.path.basename(rp)) and not re.search(r"(?i)launchsettings", rp):
             for m in re.finditer(r"""(?i)"([\w.\-]*(?:cron|schedule|interval|pollseconds|pollminutes|delayseconds|frequency)[\w.\-]*)"\s*:\s*("[^"]{1,60}"|\d+)""", text):
                 val = m.group(2).strip('"')
+                if re.search(r"(?i)retry|backoff|timeout|cache|expir|ttl|lockout|session", m.group(1)):
+                    continue  # waits and lifetimes, not schedules
                 if not re.fullmatch(rf"{CRON}|\d+|[\d:.]+|(rate|cron)\(.+\)|@\w+|every .+|\w+ly", val, re.I):
                     continue
                 self.add("Schedule setting", m.group(1), val, "", rp, _line(text, m.start()), False, "configuration key")

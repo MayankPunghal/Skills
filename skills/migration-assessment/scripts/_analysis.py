@@ -76,7 +76,9 @@ def network(c):
                 needs = "Database: security-group rule to the database port (RDS in the VPC, or on-premises over VPN / Direct Connect)"
             elif g["scheme"] == "smb":
                 needs = "SMB 445 to a file share: keep it on-premises over VPN / Direct Connect, or move it (Amazon FSx for Windows File Server / S3)"
-            needs = ROLE_NEEDS.get(g.get("role", ""), needs)
+            if g.get("role") in ROLE_NEEDS:  # role-specific need; an on-premises host still needs the route and DNS
+                needs = ROLE_NEEDS[g["role"]] + ("; on-premises host: Site-to-Site VPN / Direct Connect route and Route 53 Resolver DNS"
+                                                 if g["kind"] == "internal" and g["role"] != "Session state server (ASP.NET)" else "")  # state moves to AWS
             out.append({"role": g.get("role") or "-", "host": g["host"], "port": (f"{g['port']} (default)" if g.get("port_default") else str(g["port"])) if g["port"] else "?",
                         "protocol": g["scheme"], "kind": g["kind"], "applications": ", ".join(used) or ", ".join(p.split("/")[-1] for p in g["projects"][:3]) or "-",
                         "defined": ", ".join([f"`{k}`" for k in g["keys"][:4]] + (["…"] if len(g["keys"]) > 4 else [])

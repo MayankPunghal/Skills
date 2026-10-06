@@ -512,18 +512,24 @@ def b_methodology(c):
            f"This assessment: {len(conv)} project conversions and {len(fnd)} findings in application packages"
            + (", plus the database inventory" if est.get("databases") else "") + ".\n",
            "**Step 2: project conversion (manual hours).**\n",
-           "```text\nconversion hours = KLOC × rate per KLOC (by project type) × complexity factor × size factor  (+ fixed set-up hours)\n```\n",
-           "- *Rate per KLOC*: published productivity for that kind of port (for example ASP.NET Core retarget vs Web Forms rewrite).",
+           "```text\nconversion hours = (set-up + code KLOC × rate + markup KLOC × markup rate) × complexity factor × size factor\n```\n",
+           "- *Set-up*: fixed hours per project (project file, build, references), by project type.",
+           "- *Code KLOC × rate*: hand-written code only, at the published productivity for that kind of port (for example ASP.NET Core "
+           "retarget vs Web Forms rewrite). *Markup KLOC × markup rate*: views, pages and other markup.",
            "- *Complexity factor*: decision density, fan-in, very large files and run-time-bound calls (section 8.3).",
-           "- *Size factor*: `max(1, (KLOC / 10) ^ 0.1)`, the COCOMO II diseconomy of scale: bigger code bases cost more per line."]
+           f"- *Size factor*: `max(1, (repository KLOC / {(cfg.get('scale') or {}).get('reference_kloc', 10)}) ^ {(cfg.get('scale') or {}).get('exponent', 0.1)})`, "
+           "the COCOMO II diseconomy of scale: bigger code bases cost more per line. "
+           + ("This assessment: " + ", ".join(f"{r} {v:g}×" for r, v in (est.get("scale") or {}).items()) + "." if est.get("scale") else "")]
     if big:
         ptype = (re.search(r"\(([\w\-]+),", big["item"]) or [None, ""])[1]
         rate = cfg["conversion_hours_per_kloc"].get(ptype)
         fixed = cfg["conversion_fixed_hours"].get(ptype, cfg["conversion_fixed_hours"].get("default"))
         markup = cfg["markup_hours_per_kloc"].get(ptype)
-        inputs = [f"{big['kloc']} KLOC"] + ([f"rate {rate[0]:g}–{rate[1]:g} h/KLOC ({ptype})"] if rate else []) + \
-                 ([f"markup {markup[0]:g}–{markup[1]:g} h/KLOC"] if markup else []) + ([f"set-up {fixed[0]:g}–{fixed[1]:g} h"] if fixed else []) + \
-                 [f"complexity {big.get('complexity_factor', 1)}× ({big.get('complexity_why', '-')})"]
+        inputs = ([f"set-up {fixed[0]:g}–{fixed[1]:g} h"] if fixed else []) + [f"{big['kloc']} code KLOC"] + \
+                 ([f"rate {rate[0]:g}–{rate[1]:g} h/KLOC ({ptype})"] if rate else []) + \
+                 ([f"{big['markup_kloc']} markup KLOC at {markup[0]:g}–{markup[1]:g} h/KLOC"] if markup and big.get("markup_kloc") else []) + \
+                 [f"complexity {big.get('complexity_factor', 1)}× ({big.get('complexity_why', '-')})"] + \
+                 ([f"size factor {big['size_factor']:g}×"] if big.get("size_factor") else [])
         out.append(f"- Example from this code base: *{big['item']}*: " + ", ".join(inputs)
                    + f" → **{big['manual_hours'][0]:g}–{big['manual_hours'][1]:g} h manual**.")
     fh = cfg["finding_hours"]
@@ -1115,11 +1121,11 @@ def exports(c, rdir):
     nw = A.network(c)
     with open(os.path.join(rdir, "network-allowlist.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
-        w.writerow(["direction", "repo", "host_or_application", "port", "protocol", "kind", "applications", "defined_in", "evidence", "needed_on_aws"])
+        w.writerow(["direction", "repo", "host_or_application", "port", "protocol", "kind", "applications", "defined_in", "evidence", "needed_on_aws", "role"])
         for x in nw["outbound"]:
-            w.writerow(["outbound", x["repo"], x["host"], x["port"], x["protocol"], x["kind"], x["applications"], x["defined"].replace("`", ""), x["evidence"], x["needs"]])
+            w.writerow(["outbound", x["repo"], x["host"], x["port"], x["protocol"], x["kind"], x["applications"], x["defined"].replace("`", ""), x["evidence"], x["needs"], x["role"]])
         for x in nw["inbound"]:
-            w.writerow(["inbound", x["repo"], x["application"], x["port"], x["protocol"], "listener", x["application"], x["source"], x["evidence"], ""])
+            w.writerow(["inbound", x["repo"], x["application"], x["port"], x["protocol"], "listener", x["application"], x["source"], x["evidence"], "", "Inbound listener"])
     with open(os.path.join(rdir, "scheduled-jobs.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["repo", "job", "scheduler", "schedule", "runs", "configured_by", "application", "windows_only", "on_aws", "evidence"])

@@ -14,9 +14,8 @@ Options (adapter_options.generic-build): skip_regex, max_commands (default 40 pe
 import json
 import os
 import re
-from collections import defaultdict
-
 import sys
+from collections import defaultdict
 
 from _scan import BACK, ROOT, esc, line_at, options, read, slug, walk, write_page
 

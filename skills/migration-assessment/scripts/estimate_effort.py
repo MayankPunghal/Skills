@@ -358,7 +358,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 if p["type"] in red_types:
                     red_manual = add(red_manual, h)
                 lines.append({"item": f"Port {p['name']} ({p['type']}, {p.get('loc_code', 0):,} lines) to {cfg.get('target_dotnet')}", "manual_hours": r1(h),
-                              "kloc": round(kloc, 2), "complexity_factor": cf, "complexity_why": why})
+                              "kloc": round(kloc, 2), "markup_kloc": round((p.get("loc_markup") or 0) / 1000.0, 2), "complexity_factor": cf,
+                              "complexity_why": why, "size_factor": round(rscale, 3)})
                 explain_rows.append((name, p["name"], p["type"], round(kloc, 2), cf, why, r1(h)))
             fixed_other = [0.0, 0.0]
             if mode in ("retain", "retire", "repurchase", "rehost"):

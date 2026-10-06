@@ -122,14 +122,14 @@ INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|L
 
 
 ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match wins
-    (r"^(smtps?|imaps?|pop3s?)\b|mail|smtp|sendgrid|mailgun|ses\b|amazonses", "Mail server (SMTP)"),
+    (r"^(smtps?|imaps?|pop3s?)\b|mail|smtp|sendgrid|mailgun|\bses\b|email\.[\w-]+\.amazonaws", "Mail server (SMTP)"),
     (r"^(sftp|ftps?|ssh)\b|sftp|\bftp", "File transfer (SFTP / FTP)"),
     (r"^smb\b|unc-path", "File share (SMB)"),
     (r"^ldaps?\b|ldap|activedirectory|domaincontroller", "Directory (LDAP / Active Directory)"),
     (r"reportserver|reportservice|reportexecution|ssrs|/reports?\b|crystal", "Report server (SSRS / reporting)"),
     (r"^aspnet-state\b|session-state", "Session state server (ASP.NET)"),
     (r"^(sqlserver|postgres(ql)?|mysql|mongodb(\+srv)?)\b", "Database"),
-    (r"^rediss?\b|redis|memcache", "Cache (Redis)"),
+    (r"^rediss?\b|redis|memcache|elasticache", "Cache (Redis)"),
     (r"^(amqps?|kafka|mqtts?|nats)\b|rabbit|servicebus|kafka|activemq|\bqueue|\bsqs\b|\bsns\b|eventhub", "Message broker / queue"),
     (r"authority|identity|oidc|oauth|openid|\bsts\b|adfs|\blogin\.|\bsso\b|saml|issuer|okta|auth0|keycloak|cognito", "Identity provider"),
     (r"elastic|opensearch|\bseq\b|splunk|loki|datadog|newrelic|applicationinsights|logstash|graylog|sentry|otlp|opentelemetry", "Logging / monitoring"),
@@ -147,7 +147,7 @@ ROLE_RX = [(re.compile(p, re.I), r) for p, r in ROLES]
 def role_of(scheme, source, key, hint):
     text = f"{scheme} {source} {key} {hint}"
     for rx, r in ROLE_RX:
-        if rx.search(text) or rx.search(scheme):
+        if rx.search(text):
             return r
     return "Network service"
 
@@ -384,7 +384,8 @@ class Scan:
                 self.connection_string(rp, self.line_of(text, f'"{add.get("name")}"'), add.get("name"), add.get("connectionString"),
                                        add.get("providerName", ""))
             elif add.get("key") and add.get("value") is not None:
-                sib = settings.get(re.sub(r"(?i)(host|hostname|server|address)$", "port", add.get("key")).lower(), "")  # SftpHost + SftpPort
+                pk = re.sub(r"(?i)(host|hostname|server|address)$", "port", add.get("key"))  # SftpHost + SftpPort
+                sib = settings.get(pk.lower(), "") if pk != add.get("key") else ""
                 self.config_value(rp, self.line_of(text, f'"{add.get("key")}"'), add.get("key"), add.get("value"), int(sib) if sib.isdigit() else None)
             if add.get("baseAddress"):
                 ln = self.line_of(text, add.get("baseAddress"))
