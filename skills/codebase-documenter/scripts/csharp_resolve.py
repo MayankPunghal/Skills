@@ -46,7 +46,6 @@ import argparse
 import json
 import os
 import re
-import sys
 from collections import Counter, defaultdict
 
 from _common import load_config, utf8_stdout, write
@@ -230,7 +229,6 @@ class Source:
         return line_at(self.mask, pos)
 
     def parse(self):
-        m_ns = None
         for m in re.finditer(r"\b(?P<kind>class|interface|struct|record(?:\s+(?:class|struct))?)\s+(?P<name>[A-Za-z_]\w*)", self.mask):
             if m.group("name") in KEYWORDS:
                 continue
@@ -789,7 +787,6 @@ def apply_conventions(model, conventions, regs):
 
 def attribute_hosts(model, regs, modules):
     """Which application (host project) runs each registration: follow registration modules to the code that calls them."""
-    module_methods = {}     # (file, method name) -> module id
     MODULE_PARAM = re.compile(r"^\s*this\s+(IServiceCollection|IHostApplicationBuilder|WebApplicationBuilder|IHostBuilder|ContainerBuilder|"
                               r"IUnityContainer|IKernel|IWindsorContainer|Container|ServiceRegistry|Registry)\b")
     MODULE_BASES = {"Module", "NinjectModule", "Registry", "ServiceRegistry", "IWindsorInstaller", "IModule", "IServiceRegistrar"}

@@ -231,8 +231,10 @@ def main():
                 add("MVC view start / imports" if special else "Razor Pages partial / layout", rp, model=model, layout=layout)
             else:
                 route, area, ctrl = mvc_route(parts)
+                # no Views/<Controller>/<View> route (Shared, EditorTemplates, DisplayTemplates, Components, e-mail templates):
+                # rendered inside another view, so not a screen
                 kind = ("MVC view start / imports" if special else "MVC layout" if RX_BODY.search(text)
-                        else "MVC partial view" if base.startswith("_") or not route and "shared" in [p.lower() for p in parts] else "MVC view")
+                        else "MVC partial view" if base.startswith("_") or not route else "MVC view")
                 action = None
                 if kind == "MVC view" and ctrl:
                     hits = by_name.get(f"{ctrl}controller.{os.path.splitext(base)[0]}".lower(), [])
@@ -249,13 +251,16 @@ def main():
         elif ext in (".aspx", ".ascx", ".master", ".asmx", ".ashx"):
             d = RX_DIRECTIVE.search(text)
             attrs = {k.lower(): v for k, v in RX_ATTR.findall(d.group(2))} if d else {}
-            cb = attrs.get("codebehind") or attrs.get("codefile")
-            cb = "/".join(parts[:-1] + [cb]) if cb and "/" not in cb and "\\" not in cb else (cb.replace("\\", "/").lstrip("~/") if cb else None)
-            if cb and not os.path.exists(os.path.join(ROOT, cb)):
+            cb = (attrs.get("codebehind") or attrs.get("codefile") or "").replace("\\", "/")
+            proj = project_of(rp)
+            if cb.startswith("~/"):  # "~/" is the web application root, i.e. the project folder
+                cb = (cb[2:] if proj == "." else f"{proj}/{cb[2:]}")
+            elif cb:
+                cb = "/".join(parts[:-1] + cb.split("/"))
+            if not cb or not os.path.exists(os.path.join(ROOT, cb)):
                 cb = side(rp, ".cs", ".vb")
             kind = {".aspx": "Web Forms page", ".ascx": "Web Forms user control", ".master": "Web Forms master page",
                     ".asmx": "ASMX web service", ".ashx": "ASHX handler"}[ext]
-            proj = project_of(rp)
             route = "/" + rp[len(proj) + 1:] if ext in (".aspx", ".asmx", ".ashx") and proj != "." else ("/" + rp if ext in (".aspx", ".asmx", ".ashx") else None)
             add(kind, rp, route=route, layout=attrs.get("masterpagefile"), code_behind=cb,
                 model=attrs.get("inherits") or attrs.get("class") or attrs.get("itemtype"), title=attrs.get("title"))
@@ -273,6 +278,8 @@ def main():
     # WinForms: classes deriving from Form / UserControl (directly or through another form of this code base)
     bases, known = {}, {}
     for rp, ap in walk(exts={".cs", ".vb"}):
+        if rp.lower().endswith((".xaml.cs", ".xaml.vb")):  # WPF / MAUI code-behind: already listed with its .xaml
+            continue
         t = read(ap)
         winforms = "System.Windows.Forms" in t or side(os.path.splitext(rp)[0], ".Designer.cs", ".designer.cs", ".Designer.vb")
         for name, b in RX_WINFORM.findall(t) + RX_VB_INHERITS.findall(t):

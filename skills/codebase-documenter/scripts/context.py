@@ -11,7 +11,7 @@ import os
 import re
 import sys
 
-from _common import CONFIG_NAME, load_config, utf8_stdout, run
+from _common import load_config, utf8_stdout, run
 
 
 def missing_tools():

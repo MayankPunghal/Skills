@@ -54,7 +54,7 @@ def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-depth", type=int, default=3)
-    a = ap.parse_args()
+    ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
     src = cfg["source_root"]

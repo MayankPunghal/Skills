@@ -83,10 +83,13 @@ def install_graphify():
 def install_dotnet():
     """Current LTS .NET SDK for this user only, with Microsoft's official dotnet-install script (no admin, no MSI)."""
     url = DOTNET_SCRIPT["nt" if os.name == "nt" else "posix"]
-    tmp = os.path.join(tempfile.gettempdir(), os.path.basename(url))
+    # a private folder (mkdtemp is readable by this user only): a fixed name in the shared temp folder could be swapped
+    # by another local user between the download and the run
+    tmp = os.path.join(tempfile.mkdtemp(prefix="dotnet-install-"), os.path.basename(url))
     print(f"  downloading {url} ...")
     try:
-        urllib.request.urlretrieve(url, tmp)
+        with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as fh:
+            shutil.copyfileobj(r, fh)
     except OSError as ex:
         print(f"  download failed ({ex}); install the .NET SDK yourself: https://dotnet.microsoft.com/download")
         return False
@@ -104,8 +107,9 @@ def install_dotnet():
     if os.name == "nt":  # make it visible to new terminals: add the folder to the user PATH once
         cur = run(["powershell", "-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"])[1].strip()
         if target.lower() not in cur.lower():
+            quoted = target.replace("'", "''")  # PowerShell single-quoted string (a profile path may hold an apostrophe)
             run(["powershell", "-NoProfile", "-Command",
-                 f"[Environment]::SetEnvironmentVariable('Path', '{target};' + [Environment]::GetEnvironmentVariable('Path','User'), 'User')"])
+                 f"[Environment]::SetEnvironmentVariable('Path', '{quoted};' + [Environment]::GetEnvironmentVariable('Path','User'), 'User')"])
     else:
         print(f"  add to your shell profile:  export DOTNET_ROOT={target}; export PATH=$PATH:{target}")
     return True
@@ -134,7 +138,7 @@ def report(verbose=True):
             ("ScriptDom helper", bool(sp.helper_dll()), sp.helper_dll() or "built from scripts/sqlscan on first use", True),
             ("git", bool(tool_exe("git")), "optional: change detection, merge-risk analysis", False),
             ("docker / WSL", bool(docker or wsl), "optional: real Linux builds in the assessment", False),
-            ("api.nuget.org", nuget_reachable(), "optional: online package facts (assessment --online)", False)]
+            ("api.nuget.org", nuget_reachable(), "optional: online package facts (assessment, on by default; --offline to skip)", False)]
     keys = [k for k in KEY_VARS if os.environ.get(k)]
     if verbose:
         for name, ok, detail, required in rows:

@@ -19,7 +19,7 @@ import os
 import re
 from collections import defaultdict, deque
 
-from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, read, slug, walk, write_page
 
 OPT = options("generic-trace")
 DEPTH = OPT.get("max_depth", 8)

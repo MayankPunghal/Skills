@@ -36,7 +36,10 @@ COMMENT_LINE = {"cs": re.compile(r"^\s*(//|/\*|\*)"), "vb": re.compile(r"^\s*('|
 BLOCK_COMMENT = {"cs": re.compile(r"/\*.*?\*/", re.S), "js": re.compile(r"/\*.*?\*/", re.S), "sql": re.compile(r"/\*.*?\*/", re.S),
                  "config": re.compile(r"<!--.*?-->", re.S), "proj": re.compile(r"<!--.*?-->", re.S),
                  "markup": re.compile(r"<%--.*?--%>|<!--.*?-->|@\*.*?\*@", re.S), "xml": re.compile(r"<!--.*?-->", re.S)}
-SECRETISH = re.compile(r"(?i)(password|passwd|pwd|secret|token|apikey|api_key|accountkey|connectionstring|key\s*=)")
+# a secret-like name given a literal value ("Password=…;", apiKey = "…", <add key="Token" value="…">): the snippet is hidden.
+# A bare word (RegistryKey key = Registry.LocalMachine…, GetToken()) is ordinary evidence and stays visible.
+SECRETISH = re.compile(r"(?i)\b\w*(password|passwd|pwd|secret|token|api_?key|accountkey|sharedaccesskey|credential)\w*\s*[=:]\s*[\"'@]"
+                       r"|(password|pwd)\s*=\s*[^;\"'\s]+;|key\s*=\s*\"[^\"]*(pass|pwd|secret|token|key|credential)[^\"]*\"\s+value\s*=")
 SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
 # the usual skip list, but designer files stay in: WinForms designers name Windows fonts and System.Drawing types
 SKIP = re.compile(r"(^|/)(\.git|\.vs|\.idea|bin|obj|node_modules|dist|build|out|target|vendor|packages|\.venv|venv|__pycache__|"

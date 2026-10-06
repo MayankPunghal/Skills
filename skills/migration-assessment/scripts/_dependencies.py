@@ -190,7 +190,6 @@ def _skip(path):
 
 def _entry_points(root, inv):
     """Entry points found in source: dicts with kind, name, file, line, end (exclusive), project."""
-    pidx = F.project_index(inv)
     eps = []
     contracts = set()  # WCF service contracts anywhere in the repository (often in a shared contracts project)
     for p in inv["projects"]:
@@ -226,7 +225,6 @@ def _entry_points(root, inv):
                 if not low.endswith((".cs", ".vb")) or low.endswith(".designer.cs") or os.path.getsize(full) > 2_000_000:
                     continue
                 text = read_text(full)
-                lines = text.split("\n")
 
                 def ln(pos):
                     return text.count("\n", 0, pos) + 1

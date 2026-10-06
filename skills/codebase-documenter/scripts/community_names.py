@@ -26,7 +26,6 @@ import json
 import math
 import os
 import re
-import sys
 import urllib.error
 import urllib.request
 from collections import Counter, defaultdict

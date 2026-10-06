@@ -146,12 +146,10 @@ def main():
             record(obj, path, line, text, op)
         # routines referenced as identifiers (EF function imports, DbFunction methods) outside strings
         if ext not in VIEW_EXT:
-            stripped = STRING.sub(lambda x: " " * len(x.group(0)), text)
             for m in re.finditer(r"\[DbFunction\(\s*\"(\w+)\"|HasDbFunction\([^)]*?\bnameof\((\w+)\)", text):
                 obj = (m.group(1) or m.group(2) or "").lower()
                 if obj in objs:
                     record(obj, path, line_at(text, m.start()), text, "call", tech="EF mapping")
-            del stripped
 
     # follow name constants (ProcNames.PlaceOrder = "dbo.usp_PlaceOrder") to where they are used
     if constants:

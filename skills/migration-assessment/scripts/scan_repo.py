@@ -707,17 +707,51 @@ def ver_lt(a, b):
         return False
 
 
+# api.nuget.org state for this run: answers kept in memory (a failed lookup is not retried in the same run), and a breaker
+# that stops further calls after repeated connection failures, so a machine without network does not wait out every timeout
+_NET = {"lock": threading.Lock(), "raw": {}, "files": {}, "fail": 0, "ok": 0, "warned": False}
+NET_FAIL_LIMIT = 5
+
+
+def net_usable():
+    with _NET["lock"]:
+        if _NET["ok"] or _NET["fail"] < NET_FAIL_LIMIT:
+            return True
+        if not _NET["warned"]:
+            _NET["warned"] = True
+            print(f"WARN api.nuget.org unreachable ({_NET['fail']} connection failures): online package facts skipped for the "
+                  "rest of this run; packages show as not verified. Rerun when online, or use --offline.")
+        return False
+
+
+def net_result(ok):
+    with _NET["lock"]:
+        _NET["ok" if ok else "fail"] += 1
+
+
+def write_cache(path, obj):
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh)
+    os.replace(tmp, path)  # atomic, so a parallel lookup or a crash never sees half a file
+
+
 def nuget_info(pid, versions, cache_dir):
-    """Public package metadata from api.nuget.org (cached): latest version, frameworks, deprecation, vulnerabilities, licence."""
+    """Public package metadata from api.nuget.org (cached): latest version, frameworks, deprecation, vulnerabilities, licence.
+    Only answers are cached on disk (a package, or 404 for one nuget.org does not have); network failures are retried next run."""
     os.makedirs(cache_dir, exist_ok=True)
     cp = os.path.join(cache_dir, slug(pid) + ".json")
-    try:
-        raw = read_json(cp) if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < 14 * 86400 else None
-    except (ValueError, OSError):  # damaged cache entry (interrupted run): fetch again
-        raw = None
-    if raw is None or (raw.get("v", 0) < 3 and not raw.get("error")):   # v3 cache: licenseUrl + published
-        raw = None
+    raw = _NET["raw"].get(pid.lower())
     if raw is None:
+        try:
+            raw = read_json(cp) if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < 14 * 86400 else None
+        except (ValueError, OSError):  # damaged cache entry (interrupted run): fetch again
+            raw = None
+        if raw is not None and (raw.get("error") and raw.get("status") != 404 or (raw.get("v", 0) < 3 and not raw.get("error"))):
+            raw = None  # an older cache kept transient failures; v3 cache: licenseUrl + published
+    if raw is None and not net_usable():
+        raw = {"error": "api.nuget.org unreachable in this run", "status": None}
+    elif raw is None:
         url = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/index.json"
         try:
             req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"})
@@ -737,10 +771,11 @@ def nuget_info(pid, versions, cache_dir):
                                                 for it in pg.get("items", [])]} for pg in pages]}
         except (urllib.error.URLError, OSError, ValueError) as ex:
             raw = {"error": str(ex)[:200], "status": getattr(ex, "code", None)}
-        tmp = f"{cp}.{os.getpid()}.{threading.get_ident()}.tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(raw, fh)
-        os.replace(tmp, cp)  # atomic, so a parallel lookup or a crash never sees half a file
+        answered = not raw.get("error") or raw.get("status") is not None  # an HTTP status is an answer; no status = no connection
+        net_result(answered)
+        if not raw.get("error") or raw.get("status") == 404:
+            write_cache(cp, raw)
+    _NET["raw"][pid.lower()] = raw
     if raw.get("error"):
         return {"found": False, "error": raw["error"]} if raw.get("status") != 404 else {"found": False}
     entries = [it["catalogEntry"] for pg in raw.get("items", []) for it in pg.get("items", [])]
@@ -779,7 +814,15 @@ def platform_assets(pid, entries, versions, cache_dir):
     except ValueError:
         return None
     cp = os.path.join(cache_dir, f"{slug(pid)}-{slug(uv)}-files.json")
-    files = read_json(cp) if os.path.exists(cp) else None
+    key = cp.lower()
+    files = _NET["files"].get(key)
+    if files is None:
+        try:
+            files = read_json(cp) if os.path.exists(cp) else None
+        except (ValueError, OSError):
+            files = None
+    if files is None and not net_usable():
+        return None  # unknown, not "no native binaries"
     if files is None:
         try:
             reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
@@ -789,9 +832,13 @@ def platform_assets(pid, entries, versions, cache_dir):
                 return json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
             leaf = get(get(reg)["catalogEntry"])
             files = [e.get("fullName", "") for e in leaf.get("packageEntries", [])]
-        except (urllib.error.URLError, OSError, ValueError, KeyError):
-            files = []
-        json.dump(files, open(cp, "w", encoding="utf-8"))
+            net_result(True)
+            write_cache(cp, files)  # a version's file list never changes: cached for good, but only when it was read
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as ex:
+            net_result(getattr(ex, "code", None) is not None or isinstance(ex, (ValueError, KeyError)))
+            _NET["files"][key] = []
+            return None  # failed lookup: unknown, retried next run
+    _NET["files"][key] = files
     rids = sorted({f.split("/")[1] for f in files if f.lower().startswith("runtimes/") and f.count("/") >= 3 and "/native/" in f.lower()})
     libs = sorted({f.split("/")[1].lower() for f in files if f.lower().startswith("lib/") and f.count("/") >= 2})
     win_only_native = bool(rids) and all(r.lower().startswith("win") for r in rids)
