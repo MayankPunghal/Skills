@@ -185,6 +185,7 @@ document.addEventListener('keydown', e => { const typing = /^(INPUT|SELECT|TEXTA
   if (e.key === '/' && !typing) { e.preventDefault(); search.focus(); search.select(); return; }
   if (e.key === 'Escape' && document.activeElement === search && search.value) { search.value = ''; search.oninput(); return; }
   if ((e.key === 'Enter' || e.key === ' ') && !typing) { const el = e.target.closest('th[data-k], tr.row[tabindex], .tile[tabindex], .bar[tabindex]'); if (el && !e.target.closest('a, button')) { e.preventDefault(); el.click(); } } });
+// top-level names in this inline script are globals: never reuse a window property (top, name, status, open...), it stops the whole report
 const toTop = document.getElementById('totop'); window.addEventListener('scroll', () => toTop.classList.toggle('on', scrollY > 900), {passive: true}); toTop.onclick = () => window.scrollTo({top: 0, behavior: SMOOTH});
 document.getElementById('theme').onclick = () => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch (e) {} };
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
