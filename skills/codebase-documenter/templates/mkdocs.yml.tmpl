@@ -15,9 +15,7 @@ theme:
   language: {{language}}
   logo: assets/logo.svg
   favicon: assets/logo.svg
-  font:
-    text: Inter
-    code: JetBrains Mono
+  font: false  # system fonts: the offline site loads nothing from the internet
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -50,6 +48,7 @@ theme:
 
 extra_css:
   - assets/extra.css
+  - assets/readability.css
 
 plugins:
   - search:

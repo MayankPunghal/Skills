@@ -1,0 +1,26 @@
+/* Written by the codebase-documenter skill on every build (build_site.py): edits here are overwritten.
+   Project-specific styles belong in extra.css. */
+
+/* Long tables scroll inside their own box, so the header row stays in view while reading down. */
+.md-typeset__scrollwrap { max-height: min(78vh, 60rem); overflow: auto; }
+.md-typeset table:not([class]) thead th {
+  position: sticky; top: 0; z-index: 1;
+  background-color: var(--md-default-bg-color);
+  box-shadow: inset 0 -0.05rem var(--md-typeset-table-color);
+}
+.md-typeset table:not([class]) tbody tr:hover { background-color: var(--md-accent-fg-color--transparent); }
+.md-typeset table:not([class]) code { word-break: break-word; }
+.md-typeset table:not([class]) td { font-variant-numeric: tabular-nums; }
+
+/* Prose keeps a readable line length on wide screens; tables, diagrams and code still use the full width. */
+.md-typeset > p, .md-typeset > ul, .md-typeset > ol, .md-typeset > dl, .md-typeset > blockquote { max-width: 72ch; }
+
+/* Anchored headings clear the sticky header and tabs. */
+.md-typeset :is(h2, h3, h4)[id] { scroll-margin-top: 6rem; }
+
+kbd { white-space: nowrap; }
+
+@media print {
+  .md-typeset__scrollwrap { max-height: none; overflow: visible; }
+  .md-typeset table:not([class]) thead th { position: static; box-shadow: none; }
+}

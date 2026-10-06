@@ -54,3 +54,8 @@ Done looks like: answered from `ui-map.md` (button → endpoint → handler), `e
 Prompt: "Who or what ends up calling OrderWorkflow.LockStatusAsync? I want to know which screens can reach it."
 Should trigger: yes
 Done looks like: `trace_flow.py OrderWorkflow.LockStatusAsync --entry` lists each entry point with one call path and the UI triggers of each endpoint; the answer says that reflection and run-time dispatch paths are not covered (DI, overrides, messages and events are, through generic-di).
+
+### Readable site
+Prompt: "The table headers scroll away on the long reference pages and new readers don't know where to start."
+Should trigger: yes
+Done looks like: after `build_site.py`, every long table scrolls inside its own box with a sticky header row (`docs/assets/readability.css`), the site loads no Google Fonts, and `getting-started/how-to-use.md` lists the sections and reference pages that exist, the search and page keys, and the sensitive pages; `verify_docs.py` stays 7/7.

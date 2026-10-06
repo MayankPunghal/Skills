@@ -266,9 +266,9 @@ def main():
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(client)} AWS Assessment</title><style>{css}</style></head>
-<body><header class="top"><button id="menu" title="Menu">☰</button><span class="title">{html.escape(title)}</span><input id="q" type="search" placeholder="Search everything: applications, findings, files, packages, hosts, questions…" aria-label="Search report">
-<button id="theme" title="Light / dark">◐</button><button onclick="window.print()" title="Print or save as PDF (prints every tab)">Print</button></header>
-<div class="layout"><nav class="side">{''.join(nav)}</nav><main>{''.join(body)}</main></div>
+<body><a class="skip" href="#main">Skip to the report</a><header class="top"><button id="menu" title="Menu" aria-label="Open the section menu" aria-expanded="false">☰</button><span class="title">{html.escape(title)}</span><input id="q" type="search" placeholder="Search everything: applications, findings, files, packages, hosts, questions…  ( / )" aria-label="Search the whole report (shortcut: /)">
+<button id="theme" title="Light / dark" aria-label="Switch between light and dark">◐</button><button onclick="window.print()" title="Print or save as PDF (prints every tab)">Print</button></header>
+<div class="layout"><nav class="side" aria-label="Report sections">{''.join(nav)}</nav><main id="main" tabindex="-1">{''.join(body)}</main></div><button id="totop" type="button">↑ Top</button>
 <script type="application/json" id="data">{json.dumps(d, ensure_ascii=False).replace("</", "<\\/")}</script>
 <script>window.GLOSSARY = {json.dumps(layout.get("glossary", []), ensure_ascii=False).replace("</", "<\\/")};</script>
 <script>{JS}</script></body></html>"""

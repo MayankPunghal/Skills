@@ -70,3 +70,4 @@ Done looks like: every number and finding reference in the narratives is a `{{v:
 | --- | --- | --- | --- |
 | 2026-10-05 | Sonnet 5.5 | yes | Pipeline run on the FulfillmentHub testbed: all 8 gates PASS, 203 h likely (was 849 h before v4) |
 | 2026-10-06 | Opus 5.5 | yes | FulfillmentHub trust audit: narratives rewritten with tags, 10/10 gates PASS, 387 h likely; test-project coupling and MOD-ON-WINDOWS false positives removed |
+| 2026-10-06 | Opus 5.5 | yes | HTML report accessibility pass: keyboard access to rows / sort headers / tiles, AA contrast on labels, 44px touch targets, "On this page" links; impeccable detector 0 findings; 10/10 gates PASS |

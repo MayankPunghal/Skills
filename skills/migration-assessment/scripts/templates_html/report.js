@@ -12,6 +12,7 @@ const csv = (cols, rows, name) => { const q = v => '"' + String(v ?? '').replace
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + body], {type:'text/csv'})); a.download = name + '.csv'; a.click(); };
 const list = a => a && a.length ? '<ul>' + a.map(x => `<li>${hl(x)}</li>`).join('') + '</ul>' : '<p class="muted">—</p>';
 const TABLES = [];
+const SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
 function DataTable(host, opt) {
   const st = {sort: opt.sort || null, asc: opt.asc ?? false, filters: {}, page: 0, open: new Set(), size: opt.pageSize || 50};
@@ -25,22 +26,24 @@ function DataTable(host, opt) {
     return r;
   }
   function render() {
+    const fa = document.activeElement, keep = fa && wrap.contains(fa) ? (fa.dataset.k ? `th[data-k="${CSS.escape(fa.dataset.k)}"]` : fa.dataset.id !== undefined ? `tr.row[data-id="${CSS.escape(fa.dataset.id)}"]` : fa.dataset.a ? `[data-a="${fa.dataset.a}"]` : null) : null;
     const r = rows(); const pages = Math.max(1, Math.ceil(r.length / st.size)); st.page = Math.min(st.page, pages - 1);
     const view = r.slice(st.page * st.size, (st.page + 1) * st.size);
     const sel = (opt.filters || []).map(k => { const c = opt.cols.find(c => c.key === k) || {label: k}; const vals = [...new Set(base().map(x => String(x[k])))].sort((a,b)=> (SEV.indexOf(a) - SEV.indexOf(b)) || a.localeCompare(b));
       return vals.length > 1 || st.filters[k] ? `<select data-f="${k}"><option value="">All ${esc((c.flabel || c.label).toLowerCase())}</option>${vals.map(v => `<option ${st.filters[k]===v?'selected':''}>${esc(v)}</option>`).join('')}</select>` : ''; }).join('');
-    wrap.innerHTML = `${opt.title ? `<h3>${esc(opt.title)}</h3>` : ''}<div class="tools">${sel}<button class="btn" data-a="csv">Download CSV</button>${opt.detail ? '<button class="btn" data-a="expand">Expand all</button>' : ''}<span class="count">${r.length} of ${base().length}</span></div>
-     <div class="tablewrap"><table class="dt"><thead><tr>${opt.cols.map(c => `<th data-k="${c.key}" class="${st.sort===c.key?'sorted'+(st.asc?' asc':''):''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>
+    wrap.innerHTML = `${opt.title ? `<h3>${esc(opt.title)}</h3>` : ''}<div class="tools">${sel}<button class="btn" data-a="csv">Download CSV</button>${opt.detail ? `<button class="btn" data-a="expand">${st.open.size ? 'Collapse all' : 'Expand all'}</button>` : ''}<span class="count" aria-live="polite">${r.length} of ${base().length} shown</span></div>
+     <div class="tablewrap"><table class="dt"><thead><tr>${opt.cols.map(c => `<th scope="col" tabindex="0" data-k="${c.key}" aria-sort="${st.sort===c.key?(st.asc?'ascending':'descending'):'none'}" title="Sort by ${esc(c.label)}" class="${st.sort===c.key?'sorted'+(st.asc?' asc':''):''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>
      ${view.map((x,i) => { const id = opt.id ? opt.id(x) : (st.page*st.size+i); const open = st.open.has(String(id));
-        return `<tr class="row" data-id="${esc(id)}" ${opt.anchor ? `data-anchor="${esc(opt.anchor(x))}"` : ''}>${opt.cols.map(c => `<td class="${c.cls||''}">${c.html ? c.html(x) : hl(x[c.key])}</td>`).join('')}</tr>` +
+        return `<tr class="row" data-id="${esc(id)}" ${opt.detail ? `tabindex="0" aria-expanded="${open}"` : ''} ${opt.anchor ? `data-anchor="${esc(opt.anchor(x))}"` : ''}>${opt.cols.map(c => `<td class="${c.cls||''}">${c.html ? c.html(x) : hl(x[c.key])}</td>`).join('')}</tr>` +
           (opt.detail && open ? `<tr class="detail"><td colspan="${opt.cols.length}"><div class="detail">${opt.detail(x)}</div></td></tr>` : ''); }).join('') || `<tr><td colspan="${opt.cols.length}" class="muted">${Q ? 'No rows match the search.' : (opt.empty || 'Checked, none found.')}</td></tr>`}
-     </tbody></table></div>${pages > 1 ? `<div class="pager"><button class="btn" data-a="prev">‹</button> page ${st.page+1} / ${pages} <button class="btn" data-a="next">›</button></div>` : ''}`;
+     </tbody></table></div>${pages > 1 ? `<div class="pager"><button class="btn" data-a="prev" aria-label="Previous page">‹</button> page ${st.page+1} / ${pages} <button class="btn" data-a="next" aria-label="Next page">›</button></div>` : ''}`;
     wrap.querySelectorAll('select[data-f]').forEach(s => s.onchange = () => { st.filters[s.dataset.f] = s.value; st.page = 0; render(); });
     wrap.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => { if (st.sort === th.dataset.k) st.asc = !st.asc; else { st.sort = th.dataset.k; st.asc = true; } render(); });
     if (opt.detail) wrap.querySelectorAll('tr.row').forEach(tr => tr.onclick = e => { if (e.target.closest('a')) return; const id = tr.dataset.id; st.open.has(id) ? st.open.delete(id) : st.open.add(id); render(); });
     wrap.querySelector('[data-a=csv]').onclick = () => csv(opt.csvCols || opt.cols, rows(), opt.name);
     const ex = wrap.querySelector('[data-a=expand]'); if (ex) ex.onclick = () => { if (st.open.size) st.open.clear(); else rows().forEach((x,i) => st.open.add(String(opt.id ? opt.id(x) : i))); render(); };
     const pv = wrap.querySelector('[data-a=prev]'); if (pv) { pv.onclick = () => { st.page = Math.max(0, st.page-1); render(); }; wrap.querySelector('[data-a=next]').onclick = () => { st.page++; render(); }; }
+    if (keep) { const el = wrap.querySelector(keep); if (el) el.focus({preventScroll: true}); }
     return r.length;
   }
   const t = {render, rows, opt, st, host: wrap, openRow(id) { st.open.add(String(id)); st.filters = {}; const r = rows(); const i = r.findIndex(x => String(opt.id(x)) === String(id)); if (i >= 0) st.page = Math.floor(i / st.size); render(); }};
@@ -62,14 +65,14 @@ function findings(h, seg) {
 }
 const sevBars = (rows, label, click) => { const m = Math.max(1, ...rows.map(c => SEV.reduce((a,s)=>a+c[s],0)));
   return `<div class="legend">${SEV.map(s => `<span style="--c:var(--${s.toLowerCase()})">${s}</span>`).join('')}</div>` + rows.map((c,i) => { const n = SEV.reduce((a,s)=>a+c[s],0);
-    return `<div class="bar ${click?'click':''}" data-i="${i}" title="${esc(n ? n + ' findings' : 'Checked, none found' + (c.scanned ? ': ' + c.scanned : ''))}"><span class="lab">${esc(c[label])}</span><span class="track">${SEV.map(s => c[s] ? `<span class="seg sev-${s}" style="width:${c[s]/m*100}%"></span>` : '').join('')}</span><span class="n">${n || '✓'}</span></div>`; }).join(''); };
+    return `<div class="bar ${click?'click':''}" data-i="${i}" ${click ? 'tabindex="0" role="button"' : ''} title="${esc(n ? n + ' findings' : 'Checked, none found' + (c.scanned ? ': ' + c.scanned : ''))}"><span class="lab">${esc(c[label])}</span><span class="track">${SEV.map(s => c[s] ? `<span class="seg sev-${s}" style="width:${c[s]/m*100}%"></span>` : '').join('')}</span><span class="n">${n || '✓'}</span></div>`; }).join(''); };
 const card = (h, inner) => { h.className = 'card'; h.innerHTML = inner; };
 
 const C = {
   'kpis': h => h.innerHTML = '<div class="kpis">' + D.kpis.map(k => `<div class="kpi"><div class="l">${esc(k[0])}</div><div class="v">${esc(k[1])}</div><div class="s">${esc(k[2])}</div></div>`).join('') + '</div>',
   'chart:segments': h => { card(h, `<h3>Findings by area — click to open</h3>` + sevBars(D.segs, 'title', true)); h.querySelectorAll('.bar').forEach(b => b.onclick = () => show(D.segs[b.dataset.i].id)); },
   'chart:categories': h => { card(h, `<h3>Findings by category — click to filter</h3>` + sevBars(D.cats, 'title', true) + '<p class="muted small">✓ = checked, none found. Hover a bar to see what was checked.</p>');
-     h.querySelectorAll('.bar').forEach(b => b.onclick = () => { const t = TABLES.find(t => t.opt.name === 'findings-all'); if (t) { t.st.filters.category = D.cats[b.dataset.i].title; t.st.page = 0; t.render(); t.host.scrollIntoView({behavior:'smooth'}); } }); },
+     h.querySelectorAll('.bar').forEach(b => b.onclick = () => { const t = TABLES.find(t => t.opt.name === 'findings-all'); if (t) { t.st.filters.category = D.cats[b.dataset.i].title; t.st.page = 0; t.render(); t.host.scrollIntoView({behavior:SMOOTH}); } }); },
   'chart:r7': h => { const t = Object.values(D.r7).reduce((a,b)=>a+b,0) || 1; card(h, `<h3>Recommended path (7R)</h3>${Object.entries(D.r7).sort((a,b)=>b[1]-a[1]).map(([k,v]) => `<div class="bar"><span class="lab">${esc(k)}</span><span class="track"><span class="seg" style="width:${v/t*100}%;background:var(--accent)"></span></span><span class="n">${v}</span></div>`).join('')}`); },
   'chart:severity': h => { const t = SEV.reduce((a,s)=>a+(D.sev[s]||0),0) || 1; card(h, `<h3>Findings by severity</h3>${SEV.map(s => `<div class="bar"><span class="lab">${s}</span><span class="track"><span class="seg sev-${s}" style="width:${(D.sev[s]||0)/t*100}%"></span></span><span class="n">${D.sev[s]||0}</span></div>`).join('')}`); },
   'apps-table': h => DataTable(h, {name:'applications', rows: D.apps, filters:['r7','type','risk','repo'], sort:'lh', id: x => x.id,
@@ -78,21 +81,21 @@ const C = {
      detail: x => `<h5>Target</h5><p>${hl(x.target)}</p><h5>Why</h5>${list(x.rationale)}<h5>Options considered</h5>${list(x.options)}<h5>Blocking / high findings</h5>${list(x.blockers)}<h5>Main effort drivers</h5>${list(x.drivers)}<h5>Work items</h5>${list(x.work)}${x.notes.length ? '<h5>To confirm</h5>' + list(x.notes) : ''}`}),
   'linux-scorecard': h => { const lv = {}; D.linux.forEach(r => lv[r.level] = (lv[r.level]||0) + 1);
      const names = {ready:['Linux-ready','already cross-platform, no blockers'], port:['Ready after porting','moves to .NET 10 on Linux with code changes (and replacing any Windows-only parts)'], blocked:['Blocked','Windows-bound: stays on Windows until redesigned'], windows:['Windows-only (desktop)','client app on user machines'], na:['Retiring','not assessed for Linux']};
-     h.innerHTML = `<div class="tiles">${Object.keys(names).map(k => `<div class="tile" data-l="${k}"><div class="l"><span class="lv ${k}">${names[k][0]}</span></div><div class="v">${lv[k]||0}</div><div class="s">${names[k][1]}</div></div>`).join('')}</div>`;
+     h.innerHTML = `<div class="tiles">${Object.keys(names).map(k => `<div class="tile" data-l="${k}" tabindex="0" role="button" aria-pressed="false" title="Show only these applications"><div class="l"><span class="lv ${k}">${names[k][0]}</span></div><div class="v">${lv[k]||0}</div><div class="s">${names[k][1]}</div></div>`).join('')}</div>`;
      const host = document.createElement('div'); h.appendChild(host);
      const t = DataTable(host, {name:'linux-readiness', title:'Readiness by application', rows: D.linux, filters:['level','repo'], sort:'level', asc:true, id: x => x.id,
        cols: [{key:'app',label:'Application'},{key:'framework',label:'Framework'},{key:'level',label:'Linux readiness',flabel:'readiness levels',html:x=>`<span class="lv ${x.level}">${esc(x.status)}</span>`,csv:x=>x.status,sortv:x=>['blocked','port','windows','ready','na'].indexOf(x.level)},
               {key:'windows_apis',label:'Windows APIs',cls:'num'},{key:'framework_blockers',label:'Framework blockers',cls:'num'},{key:'packages',label:'Incompatible pkgs',cls:'num'},{key:'paths',label:'Path issues',cls:'num'},
               {key:'time_culture',label:'Time / culture',cls:'num'},{key:'windows_auth',label:'Windows auth',cls:'num'},{key:'linux_build',label:'Linux build',cls:'mid'},{key:'summary',label:'What stops it',cls:'wide'}]});
-     h.querySelectorAll('.tile').forEach(tl => tl.onclick = () => { const on = tl.classList.toggle('sel'); h.querySelectorAll('.tile').forEach(o => o !== tl && o.classList.remove('sel')); t.st.filters.level = on ? tl.dataset.l : ''; t.render(); }); },
+     h.querySelectorAll('.tile').forEach(tl => tl.onclick = () => { const on = tl.classList.toggle('sel'); h.querySelectorAll('.tile').forEach(o => { if (o !== tl) o.classList.remove('sel'); o.setAttribute('aria-pressed', o.classList.contains('sel')); }); t.st.filters.level = on ? tl.dataset.l : ''; t.render(); }); },
   'linux-issues': h => DataTable(h, {name:'linux-issues', title:'What breaks on Linux — by issue type', rows: D.linuxIssues, filters:['severity'], sort:'severity', asc:true, empty:'No Linux blockers found.',
      cols: [{key:'severity',label:'Severity',html:x=>pill(x.severity),sortv:x=>SEV.indexOf(x.severity)},{key:'issue',label:'Issue',cls:'mid'},{key:'apps',label:'Applications',cls:'mid'},{key:'occurrences',label:'Occurrences',cls:'num'},{key:'refs',label:'Findings',html:x=>x.refs.split(', ').map(r=>`<a class="fref" href="#finding-${esc(r)}">${esc(r)}</a>`).join(' ')}],
      id: x => x.issue, detail: x => `<h5>Why it breaks</h5><p>${hl(x.why)}</p><h5>Fix</h5><p>${hl(x.fix)}</p>`}),
   'linux-build': h => DataTable(h, {name:'linux-build', title:'Linux build validation', rows: D.linuxBuild, filters:['status'], empty:'Not run yet (validate_linux_build.py).', cols:[{key:'project',label:'Project'},{key:'tfms',label:'TFM',html:x=>esc((x.tfms||[]).join(', '))},{key:'status',label:'Result'},{key:'detail',label:'Detail',cls:'wide'}]}),
   'package-groups': h => { const cnt = {}; D.packages.forEach(p => cnt[p.group] = (cnt[p.group]||0) + 1); const vul = D.packages.filter(p => p.vulnerable === 'yes').length;
-     h.innerHTML = `<div class="tiles">${D.pgroups.map(g => `<div class="tile" data-g="${esc(g.group)}"><div class="l">${esc(g.group)}</div><div class="v">${cnt[g.group]||0}</div><div class="s">${esc(g.desc)}</div></div>`).join('')}<div class="tile" data-v="1"><div class="l">With security advisories</div><div class="v">${vul}</div><div class="s">published vulnerabilities for the version in use</div></div></div>`;
-     h.querySelectorAll('.tile').forEach(tl => tl.onclick = () => { const t = TABLES.find(t => t.opt.name === 'packages'); if (!t) return; const on = tl.classList.toggle('sel'); h.querySelectorAll('.tile').forEach(o => o !== tl && o.classList.remove('sel'));
-       t.st.filters = {}; if (on) { if (tl.dataset.v) t.st.filters.vulnerable = 'yes'; else t.st.filters.group = tl.dataset.g; } t.st.page = 0; t.render(); t.host.scrollIntoView({behavior:'smooth'}); }); },
+     h.innerHTML = `<div class="tiles">${D.pgroups.map(g => `<div class="tile" data-g="${esc(g.group)}" tabindex="0" role="button" aria-pressed="false"><div class="l">${esc(g.group)}</div><div class="v">${cnt[g.group]||0}</div><div class="s">${esc(g.desc)}</div></div>`).join('')}<div class="tile" data-v="1" tabindex="0" role="button" aria-pressed="false"><div class="l">With security advisories</div><div class="v">${vul}</div><div class="s">published vulnerabilities for the version in use</div></div></div>`;
+     h.querySelectorAll('.tile').forEach(tl => tl.onclick = () => { const t = TABLES.find(t => t.opt.name === 'packages'); if (!t) return; const on = tl.classList.toggle('sel'); h.querySelectorAll('.tile').forEach(o => { if (o !== tl) o.classList.remove('sel'); o.setAttribute('aria-pressed', o.classList.contains('sel')); });
+       t.st.filters = {}; if (on) { if (tl.dataset.v) t.st.filters.vulnerable = 'yes'; else t.st.filters.group = tl.dataset.g; } t.st.page = 0; t.render(); t.host.scrollIntoView({behavior:SMOOTH}); }); },
   'packages-table': h => DataTable(h, {name:'packages', title:'All packages', rows: D.packages, filters:['group','rec','vulnerable','repo'], sort:'group', asc:true, id: x => x.repo + x.id,
      cols: [{key:'id',label:'Package'},{key:'versions',label:'Version(s)'},{key:'latest',label:'Latest'},{key:'group',label:'Group',flabel:'groups',html:x=>`<span class="tag">${esc(x.group)}</span>`,sortv:x=>D.pgroups.findIndex(g=>g.group===x.group)},
             {key:'vulnerable',label:'Advisories',flabel:'advisory states',html:x=>x.advisories?`<span class="pill High">${esc(x.advisories)}</span>`:'',csv:x=>x.advisories},{key:'rec',label:'Recommendation',flabel:'recommendations',html:x=>x.rec?`<span class="tag">${esc(x.rec)}</span> ${esc(x.rec_version)}`:'',csv:x=>(x.rec+' '+x.rec_version).trim()},{key:'replacement',label:'Replacement / successor',cls:'wide'},{key:'projects',label:'Projects',cls:'num'}],
@@ -125,14 +128,14 @@ const C = {
      csvCols: [{key:'n',label:'#'},{key:'area',label:'Area'},{key:'question',label:'Question'},{key:'raised',label:'Raised by'},{key:'answer',label:'Answer',csv:()=>''}]}),
   'projects-table': h => DataTable(h, {name:'projects', title:'Projects', rows: D.projects, filters:['type','format','repo'], sort:'loc', cols: [{key:'project',label:'Project'},{key:'type',label:'Type'},{key:'tfm',label:'TFM'},{key:'format',label:'Format'},{key:'packages',label:'Packages'},{key:'language',label:'Language'},{key:'loc',label:'LOC',cls:'num'},{key:'support',label:'Support status'}]}),
   'winapi-table': h => DataTable(h, {name:'windows-and-legacy-api-usage', title:'Every Windows-only and legacy API occurrence', rows: D.winapi, filters:['api'], sort:'ref', asc:true, cols: [{key:'ref',label:'Ref',html:x=>`<a class="fref" href="#finding-${esc(x.ref)}">${esc(x.ref)}</a>`},{key:'api',label:'API / technology',flabel:'APIs'},{key:'loc',label:'Location'},{key:'code',label:'Code',html:x=>`<code>${hl(x.code)}</code>`}]}),
-  'glossary': h => card(h, `<h3>Glossary</h3><div class="tablewrap" style="max-height:none"><table class="md glossary"><tbody>${(window.GLOSSARY||[]).map(g => `<tr><th>${esc(g[0])}</th><td>${esc(g[1])}</td></tr>`).join('')}</tbody></table></div>`),
+  'glossary': h => card(h, `<h3>Glossary</h3><div class="tablewrap"><table class="md glossary"><tbody>${(window.GLOSSARY||[]).map(g => `<tr><th>${esc(g[0])}</th><td>${esc(g[1])}</td></tr>`).join('')}</tbody></table></div>`),
 };
 
 function drawMap(h) {
   const M = D.map; const cols = [['clients','Clients'],['apps','Applications'],['libs','Shared libraries'],['data','Data'],['external','External systems']];
   const colour = n => n.col === 'external' ? (n.r7 === 'onprem' ? 'var(--blocked)' : n.r7 === 'more' ? 'var(--na)' : 'var(--port)') : ({Replatform:'var(--ready)',Refactor:'var(--port)',Retain:'var(--windows)',Rehost:'var(--medium)',Retire:'var(--na)',Repurchase:'var(--high)',Relocate:'var(--medium)'}[n.r7] || 'var(--accent)');
   card(h, `<h3>Application and dependency map</h3><div class="tools"><label class="small"><input type="checkbox" class="hideRetired" checked> hide retired applications</label><span class="muted small">Hover a box to highlight its connections. Colour = 7R decision (green Replatform, blue Refactor, purple Retain, amber Rehost, grey Retire); red = on-premises system, blue = third-party.</span></div>
-    <div class="amap"><svg></svg><div class="cols">${cols.map(([k,t]) => `<div class="col"><h4>${t}</h4>${M.nodes.filter(n => n.col === k).map(n => `<div class="node ${n.r7==='Retire'?'retired':''}" data-id="${esc(n.id)}" style="--c:${colour(n)}"><div>${esc(n.label)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>`).join('') || '<div class="muted small">—</div>'}</div>`).join('')}</div></div>`);
+    <div class="amap"><svg></svg><div class="cols">${cols.map(([k,t]) => `<div class="col"><h4>${t}</h4>${M.nodes.filter(n => n.col === k).map(n => `<div class="node ${n.r7==='Retire'?'retired':''}" tabindex="0" data-id="${esc(n.id)}" style="--c:${colour(n)}"><div>${esc(n.label)}</div>${n.sub ? `<div class="s">${esc(n.sub)}</div>` : ''}</div>`).join('') || '<div class="muted small">—</div>'}</div>`).join('')}</div></div>`);
   const box = h.querySelector('.amap'), svg = box.querySelector('svg'), inner = box.querySelector('.cols');
   function lines() {
     if (box.offsetParent === null) return;
@@ -147,7 +150,8 @@ function drawMap(h) {
   box.querySelectorAll('.node').forEach(n => { n.onmouseenter = () => { const id = n.dataset.id; const linked = new Set([id]); M.edges.forEach(([a,z]) => { if (a === id) linked.add(z); if (z === id) linked.add(a); });
       box.querySelectorAll('.node').forEach(o => o.classList.toggle('dim', !linked.has(o.dataset.id))); n.classList.add('hl');
       svg.querySelectorAll('path').forEach(p => { const on = p.dataset.a === id || p.dataset.z === id; p.classList.toggle('hl', on); p.classList.toggle('dim', !on); }); };
-    n.onmouseleave = () => { box.querySelectorAll('.node').forEach(o => o.classList.remove('dim','hl')); svg.querySelectorAll('path').forEach(p => p.classList.remove('hl','dim')); }; });
+    n.onmouseleave = () => { box.querySelectorAll('.node').forEach(o => o.classList.remove('dim','hl')); svg.querySelectorAll('path').forEach(p => p.classList.remove('hl','dim')); };
+    n.onfocus = n.onmouseenter; n.onblur = n.onmouseleave; });
   box.querySelectorAll('.node.retired').forEach(n => n.style.display = 'none');
   window.addEventListener('resize', lines); h._draw = lines;
 }
@@ -157,20 +161,33 @@ function renderPlans(h) { h = h || document.getElementById('app-plans-host'); if
 
 document.querySelectorAll('.component').forEach(h => { const n = h.dataset.component;
   if (n.startsWith('findings:')) findings(h, n.split(':')[1]); else if (n === 'app-plans') { h.id = 'app-plans-host'; renderPlans(h); } else if (C[n]) C[n](h); });
+// "On this page" links for long tabs: one per titled block, pointing at the block (its title is re-rendered by filters)
+document.querySelectorAll('.tab').forEach(tab => { const blocks = [...tab.querySelectorAll(':scope > .component, :scope > .card, :scope > .prose')].map((b, i) => { const t = b.querySelector('h3'); if (!t) return null; b.id = b.id || tab.id + '-s' + i; return [b.id, t.textContent.replace(/\s*\(\d+\)$/, '').replace(/ — click.*$/, '')]; }).filter(Boolean);
+  if (blocks.length < 4) return; const nav = document.createElement('nav'); nav.className = 'jump'; nav.setAttribute('aria-label', 'On this page');
+  nav.innerHTML = '<b>On this page</b>' + blocks.map(([id, t]) => `<a href="#${id}" data-jump="${id}">${esc(t)}</a>`).join('');
+  const after = tab.querySelector(':scope > .intro') || tab.querySelector(':scope > h2'); after.after(nav); });
+document.addEventListener('click', e => { const a = e.target.closest('a[data-jump]'); if (!a) return; e.preventDefault(); document.getElementById(a.dataset.jump).scrollIntoView({behavior: SMOOTH, block: 'start'}); });
 function show(id, push = true) { const tab = document.getElementById('tab-' + id) ? id : 'overview';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + tab)); document.querySelectorAll('nav.side a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
   if (push) history.replaceState(null, '', '#' + tab); window.scrollTo(0, 0); document.querySelector('nav.side').classList.remove('open');
   requestAnimationFrame(() => document.querySelectorAll('#tab-' + tab + ' .card').forEach(c => c._draw && c._draw())); }
 document.querySelectorAll('nav.side a').forEach(a => a.onclick = e => { e.preventDefault(); show(a.dataset.tab); });
-document.getElementById('menu').onclick = () => document.querySelector('nav.side').classList.toggle('open');
+document.getElementById('menu').onclick = e => { const open = document.querySelector('nav.side').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', open); };
 const search = document.getElementById('q'); let timer;
 search.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { Q = search.value.trim(); TABLES.forEach(t => { t.st.page = 0; t.render(); }); renderPlans();
   document.querySelectorAll('nav.side a').forEach(a => { const sec = document.getElementById('tab-' + a.dataset.tab); const b = a.querySelector('.badge'); if (!sec || !b) return;
     const n = Q ? (sec.textContent.toLowerCase().split(Q.toLowerCase()).length - 1) : 0; b.textContent = n; b.style.display = Q && n ? 'inline-block' : 'none'; }); }, 220); };
 document.addEventListener('click', e => { const a = e.target.closest('a.fref'); if (!a) return; e.preventDefault(); const ref = a.getAttribute('href').replace('#finding-','');
   const t = TABLES.find(t => t.opt.name === 'findings-all'); if (!t) return; search.value = ''; Q = ''; TABLES.forEach(x => x.render()); show('findings'); t.openRow(ref);
-  const row = document.querySelector(`#tab-findings tr[data-anchor="finding-${ref}"]`); (row || t.host).scrollIntoView({behavior:'smooth', block:'center'}); });
+  const row = document.querySelector(`#tab-findings tr[data-anchor="finding-${ref}"]`); (row || t.host).scrollIntoView({behavior:SMOOTH, block:'center'}); if (row) row.focus({preventScroll: true}); });
+// keyboard: Enter / Space act on sortable headers, expandable rows, filter tiles and clickable bars; / jumps to search
+document.addEventListener('keydown', e => { const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing) { e.preventDefault(); search.focus(); search.select(); return; }
+  if (e.key === 'Escape' && document.activeElement === search && search.value) { search.value = ''; search.oninput(); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && !typing) { const el = e.target.closest('th[data-k], tr.row[tabindex], .tile[tabindex], .bar[tabindex]'); if (el && !e.target.closest('a, button')) { e.preventDefault(); el.click(); } } });
+const toTop = document.getElementById('totop'); window.addEventListener('scroll', () => toTop.classList.toggle('on', scrollY > 900), {passive: true}); toTop.onclick = () => window.scrollTo({top: 0, behavior: SMOOTH});
 document.getElementById('theme').onclick = () => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch (e) {} };
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
-window.addEventListener('hashchange', () => show(location.hash.slice(1), false));
+window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (document.getElementById('tab-' + h)) show(h, false); });
+document.querySelector('.skip').onclick = e => { e.preventDefault(); document.getElementById('main').focus(); };
 show((location.hash || '#overview').slice(1), false);
