@@ -47,10 +47,12 @@ Options:
 // meant for request bodies) — so ref must go in the URL query string, with
 // --method GET forced explicitly, or this silently POSTs to the contents
 // endpoint (which 404s) instead of reading the file.
+// Each path segment is URL-encoded so spaces, # and ? in file names reach the API intact.
+const url = `repos/${values.owner}/${values.repo}/contents/${values.path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(values.ref)}`;
 const result = spawnSync('gh', [
   'api',
   '--method', 'GET',
-  `repos/${values.owner}/${values.repo}/contents/${values.path}?ref=${encodeURIComponent(values.ref)}`,
+  url,
   '--jq', '.content // empty',
 ], { encoding: 'utf8', maxBuffer: 25 * 1024 * 1024 });
 
@@ -62,9 +64,16 @@ if (result.status !== 0) {
 
 const base64 = result.stdout.trim();
 if (!base64) {
+  // Over ~1MB the Contents API omits `content`; the raw media type still returns the file (up to 100MB).
+  const raw = spawnSync('gh', ['api', '--method', 'GET', '-H', 'Accept: application/vnd.github.raw', url],
+    { encoding: 'utf8', maxBuffer: 110 * 1024 * 1024 });
+  if (raw.status === 0 && raw.stdout) {
+    process.stdout.write(raw.stdout);
+    exit(0);
+  }
   console.error(
     `No content returned for ${values.path}@${values.ref} — the file may not exist at ` +
-    `this ref, or it's over the Contents API's ~1MB limit (GitHub omits content for large files).`
+    `this ref, or it's a directory, a submodule or over 100MB.`
   );
   exit(1);
 }
