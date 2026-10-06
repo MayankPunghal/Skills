@@ -97,6 +97,8 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:dependencies}}
 
+{{block:network}}
+
 ### 4.5 Project interdependencies
 
 {{block:project-deps}}

@@ -24,6 +24,9 @@ Adapters (codebase-docs.json "adapters", run in order; generic-areas always last
                    with route, model, layout, code-behind, lines and totals per kind and project
   generic-portability  Windows-to-Linux / modern .NET portability flags (the migration-assessment portability rules only),
                    file:line per rule, plus the Windows-only packages from generic-deps
+  generic-endpoints  network endpoints: every outbound destination (host, port, protocol, internal / external, config key,
+                   methods that use it), every inbound listener (launchSettings, Kestrel, Docker, compose, WCF) and the outbound
+                   call sites (HttpClient, WCF, SMTP, FTP, brokers, cloud SDKs): the input for allow-lists and integration docs
   generic-flows    business-flow pages + interactive viewer from docs/_src/workflows/flows/*.flow.json (runs late)
   generic-sql      tables and routines from .sql DDL (SSDT, migrations, schema folders)
   generic-config   configuration key names per config file (never values)
@@ -58,6 +61,7 @@ ADAPTER_SCRIPTS = {
     "generic-di": ["generic/di_reference.py"],
     "generic-views": ["generic/view_reference.py"],
     "generic-portability": ["generic/portability_reference.py"],
+    "generic-endpoints": ["generic/endpoint_reference.py"],
     "aspnet-mvc-ssdt": ["aspnet-mvc-ssdt/gen_reference.py", "aspnet-mvc-ssdt/gen_seeds.py",
                         "aspnet-mvc-ssdt/gen_inventory.py", "aspnet-mvc-ssdt/gen_ssrs.py"],
 }
@@ -83,7 +87,7 @@ def main():
     if not a.skip_adapters:
         # these read the method map / finished reference, so they run after the others, in this order
         late = ["generic-api", "generic-errors", "generic-di", "generic-tests", "generic-dbaccess", "generic-trace", "generic-views",
-                "generic-portability", "generic-flows", "generic-areas"]
+                "generic-portability", "generic-endpoints", "generic-flows", "generic-areas"]
         names = [n for n in cfg["adapters"] if n not in late] + [n for n in late if n in cfg["adapters"]]
         done = set()
         if "generic-di" in cfg["adapters"]:

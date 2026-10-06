@@ -440,6 +440,28 @@ def b_dependencies(c):
     return table(["Kind", "System", "Protocol / details", "References", "First evidence", "Repository"], rows)
 
 
+def b_network(c):
+    """Network allow-list: what the AWS VPC must let out (egress, VPN routes, partner allow-lists) and in (listeners)."""
+    nw = A.network(c)
+    if nw["missing"] and not (nw["outbound"] or nw["inbound"]):
+        return "_Network allow-list not analysed (codebase-documenter not found; set CODEBASE_DOCUMENTER_DIR and rerun scan_repo.py --force)._"
+    tech = Counter(cl["tech"] for cl in nw["clients"])
+    out = ["**Network allow-list: outbound (egress)**: every destination named in code or configuration (URL literals, host settings, "
+           "connection strings, WCF client endpoints, UNC shares). Ports marked (default) are the protocol default, not read from the code. "
+           "Destinations built at run time are not visible: confirm the list with the client's network team.\n",
+           table(["Destination", "Port", "Protocol", "Kind", "Applications", "Defined in", "Evidence", "Needed on AWS"],
+                 [(f"`{x['host']}`", x["port"], x["protocol"], {"internal": "On-prem / internal", "external": "External", "external-ip": "Public IP"}.get(x["kind"], x["kind"]),
+                   x["applications"], x["defined"], x["evidence"], x["needs"]) for x in nw["outbound"]]) if nw["outbound"] else "_No outbound destination named in code or configuration._",
+           "\n**Inbound listeners**: ports the applications open. launchSettings / IIS Express are local development ports; on AWS the ALB "
+           "listens on 443 and forwards to the container port.\n",
+           table(["Application / project", "Port", "Protocol", "Source", "Evidence"],
+                 [(x["application"], x["port"], x["protocol"], x["source"], x["evidence"]) for x in nw["inbound"]]) if nw["inbound"] else "_No listener configuration found._"]
+    if nw["clients"]:
+        out.append(f"\n**Outbound call sites**: {len(nw['clients'])} ({', '.join(f'{t} {v}' for t, v in tech.most_common())}); "
+                   f"{nw['runtime_clients']} get their destination at run time (no configuration key or literal next to the call): ask the client where those addresses come from.")
+    return "\n".join(out)
+
+
 def evidence_cell(f, n=2):
     ev = f.get("evidence") or []
     cells = [f"`{F.evidence_ref(e)}`" for e in ev[:n]]
@@ -908,7 +930,7 @@ def b_appendix_projects(c):
 
 
 BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
-          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies,
+          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
@@ -964,6 +986,14 @@ def exports(c, rdir):
         w.writerow(["#", "area", "question", "raised_by", "answer"])
         for i, (a, q, r) in enumerate(open_questions(c), 1):
             w.writerow([i, a, q, r, ""])
+    nw = A.network(c)
+    with open(os.path.join(rdir, "network-allowlist.csv"), "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.writer(fh)
+        w.writerow(["direction", "repo", "host_or_application", "port", "protocol", "kind", "applications", "defined_in", "evidence", "needed_on_aws"])
+        for x in nw["outbound"]:
+            w.writerow(["outbound", x["repo"], x["host"], x["port"], x["protocol"], x["kind"], x["applications"], x["defined"].replace("`", ""), x["evidence"], x["needs"]])
+        for x in nw["inbound"]:
+            w.writerow(["inbound", x["repo"], x["application"], x["port"], x["protocol"], "listener", x["application"], x["source"], x["evidence"], ""])
     with open(os.path.join(rdir, "endpoints.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["repo", "host", "kind", "schemes", "occurrences", "files"])
@@ -1007,7 +1037,7 @@ def main():
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)
     mark_step(root, "report")
-    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv")
+    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv")
 
 
 if __name__ == "__main__":

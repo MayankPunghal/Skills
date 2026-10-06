@@ -44,6 +44,13 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
   - row-level security predicate functions, reached only from the `CREATE SECURITY POLICY`.
 
   Without them, objects look unused that are not (`sql_graph.py` reads all three).
+- Integrations are more than URL literals. Allow-lists also need:
+  - bare host settings (`Smtp:Host`, `Redis:Server`, `Kafka:BootstrapServers`);
+  - connection-string servers and ports;
+  - WCF client endpoints, and UNC file shares (SMB 445);
+  - the inbound side (launchSettings, Kestrel, Docker / compose ports, WCF service addresses).
+
+  WCF `<services>` addresses are inbound, `<client>` addresses outbound. A URL under a config key is reported once, with the key. `network_endpoints.py` handles all of these.
 - A section whose only content is a diagram or code block is not empty (`verify_docs.py` page hygiene).
 - After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and migration-assessment's `map_graphs.py` does the same for the resolver and the database layer.
 

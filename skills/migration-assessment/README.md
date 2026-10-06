@@ -83,7 +83,7 @@ All in `assessment/report/`:
   1. Executive summary
   2. Scope and method
   3. Application inventory
-  4. Architecture and dependencies (Mermaid map, graphify insights, project interdependencies, workflow dependencies, database object dependencies)
+  4. Architecture and dependencies (Mermaid map, graphify insights, network allow-list, project interdependencies, workflow dependencies, database object dependencies)
   5. Findings by category (27 categories, each with evidence or "checked, none found")
   6. Database assessment (dual / PostgreSQL code conversion)
   7. Per-application plans (with the hybrid table)
@@ -91,7 +91,7 @@ All in `assessment/report/`:
   9. Risks and open questions
   10. Testing, QA and merge strategy
   11. Appendices: packages, projects, every Windows-API occurrence, raw outputs, sources
-- **Exports:** `findings.csv/json`, `applications.csv`, `packages.csv`, `open-questions.csv` (with an empty answer column) and `endpoints.csv`.
+- **Exports:** `findings.csv/json`, `applications.csv`, `packages.csv`, `open-questions.csv` (with an empty answer column), `endpoints.csv` and `network-allowlist.csv` (outbound destinations with ports and inbound listeners, for the AWS VPC allow-lists).
 
 ## Structure
 
