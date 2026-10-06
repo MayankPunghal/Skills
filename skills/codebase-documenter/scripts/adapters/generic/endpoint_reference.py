@@ -48,7 +48,7 @@ def main():
     dests = NE.destinations(net)
     # literal URLs in code: the method holding them uses the destination
     for g in dests:
-        lit = [e.split(":") for e in g["evidence"]]
+        lit = [e.rsplit(":", 1) for e in g["evidence"]]
         g["code_users"] = sorted({(f, int(ln)) for f, ln in lit if os.path.splitext(f)[1].lower() in NE.CODE})
     out = ["# Network endpoints", "",
            "Every destination the code and its configuration call out to, and every port the applications listen on: the input for "

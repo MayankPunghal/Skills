@@ -113,7 +113,8 @@ CLIENTS = [("HTTP (HttpClient)", r"\bnew\s+HttpClient\b|\bAddHttpClient\b|\bIHtt
 CLIENT_RX = [(t, re.compile(p)) for t, p in CLIENTS]
 # configuration keys named in code: config["A:B"], GetValue<T>("A:B"), GetSection("A"), GetConnectionString("X"), AppSettings["K"]
 KEY_IN_CODE = re.compile(r"""(?:Configuration|config|_config|_configuration|cfg|settings|AppSettings|ConnectionStrings)\s*\[\s*["']([\w:.\-]+)["']\s*\]|"""
-                         r"""(?:GetValue\s*<[^>]+>|GetSection|GetConnectionString|GetRequiredSection)\s*\(\s*["']([\w:.\-]+)["']""", re.I)
+                         r"""(?:GetValue\s*<[^>]+>|GetValue\s*\(\s*Of\s+\w+\s*\)|GetSection|GetConnectionString|GetRequiredSection|"""
+                         r"""AppSettings|ConnectionStrings)\s*\(\s*["']([\w:.\-]+)["']""", re.I)  # VB: AppSettings("Key")
 # \\server\share (also escaped "\\\\server\\share" in C# literals): SMB to a file server
 UNC = re.compile(r"(?<![\w\\])\\{2,4}([A-Za-z0-9][A-Za-z0-9.\-]{1,62})\\{1,2}[\w$.\-]+")
 INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|Local)?IP\s*\(\s*(\d{2,5})|\.Listen\s*\(\s*IPAddress\.\w+\s*,\s*(\d{2,5})|"""
