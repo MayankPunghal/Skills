@@ -35,9 +35,13 @@ SETTINGS_JSON = re.compile(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w
 TEMPLATE_FILE = re.compile(r"(?i)[._-](example|sample|template|tmpl|dist)([._-]|$)")
 PLACEHOLDER = re.compile(r"(?i)^\s*(|<.*>|\$\{.*\}|\$\(.*\)|#\{.*\}|%.*%|\{\{.*\}\}|\{\w*\}|x{3,}|\*+|\.+|changeme|change[-_ ]?me\w*|"
                          r"password|pass|pwd|secret|your[-_ ]?\w*|placeholder|replace[-_ ]?\w*|set[-_ ]by[-_ ].*|to[-_ ]?do|tbd|dummy|sample|example)\s*$")
+SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd$|secret|token$|apikey|api_key|accesskey|access_key|privatekey|private_key|credential|clientkey|sharedkey|signingkey)")
+# values that are never secrets: flags, numbers, unexpanded variables, URLs without user info
+TRIVIAL_VALUE = re.compile(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|\{.*\}|xxx+|\*+|changeme|[a-z][\w+.-]*://[^@\s]*)\s*")
 # __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
 TOKEN_SHAPED = re.compile(r"^__\w+__$")
 MAX_EVIDENCE = 25
+CONF_ORDER = {"Confirmed": 0, "Likely": 1, "Needs verification": 2}
 MAX_FILE_BYTES = 2_500_000
 TYPE_BY_EXT = {".cs": "cs", ".vb": "vb", ".aspx": "markup", ".ascx": "markup", ".master": "markup", ".asax": "markup", ".ashx": "markup",
                ".asmx": "markup", ".svc": "markup", ".cshtml": "markup", ".vbhtml": "markup", ".razor": "markup", ".config": "config",
@@ -159,6 +163,9 @@ class Scan:
                 "baseline": bool(rule.get("baseline")), "db": rule.get("db"), "question": rule.get("question"), "refs": rule.get("refs", []), "source": "scan"}
             if rule.get("db_only"):  # database-side work: priced in the database estimate only, not in application packages
                 f["db_only"] = True
+        elif CONF_ORDER.get(rule["conf"], 9) < CONF_ORDER.get(f["confidence"], 9):
+            # a stronger occurrence decides: a real password after a __token__-shaped one makes the finding Confirmed / Likely
+            f["confidence"], f["why"] = rule["conf"], rule.get("why", f["why"])
         f["occurrences"] += count
         if file not in f["files"]:
             f["files"].append(file)
@@ -342,6 +349,15 @@ class Scan:
                 for name, val in cs.items():
                     if isinstance(val, str):
                         self.connection(rp, project, name, val, "", self.line_of(text, name))
+
+            def walk(o, path):  # "Smtp": {"Password": "..."}, "Jwt:Secret": "...": key paths as .NET configuration names them
+                for k, v in (o.items() if isinstance(o, dict) else enumerate(o) if isinstance(o, list) else []):
+                    p = f"{path}:{k}" if path else str(k)
+                    if isinstance(v, str) and path.lower() != "connectionstrings":
+                        self.secret_setting(rp, project, text, p, v, f'"{p}": "***"')
+                    elif isinstance(v, (dict, list)):
+                        walk(v, p)
+            walk(obj, "")
             return
         try:
             root = ET.fromstring(text.encode("utf-8"))
@@ -350,15 +366,26 @@ class Scan:
         for add in root.iter("add"):
             if add.get("connectionString") is not None and add.get("name"):
                 self.connection(rp, project, add.get("name"), add.get("connectionString"), add.get("providerName", ""), self.line_of(text, add.get("name")))
-            key = add.get("key")
-            val = add.get("value")
-            if key and val and not TEMPLATE_FILE.search(os.path.basename(rp)) and not PLACEHOLDER.match(val) and re.search(r"(?i)(pass|pwd|secret|token|apikey|api_key|accesskey|privatekey|credential|clientkey|sharedkey)", key) \
-                    and not re.fullmatch(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|__\w+__|\{.*\}|xxx+|\*+|changeme)\s*", val):
-                self.facts["secret_settings"].append({"file": rp, "key": key})
-                r = self.synthetic("CFG-SECRET-SETTING", "configuration-secrets", "Secret-like value stored in configuration", "High", "Likely",
-                                   "Secrets in web.config/app.config are copied to every server and every repository clone.",
-                                   "Move to AWS Secrets Manager / Parameter Store SecureString; rotate the value.", "AWS Secrets Manager", "trivial", ["S21"])
-                self.add(r, project, rp, self.line_of(text, key), f'<add key="{key}" value="***" />')
+            if add.get("key") and add.get("value"):
+                self.secret_setting(rp, project, text, add.get("key"), add.get("value"), f'<add key="{add.get("key")}" value="***" />')
+
+    def secret_setting(self, rp, project, text, key, val, shown):
+        """A secret-like key (password, token, API key ...) with a real-looking value in a committed, non-template config file."""
+        if TEMPLATE_FILE.search(os.path.basename(rp)) or PLACEHOLDER.match(val) or not SECRET_KEY.search(key.split(":")[-1]) or TRIVIAL_VALUE.fullmatch(val):
+            return
+        ignored = self.git_ignored(rp)
+        self.facts["secret_settings"].append({"file": rp, "key": key, "git_ignored": ignored})
+        if ignored:  # not committed: exists on this copy only (same rule as CFG-LOCAL-DB-PASSWORD, no finding)
+            return
+        token = bool(TOKEN_SHAPED.match(val.strip()))
+        r = self.synthetic("CFG-SECRET-SETTING", "configuration-secrets", "Secret-like value stored in configuration", "High",
+                           "Needs verification" if token else "Likely",
+                           "Secrets in committed configuration files are copied to every server and every repository clone."
+                           + (" The value has a __token__ shape: confirm whether a release step replaces it (then it is a placeholder) "
+                              "or it is the real secret." if token else ""),
+                           "Move to AWS Secrets Manager / Parameter Store SecureString; rotate the value.", "AWS Secrets Manager", "trivial", ["S21"],
+                           question=f"Is the __token__-shaped value of '{key}' replaced at deployment, and by what?" if token else None)
+        self.add(r, project, rp, self.line_of(text, key if key in text else key.split(":")[-1]), shown + (" (value has a __token__ shape)" if token else ""))
 
     def connection(self, rp, project, name, cs, provider, line):
         parts = {}

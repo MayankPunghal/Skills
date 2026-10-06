@@ -206,10 +206,12 @@ def sprint_plan(app_queue, db_work, engineers, est, start_date=None, p80_ratio=1
             start = datetime.date.fromisoformat(str(start_date))
         except ValueError:
             start = None
-    plan, k = [], 0
+    plan, k, ob_left = [], 0, onboard_h
     while (apps or dbs) and k < 200:
         k += 1
-        cap_eng = per_eng - (onboard_h if k == 1 else 0.0)  # onboarding: clone, restore, baseline build, existing tests
+        ob = min(ob_left, per_eng)  # onboarding: clone, restore, baseline build, existing tests (spills over if longer than a sprint)
+        ob_left -= ob
+        cap_eng = per_eng - ob
         cap_db = min(db_eng * cap_eng, sum(h for _, h in dbs)) if dbs else 0.0
         cap_app = engineers * cap_eng - cap_db
         rows = []
@@ -232,7 +234,7 @@ def sprint_plan(app_queue, db_work, engineers, est, start_date=None, p80_ratio=1
             take(apps, left, "application")
         s = {"sprint": k, "weeks": f"{(k - 1) * weeks + 1}-{k * weeks}", "capacity_hours": round(engineers * cap_eng),
              "planned_hours": sum(r["hours"] for r in rows), "items": rows}
-        if k == 1 and onboard_h:
+        if ob:
             s["onboarding"] = f"{sp.get('onboarding_days')} day(s): codebase access, clone, restore, baseline build and existing tests on the current stack"
         if start:
             s["start"] = (start + datetime.timedelta(weeks=(k - 1) * weeks)).isoformat()
