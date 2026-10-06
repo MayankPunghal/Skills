@@ -23,88 +23,9 @@ import sys
 
 from _common import load_config, utf8_stdout
 
-
-def load(cfg):
-    p = os.path.join(cfg["docs_dir"], "agent", "methods.json")
-    if not os.path.exists(p):
-        sys.exit(f"{p} not found: run build_site.py --no-site with the generic-graph adapter first")
-    return json.load(open(p, encoding="utf-8"))
-
-
-def find(m, name):
-    n = name.lower()
-    exact = [a for a, x in m.items() if x["name"].lower() == n]
-    if exact:
-        return exact
-    return sorted((a for a, x in m.items() if x["name"].lower().endswith("." + n) or x["name"].lower().endswith(n)),
-                  key=lambda a: len(m[a]["name"]))
-
-
-def params(x):
-    return "(" + ", ".join(x["params"]) + ")" if x.get("params") is not None else ""
-
-
-def tree(m, root, depth, up, limit):
-    lines, seen = [], set()
-
-    def walk(a, d, prefix, how=""):
-        if len(lines) >= limit:
-            return
-        x = m[a]
-        mark = " ↺" if a in seen else ""
-        lines.append(f"{prefix}{f'[{how}] ' if how else ''}{x['name']}{params(x)}  {x['file']}:{x['line']}{mark}")
-        if a in seen or d >= depth:
-            return
-        seen.add(a)
-        for b in (x["callers"] if up else x["calls"]):
-            if b in m:
-                walk(b, d + 1, prefix + "  ", hop(m, b, a) if up else hop(m, a, b))
-    walk(root, 0, "")
-    if len(lines) >= limit:
-        lines.append(f"... truncated at {limit} lines (use --depth or --max)")
-    return lines
-
-
-def hop(m, a, b):
-    """How the call a -> b is bound at run time ("" for a plain call)."""
-    return (m[a].get("via") or {}).get(b, "")
-
-
-def entries(cfg, m, target):
-    """Entry points (endpoints, UI events, jobs) that reach `target`, each with one shortest call path and its UI triggers."""
-    p = os.path.join(cfg["docs_dir"], "agent", "entry-points.json")
-    if not os.path.exists(p):
-        sys.exit(f"{p} not found: run build_site.py --no-site with the generic-trace adapter first")
-    data = json.load(open(p, encoding="utf-8"))
-    out = []
-    for e in data["entries"]:
-        prev, frontier = {e["handler"]: None}, [e["handler"]]
-        while frontier and target not in prev:
-            nxt = []
-            for a in frontier:
-                for b in (m.get(a) or {}).get("calls", []):
-                    if b not in prev and b in m:
-                        prev[b] = a
-                        nxt.append(b)
-            frontier = nxt
-        if target in prev:
-            path, a = [], target
-            while a:
-                p = prev[a]
-                how = hop(m, p, a) if p else ""
-                path.append((f"[{how}] " if how else "") + m[a]["name"])
-                a = p
-            out.append((len(path), e, " → ".join(reversed(path))))
-    if not out:
-        return [f"{m[target]['name']}: no entry point reaches it in the static call graph (dead code, reflection / run-time dispatch, or a missing edge; for C# check reference/dependency-injection.md)"]
-    lines = [f"{m[target]['name']} is reached from {len(out)} entry point(s):"]
-    for _, e, path in sorted(out, key=lambda t: t[0]):
-        lines.append(f"  {e['kind']}: {e['label']}  ({e['file']}:{e['line']})")
-        lines.append(f"    {path}")
-        for u in data["ui"]:
-            if u.get("handler") == e["handler"] and u.get("endpoint"):
-                lines.append(f"    UI: \"{u['label']}\" ({u['element']}, {u['event']})  {u['file']}:{u['line']}")
-    return lines
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime"))
+# the call-tree code ships with the docs (docs/_tools/trace_calls.py), so an agent answering questions can trace too
+import trace_calls  # noqa: E402
 
 
 def lane_of(x):
@@ -151,23 +72,18 @@ def main():
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
-    m = load(cfg)
-    hits = find(m, a.name)
-    if not hits:
-        sys.exit(f"no method matches {a.name!r} (try Class.Method, or lookup.py {a.name} --kind method)")
-    if len(hits) > 1 and m[hits[0]]["name"].lower() != a.name.lower():
-        print("several matches, using the first; qualify as Class.Method to pick another:")
-        for h in hits[:10]:
-            print(f"  {m[h]['name']}  {m[h]['file']}:{m[h]['line']}")
+    agent = os.path.join(cfg["docs_dir"], "agent")
+    m = trace_calls.load(agent)
+    hits = [trace_calls.pick(m, a.name)]
     if a.draft:
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", a.draft):
             sys.exit("flow id: lower-case letters, digits and dashes")
         draft(cfg, m, hits[0], a.depth, a.draft)
         return
     if a.entry:
-        print("\n".join(entries(cfg, m, hits[0])))
+        print("\n".join(trace_calls.entries(agent, m, hits[0])))
         return
-    print("\n".join(tree(m, hits[0], a.depth, a.up, a.max)))
+    print("\n".join(trace_calls.tree(m, hits[0], a.depth, a.up, a.max)))
 
 
 if __name__ == "__main__":

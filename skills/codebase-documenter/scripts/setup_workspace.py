@@ -5,7 +5,7 @@
         --description "Order management platform for ..." [--adapters generic-graph,generic-sql,generic-areas] [--force-config]
 
 Creates: codebase-docs.json, docs/_src/** page scaffold (from templates/pages.json), docs/_notes/PROGRESS.md,
-docs/_tools/ (runtime scripts: build_docs.py, gen_agent_index.py, gen_rag_cards.py, lookup.py), docs/assets/, mkdocs.yml, .gitignore lines,
+docs/_tools/ (runtime scripts: build_docs.py, gen_agent_index.py, gen_rag_cards.py, lookup.py, trace_calls.py), docs/assets/, mkdocs.yml, .gitignore lines,
 SKILL-ISSUES.md (the run issues log for the skill owner, at the workspace root so it never ships in the package).
 """
 import argparse
@@ -15,7 +15,7 @@ import shutil
 
 from _common import CONFIG_NAME, DEFAULTS, SKILL_DIR, TEMPLATES, render, save_config, utf8_stdout, write
 
-RUNTIME = ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py")
+RUNTIME = ("build_docs.py", "gen_agent_index.py", "gen_rag_cards.py", "lookup.py", "trace_calls.py")
 
 
 def main():
