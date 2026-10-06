@@ -41,8 +41,9 @@ import os
 import re
 import shutil
 import sys
+import time
 
-from _common import ADAPTERS, SKILL_DIR, load_config, run, tick, utf8_stdout
+from _common import ADAPTERS, SKILL_DIR, graph_busy, load_config, run, step, tick, utf8_stdout
 from reader_guide import site_assets, write_guide
 
 ADAPTER_SCRIPTS = {
@@ -75,9 +76,18 @@ def main():
     ap.add_argument("--skip-adapters", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--wait", action="store_true", help="wait for a running graph build instead of stopping")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
+    busy = graph_busy(cfg)
+    while busy and a.wait:  # the adapters read graph.json: never while code_graph.py is rewriting it
+        step(f"waiting: graph {busy.get('step', 'build')} running since {busy.get('started', '?')} (pid {busy.get('pid')}) ...")
+        time.sleep(30)
+        busy = graph_busy(cfg)
+    if busy:
+        sys.exit(f"graph {busy.get('step', 'build')} still running since {busy.get('started', '?')} (pid {busy.get('pid')}): "
+                 f"the adapters would read a half-written graph.json. Wait for it, or rerun with --wait.")
     docs = cfg["docs_dir"]
     env = {"DOCS_SOURCE_ROOT": cfg["source_root"]}
     tools = os.path.join(docs, "_tools")
@@ -93,6 +103,7 @@ def main():
         done = set()
         if "generic-di" in cfg["adapters"]:
             # graphify update / an older graph may lack the resolved C# calls; every adapter below reads graph.json
+            step("     csharp-resolve ...")
             code, out = run([sys.executable, os.path.join(SKILL_DIR, "scripts", "csharp_resolve.py")])
             print(f"{'ok  ' if code == 0 else 'FAIL'} csharp-resolve: {' | '.join(l.strip() for l in out.strip().splitlines()[-2:])[:300]}")
             failed |= code != 0
@@ -119,9 +130,12 @@ def main():
                 done.add(s)
                 path = s if name.startswith("custom:") else os.path.join(ADAPTERS, s)
                 e = dict(env, PYTHONPATH=os.path.dirname(path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+                t = time.time()
+                step(f"     {name}/{os.path.basename(path)} ...")
                 code, out = run([sys.executable, path], env=e)
                 last = [l for l in out.strip().splitlines() if l.strip()][-3:]
-                print(f"{'ok  ' if code == 0 else 'FAIL'} {name}/{os.path.basename(path)}: {' | '.join(last)[:300]}")
+                print(f"{'ok  ' if code == 0 else 'FAIL'} {name}/{os.path.basename(path)} ({time.time() - t:.0f}s): {' | '.join(last)[:300]}",
+                      flush=True)
                 if code or a.verbose:
                     print(out[-3000:])
                 failed |= code != 0

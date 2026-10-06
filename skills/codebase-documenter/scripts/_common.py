@@ -157,6 +157,61 @@ def rel(path, start=None):
     return path.replace("\\", "/")
 
 
+def step(msg, since=None):
+    """One timestamped progress line, flushed at once (long runs are otherwise silent until the end)."""
+    import time
+    took = f" ({time.time() - since:.0f}s)" if since else ""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}{took}", flush=True)
+
+
+LOCK_NAME = ".building"
+LOCK_STALE_HOURS = 12
+
+
+def _pid_alive(pid):
+    if os.name == "nt":  # os.kill(pid, 0) terminates the process on Windows: ask tasklist instead
+        code, out = run(["tasklist", "/FI", f"PID eq {pid}", "/NH"])
+        return code == 0 and str(pid) in out
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def graph_busy(cfg):
+    """The build marker in the graph folder while `code_graph.py build` rewrites graph.json, else None (a marker whose
+    process has ended, or older than LOCK_STALE_HOURS, is stale and ignored)."""
+    import time
+    p = os.path.join(cfg.get("graph_dir", "graphify-out"), LOCK_NAME)
+    try:
+        info = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if time.time() - os.path.getmtime(p) > LOCK_STALE_HOURS * 3600 or not _pid_alive(int(info.get("pid", 0))):
+        return None
+    return info
+
+
+class GraphLock:
+    """`with GraphLock(cfg, "build"):` writes the marker that build_site.py waits for, and removes it on exit."""
+
+    def __init__(self, cfg, what):
+        self.path = os.path.join(cfg.get("graph_dir", "graphify-out"), LOCK_NAME)
+        self.what = what
+
+    def __enter__(self):
+        import time
+        write(self.path, json.dumps({"pid": os.getpid(), "step": self.what, "started": time.strftime("%Y-%m-%d %H:%M:%S")}))
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            os.remove(self.path)
+        except OSError:
+            pass
+
+
 def tick(cfg, startswith):
     """Mark the PROGRESS.md checklist item that starts with the given text as done (no-op if absent)."""
     p = os.path.join(cfg.get("docs_dir", "docs"), "_notes", "PROGRESS.md")

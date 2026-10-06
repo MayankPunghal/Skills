@@ -46,6 +46,7 @@ import argparse
 import json
 import os
 import re
+import time
 from collections import Counter, defaultdict
 
 from _common import load_config, utf8_stdout, write
@@ -919,6 +920,8 @@ def var_type(src, md, name, pos):
     """Declared type of a local / parameter / field named `name` visible at pos (None when unknown)."""
     body = src.code[md["body_start"]:pos] if md else ""
     head = (md["params"] if md else "") + ";"
+    if name not in body and name not in head:  # not declared here: skip the eight scans (the common case for fields)
+        return None
     n = re.escape(name)
     for txt in (body, head):
         m = None
@@ -962,13 +965,22 @@ def var_type(src, md, name, pos):
 
 
 MODEL = None
+_FIELD_CACHE = {}
 
 
 def field_type(src, md, name, local_only=False):
-    """Element / declared type of a field or primary-constructor parameter in the enclosing class (all parts of a partial class)."""
+    """Element / declared type of a field or primary-constructor parameter in the enclosing class (all parts of a partial class).
+    Memoised per (file, class, name): E6 asks once per `x.Method(` occurrence, which is quadratic on large classes."""
     if not md:
         return None
-    parts = [(src, t) for t in src.types if t["name"] == md["cls"]]
+    key = (src.rel, md["cls"], name, local_only)
+    if key not in _FIELD_CACHE:
+        _FIELD_CACHE[key] = _field_type(src, md, name, local_only)
+    return _FIELD_CACHE[key]
+
+
+def _field_type(src, md, name, local_only):
+    parts =[(src, t) for t in src.types if t["name"] == md["cls"]]
     if MODEL and not local_only:   # other files declaring the same partial class
         parts += [(MODEL.files[t["file"]], t) for t in MODEL.types.get(md["cls"], [])
                   if t.get("partial") and t["file"] != src.rel and t["file"] in MODEL.files]
@@ -1266,6 +1278,40 @@ def resolve(model, G, regs, msgs, locators, opts, facts):
             caller = G.method_at(p, md["line"], md["name"])
             for ti in G.methods_of(md["cls"], model, name, inherit=False):
                 G.add(caller, ti, "method group", "INFERRED", 0.8, p, src.line(m.start()), {"method": name}, relation="calls")
+        # E8b a method of another object passed as a callback: new WorkItemCallback(sft.Process), new ThreadStart(worker.Run),
+        # pool.QueueWorkItem(job.Execute, state), Task.Run(svc.Refresh) ... (the receiver's declared type names the target)
+        for m in re.finditer(r"(?:\bnew\s+[\w.]+\s*(?:<[^;{}()]*>)?|\b(?:QueueWorkItem|QueueUserWorkItem|UnsafeQueueUserWorkItem|StartNew|"
+                             r"Run|ContinueWith|BeginInvoke|Invoke|Subscribe|Register|SetTimer|Timer))\s*\(\s*([a-z_]\w*)\s*\.\s*([A-Z]\w*)\s*(?=[),])", M):
+            var, meth = m.group(1), m.group(2)
+            md = src.enclosing(m.start())
+            if not md or var in KEYWORDS:
+                continue
+            ty = var_type(src, md, var, m.start()) or field_type(src, md, var)
+            if not ty or not model.decl(ty):
+                continue
+            caller = G.method_at(p, md["line"], md["name"])
+            for ti in G.methods_of(ty, model, meth):
+                G.add(caller, ti, "method group", "INFERRED", 0.8, p, src.line(m.start()), {"method": meth, "variable": var, "type": ty},
+                      relation="calls")
+        # E6b namespace-qualified static calls: Ns.Type.Method( and Ns.Ns.Method( when a namespace and a class share a name
+        # (graphify reads the first segment as the receiver and finds nothing)
+        for m in re.finditer(r"(?<![\w.])((?:[A-Z]\w*\.)+)([A-Z]\w*)\s*\.\s*([A-Z]\w*)\s*(?:<[^;{}()]*>)?\s*\(", M):
+            prefix, cls_name, meth = m.group(1).rstrip("."), m.group(2), m.group(3)
+            cands = [t for t in model.types.get(cls_name, []) if t["namespace"] and
+                     (t["namespace"] == prefix or t["namespace"].endswith("." + prefix))]
+            if not cands:
+                continue
+            md = src.enclosing(m.start())
+            if not md:
+                continue
+            caller = G.method_at(p, md["line"], md["name"])
+            if not caller:
+                continue
+            targets = G.methods_of(cls_name, model, meth)
+            if any(t in G.existing.get(caller, ()) for t in targets):
+                continue
+            for ti in targets:
+                G.add(caller, ti, "qualified call", "EXTRACTED", 0.95, p, src.line(m.start()), {"type": f"{prefix}.{cls_name}"}, relation="calls")
         # E9 background jobs: Hangfire Enqueue<T>(x => x.M()), Quartz JobBuilder.Create<T>()
         for m in re.finditer(r"\b(BackgroundJob|RecurringJob|\w*[jJ]ob[Cc]lient|\w*[Jj]obManager|_\w+)\s*\.\s*(Enqueue|Schedule|AddOrUpdate|ContinueJobWith|Create)\s*<\s*([\w.<>]+?)\s*>\s*\(", M):
             j = match(M, m.end() - 1)
@@ -1561,6 +1607,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scan-only", action="store_true")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--progress", action="store_true", help="print a timestamped line as each phase finishes")
     ap.add_argument("--source-root", help="standalone use (no codebase-docs.json): the code to read")
     ap.add_argument("--graph-dir", help="standalone use: folder holding graph.json; csharp-resolve.json is written there")
     a = ap.parse_args()
@@ -1571,22 +1618,36 @@ def main():
     os.chdir(root)
     opts = cfg.get("adapter_options", {}).get("generic-di", {})
     src_root = cfg["source_root"]
+    timings, t = [], time.time()
+
+    def phase(name):
+        nonlocal t
+        timings.append(f"{name} {time.time() - t:.0f}s")
+        if a.progress:
+            print(f"[{time.strftime('%H:%M:%S')}] csharp-resolve: {name} done ({time.time() - t:.0f}s)", flush=True)
+        t = time.time()
+
     model = Model(src_root, opts.get("skip_regex"))
     if not model.files:
         print("csharp-resolve: no C# files under the source root; nothing to do")
         return
+    phase(f"read {len(model.files)} files")
     regs, modules, conventions, options_b, locators, pipeline, notes, containers = scan(model)
     apply_conventions(model, conventions, regs)
     comp = attribute_hosts(model, regs, modules)
     cons = consumers(model)
     msgs = messages(model)
+    phase("scan")
     facts = {"consumers": cons, "events": [], "jobs": [], "pipeline": pipeline, "skipped_wide": []}
     gpath = os.path.join(cfg["graph_dir"], "graph.json")
     edges = Counter()
     if not a.scan_only and os.path.exists(gpath):
         G = Graph(gpath, model, src_root, root)
+        phase("load graph")
         resolve(model, G, regs, msgs, locators, opts, facts)
+        phase("resolve")
         G.save()
+        phase("save graph")
         edges = G.kinds
     finds = findings(model, regs, cons, locators, conventions, msgs, containers)
     for r in regs:
@@ -1610,6 +1671,7 @@ def main():
         print(f"csharp-resolve: {len(model.files)} C# files · {len(regs)} registrations ({', '.join(f'{k} {v}' for k, v in containers.most_common())}) "
               f"in {len(hosts)} host(s) · {len(cons)} consumers · {len(msgs)} message types · {len(finds)} findings")
         print("  edges added: " + (", ".join(f"{k} {v}" for k, v in edges.most_common()) or "none") + (" (scan only)" if a.scan_only else ""))
+        print("  time: " + ", ".join(timings))
 
 
 if __name__ == "__main__":
