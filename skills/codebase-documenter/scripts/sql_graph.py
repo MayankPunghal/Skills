@@ -18,7 +18,10 @@ uses them are disconnected. This script parses both with sql_parse.py (Microsoft
           (TableName = "X", DestinationTableName, ToTable("X"), [Table("X")])
           C# method -> procedure   calls (context "name in code (not defined in the repository)") for every procedure
           code_routines.py finds the code running by name without a definition here (external node)
-Idempotent: nodes and edges with _origin "sql-parse" are replaced on every run; graphify's own are never touched.
+Idempotent: nodes and edges with _origin "sql-parse" are replaced on every run. When graphify already has a node for the
+object (its [sql] extra parses .sql files: same file, same label), that node is reused and annotated instead of adding a
+twin, because graphify merges same-file same-label nodes on reload and then refuses to save the smaller graph; the
+attributes added here are listed in the node's _sql_parse_keys and removed again on the next run.
 Writes sql-graph.json beside graph.json (counts, unresolved names) for reports.
 """
 import argparse
@@ -34,6 +37,7 @@ from _common import load_config, utf8_stdout  # noqa: E402
 import sql_parse  # noqa: E402
 
 ORIGIN = "sql-parse"
+ANNOT = "_sql_parse_keys"  # attributes this script added to a graphify node it reused
 SYSTEM = ("sys.", "information_schema.", "inserted", "deleted")
 MARKUP_EXTS = (".aspx", ".ascx", ".master")
 # <asp:SqlDataSource SelectCommand="..." UpdateCommand="dbo.usp_X" ...>: the attribute value only; the SQL itself goes to the parser
@@ -109,7 +113,41 @@ def main():
     g = json.load(open(gpath, encoding="utf-8"))
     g["nodes"] = [n for n in g["nodes"] if n.get("_origin") != ORIGIN]
     g["links"] = [e for e in g["links"] if e.get("_origin") != ORIGIN]
+    for n in g["nodes"]:
+        for k in n.pop(ANNOT, None) or []:
+            n.pop(k, None)
     nodes = {n["id"]: n for n in g["nodes"]}
+    src_abs = os.path.normcase(os.path.abspath(src))
+
+    def rel_src(sf):
+        """A graph source_file as a lower-case path relative to the source root, or None outside it."""
+        for r in (os.path.abspath(src), os.path.abspath(ws)):
+            p = os.path.normcase(os.path.abspath(os.path.join(r, sf)))
+            if p.startswith(src_abs + os.sep):
+                return os.path.relpath(p, src_abs).replace("\\", "/").lower()
+        return None
+
+    twins = {}  # (file, label) -> graphify's own node: graphify merges a same-file same-label node into it on reload
+    for i, n in nodes.items():
+        if n.get("source_file") and str(n.get("label") or "").strip():
+            twins.setdefault((rel_src(n["source_file"]), str(n["label"]).strip()), i)
+    ids = {}  # object name (lower case) -> node id
+
+    def oid(name):
+        return ids.get(name.lower()) or node_id(name)
+
+    def add_node(nid, attrs):
+        """Append a node, or annotate graphify's twin of it (same file and label) and return the twin's id."""
+        twin = twins.get((rel_src(attrs["source_file"]), attrs["label"].strip())) if attrs.get("source_file") else None
+        if not twin:
+            new_nodes.append(dict(attrs, id=nid))
+            return nid
+        n = nodes[twin]
+        added = [k for k in attrs if k not in n and k != "_origin"]
+        for k in added:
+            n[k] = attrs[k]
+        n[ANNOT] = added
+        return twin
 
     files = sql_parse.scan_files(src)
     code, stats = sql_parse.scan_code(src)
@@ -129,7 +167,7 @@ def main():
     def ensure(name, kind_hint):
         real = names.get(name)
         if real:
-            return node_id(real)
+            return oid(real)
         if kind_hint == "FUNCTION" or name.lower().startswith(SYSTEM):  # x.Method() may be a column method; catalog views are not app objects
             return None
         if len(name.split(".")) >= 3:
@@ -143,12 +181,13 @@ def main():
         return nid
 
     for key, o in objs.items():
-        nid = node_id(o["name"])
+        nid = add_node(node_id(o["name"]), {
+            "label": o["name"], "file_type": "code", "_origin": ORIGIN, "_db_object": True, "kind": o["kind"],
+            "norm_label": o["name"].lower(), "source_file": o["file"], "source_location": f"L{o.get('line', 1)}",
+            "metadata": {"lines": o.get("lines"), "params": [p.get("name") for p in o.get("params") or []],
+                         "constructs": len(o.get("constructs") or {})}})
+        ids[key] = nid
         have.add(nid)
-        new_nodes.append({"id": nid, "label": o["name"], "file_type": "code", "_origin": ORIGIN, "_db_object": True, "kind": o["kind"],
-                          "norm_label": o["name"].lower(), "source_file": o["file"], "source_location": f"L{o.get('line', 1)}",
-                          "metadata": {"lines": o.get("lines"), "params": [p.get("name") for p in o.get("params") or []],
-                                       "constructs": len(o.get("constructs") or {})}})
 
     def link(s, t, rel, ctx, sf, line, meta=None):
         if s and t and s != t:
@@ -158,7 +197,7 @@ def main():
             kinds[ctx + " " + rel] += 1
 
     for key, o in objs.items():
-        s, sf, ln = node_id(o["name"]), o["file"], o.get("line")
+        s, sf, ln = oid(o["name"]), o["file"], o.get("line")
         for t in o.get("reads", []):
             link(s, ensure(t, "TABLE"), "reads_from", "sql", sf, ln)
         for w in o.get("writes", []):
@@ -182,7 +221,6 @@ def main():
     owners = {e["target"] for e in g["links"] if e.get("relation") == "method"}
     by_file = defaultdict(list)
     roots = [os.path.abspath(src), os.path.abspath(ws)]
-    src_abs = os.path.normcase(os.path.abspath(src))
     for i in owners:
         n = nodes.get(i)
         if not n or not n.get("source_file"):
@@ -243,7 +281,7 @@ def main():
             cands = [(ln, i) for ln, i in by_file.get(rp.lower(), []) if ln <= line] or                 [(ln, i) for ln, i in any_by_file.get(rp.lower(), []) if ln <= line]
             if cands:
                 rel = "calls" if kind_of[real.lower()] in ("PROCEDURE", "FUNCTION") else "references"
-                link(max(cands)[1], node_id(real), rel, "name in code", rp, line, {"literal": value})
+                link(max(cands)[1], oid(real), rel, "name in code", rp, line, {"literal": value})
                 named += 1
     # procedures the code runs by name with no definition in the repository (code_routines.py): an external node each, so
     # `graphify affected "<procedure>"` still reaches the code that runs it in a code-only database
@@ -274,15 +312,18 @@ def main():
     for k, c in enumerate(cmds):
         cb = sorted((ln, i) for ln, i in any_by_file.get(c["file"].lower() + ".cs", []) if nodes[i].get("_callable_class"))
         sid = cb[0][1] if cb else "markup_" + re.sub(r"[^a-z0-9]+", "_", c["file"].lower()).strip("_")
-        if not cb and sid not in have:
+        if not cb and sid in ids:
+            sid = ids[sid]
+        elif not cb and sid not in have:
             have.add(sid)
-            new_nodes.append({"id": sid, "label": os.path.basename(c["file"]), "file_type": "code", "_origin": ORIGIN, "_markup": True,
-                              "norm_label": os.path.basename(c["file"]).lower(), "source_file": c["file"], "source_location": "L1"})
+            ids[sid] = add_node(sid, {"label": os.path.basename(c["file"]), "file_type": "code", "_origin": ORIGIN, "_markup": True,
+                                      "norm_label": os.path.basename(c["file"]).lower(), "source_file": c["file"], "source_location": "L1"})
+            sid = ids[sid]
         meta = {"dynamic": False, "at": f"{c['file']}:{c['line']}", "command": c["verb"] + "Command"}
         if " " not in c["value"]:  # a procedure name (…CommandType="StoredProcedure")
             real = names.get(c["value"].replace("[", "").replace("]", ""))
             if real and kind_of.get(real.lower()) in ("PROCEDURE", "FUNCTION"):
-                link(sid, node_id(real), "calls", "markup SQL", c["file"], c["line"], meta)
+                link(sid, oid(real), "calls", "markup SQL", c["file"], c["line"], meta)
                 markup += 1
             continue
         sc = (parsed.get(f"m{k}") or {}).get("script") or {}
@@ -301,7 +342,7 @@ def main():
         for prm in o.get("params") or []:
             t = (prm.get("type") or "").split("(")[0].strip()
             if t and names.get(t) and kind_of.get(names.get(t).lower()) == "TYPE":
-                link(node_id(o["name"]), node_id(names.get(t)), "references", "parameter type", o["file"], o.get("line"))
+                link(oid(o["name"]), oid(names.get(t)), "references", "parameter type", o["file"], o.get("line"))
 
     g["nodes"] += new_nodes
     g["links"] += new_links
