@@ -7,7 +7,8 @@
 ├── README.md     the only file at the root: for people (open website/index.html) and step-by-step setup
 │                 instructions an AI agent follows ("Read README.md in this folder and set up the <product> docs skill")
 ├── website/      the built site (offline, searchable)
-└── repo-kit/     installed next to the code: AGENTS.md, CLAUDE.md, SETUP-GUIDE.md, codebase-docs.json, mkdocs.yml,
+└── repo-kit/     installed next to the code: AGENTS.md, CLAUDE.md (CLAUDE.docs-only.md: paths under repo-kit/ for a
+                  docs-only workspace), SETUP-GUIDE.md, codebase-docs.json, mkdocs.yml,
                   .claude/skills/<slug>-docs/SKILL.md, docs/ (pages, _src, _notes, _tools, agent/, llms.txt)
 ```
 

@@ -79,6 +79,7 @@ def main():
     texts = {p: read(f) for p, f in files}
     sites = defaultdict(list)   # object -> [site]
     constants = {}              # const name -> (object, path, line)
+    ambiguous = set()           # const names declared with different objects
 
     def method_window(path, line, text):
         a = M.enclosing(path, line)
@@ -145,6 +146,8 @@ def main():
             c = CONST.search(head)
             if c:
                 owner = re.findall(r"\b(?:class|struct|record|interface|Module|Class|Structure|object)\s+(\w+)", text[:s.start()])
+                if c.group(1) in constants and constants[c.group(1)][:2] != (obj, path):
+                    ambiguous.add(c.group(1))  # `const string sql = "X"` in every method: following the name would mislink
                 constants[c.group(1)] = (obj, path, line, owner[-1] if owner else "")
                 record(obj, path, line, text, op, tech="name constant")
                 continue
@@ -158,7 +161,10 @@ def main():
 
     # follow name constants (ProcNames.PlaceOrder = "dbo.usp_PlaceOrder") to where they are used: qualified by the declaring
     # class anywhere, bare only in the declaring file or a file that imports the class statically; a type, method or property
-    # that merely shares the constant's name (record WarehouseDashboard) is not a use
+    # that merely shares the constant's name (record WarehouseDashboard) is not a use. A name declared with different values
+    # (method-local `const string sql = "..."` repeated in each method) is not followed: its declarations are already recorded
+    for k in ambiguous:
+        constants.pop(k, None)
     if constants:
         crx = re.compile(r"(?<![\w.])(?:(?:\w+\s*\.\s*)*?(\w+)\s*\.\s*)?(" + "|".join(re.escape(c) for c in constants) + r")\b(?![ \t]*[(<{]|[ \t]+(?!(?:Then|And|Or|AndAlso|OrElse|Is|is|as|As)\b)\w)")
         for path, text in texts.items():
@@ -253,7 +259,8 @@ def main():
         o, ss = objs[k], sites[k]
         sig = ""
         if o["type"] != "table":
-            sig = (f" · parameters: `{esc(', '.join(o.get('params') or [])) or 'none'}`" + (f" · returns: {esc(o['returns'])}" if o.get("returns") else ""))
+            sig = (" · not defined in the repository: parameters and tables unknown" if o.get("defined") is False else
+                   f" · parameters: `{esc(', '.join(o.get('params') or [])) or 'none'}`" + (f" · returns: {esc(o['returns'])}" if o.get("returns") else ""))
         out += ["", f'<a id="{slug("dba", o["name"])}"></a>', "", f"## {o['name']} ({o['type']})", "",
                 f"Definition: [{esc(o['name'])}]({o['page']}#{o['anchor']}){sig} · {BACK}", "",
                 "| Called from | How | Operation | Source |", "| --- | --- | --- | --- |"]

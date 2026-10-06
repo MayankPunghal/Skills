@@ -4,6 +4,13 @@ The workspace is a folder that holds the documentation project; it can be the re
 
 ## Steps
 
+0. **Pick the workspace location** and say which one and why (ask when the user has not said):
+
+   | Option | Use when | Trade-off |
+   | --- | --- | --- |
+   | Sibling folder `<repo>-docs/` next to the code (recommended) | The code is a client checkout, read-only, or shared | Nothing is written into the repository; the docs are shared as a zip or their own repository |
+   | `<repo>/.codebase-docs/` inside the repository | The team wants the docs versioned with the code | Every graph and site rebuild shows up in the repository's status unless the folder is git-ignored; vendor and survey scans must skip it (they do: it starts with a dot) |
+
 1. Decide the **source root** (the folder with the code) and 1–3 **source markers**: sub-folders or files that only exist at that root (e.g. `src`, `MyApp.sln`, `MyApp.Database`). `lookup.py` uses them to find the code later, wherever the docs travel.
 2. Run, from the workspace folder:
 
@@ -34,3 +41,4 @@ The workspace is a folder that holds the documentation project; it can be the re
 - `sensitive`: pages that must be shared privately (default `security/findings.md`).
 - `site.accent_hex`, `site.language`.
 - `graph.model` / `graph.api_key_env` / `graph.base_url` if a specific LLM should name communities.
+- `graph.vendor_dirs`: folders (or files) of copied third-party code to leave out of the graph, the survey and the endpoint scan, relative to the source root. Run `python <skill>/scripts/survey_codebase.py --pre` first on a large repository: it lists the vendored folders it detects and the largest folders, before the slow graph build.

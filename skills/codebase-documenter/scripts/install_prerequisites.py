@@ -31,7 +31,7 @@ GRAPHIFY_PKG = "graphifyy[sql,openai]"
 SQLGLOT_PKG = "sqlglot"
 KEY_VARS = ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")
 DOTNET_SCRIPT = {"nt": "https://dot.net/v1/dotnet-install.ps1", "posix": "https://dot.net/v1/dotnet-install.sh"}
-REQUIRED = ("pip", "mkdocs-material", "graphify", "sqlglot", ".NET SDK 8+", "ScriptDom helper")
+REQUIRED = ("pip", "mkdocs-material", "graphify", "graphify SQL", "sqlglot", ".NET SDK 8+", "ScriptDom helper")
 PY = [sys.executable]
 
 
@@ -45,6 +45,20 @@ def has_module(*mods):
 
 def has_graphify():
     return run(["graphify", "--help"])[0] == 0
+
+
+def graphify_sql():
+    """Can graphify parse .sql files? It runs in its own environment (uv tool or pip), so probe it on a one-line script
+    instead of importing tree_sitter_sql here: without the [sql] extra it silently drops every .sql file."""
+    tmp = tempfile.mkdtemp(prefix="gfy-sql-probe-")
+    try:
+        os.makedirs(os.path.join(tmp, "src"))
+        with open(os.path.join(tmp, "src", "probe.sql"), "w", encoding="utf-8") as fh:
+            fh.write("CREATE TABLE probe (id int);\n")
+        code, out = run(["graphify", "extract", os.path.join(tmp, "src"), "--code-only", "--out", os.path.join(tmp, "out")], timeout=300)
+        return code == 0 and "tree_sitter_sql not installed" not in out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def sql_parse():
@@ -129,10 +143,12 @@ def report(verbose=True):
     ok_py = sys.version_info >= (3, 10)
     docker = tool_exe("docker") or tool_exe("podman")
     wsl = os.name == "nt" and run(["wsl", "--status"])[0] == 0
+    gfy = has_graphify()
     rows = [("python 3.10+", ok_py, f"{sys.version.split()[0]} at {sys.executable}", True),
             ("pip", has_pip(), "", True),
             ("mkdocs-material", has_module("mkdocs", "material"), "documentation site", True),
-            ("graphify", has_graphify(), tool_exe("graphify") or "code graph", True),
+            ("graphify", gfy, tool_exe("graphify") or "code graph", True),
+            ("graphify SQL", gfy and graphify_sql(), "graphify's [sql] extra (tree_sitter_sql): .sql files in the graph", True),
             ("sqlglot", sp.has_sqlglot() or has_module("sqlglot"), "SQL parser fallback, PostgreSQL preview", True),
             (".NET SDK 8+", dm >= sp.MIN_DOTNET, f"found {dm}" if dm else "Microsoft T-SQL parser; Linux build checks", True),
             ("ScriptDom helper", bool(sp.helper_dll()), sp.helper_dll() or "built from scripts/sqlscan on first use", True),
@@ -196,6 +212,12 @@ def main():
     if "graphify" in missing:
         print("  graphify ...")
         install_graphify()
+    elif "graphify SQL" in missing:  # add the extra to the environment graphify already lives in
+        print(f"  graphify SQL extra ({GRAPHIFY_PKG}) ...")
+        if has_module("graphify"):
+            pip_install(GRAPHIFY_PKG)
+        else:
+            install_graphify()
     if "sqlglot" in missing:
         print("  sqlglot ...")
         pip_install(SQLGLOT_PKG)

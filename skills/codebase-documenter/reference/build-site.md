@@ -20,6 +20,8 @@ Flags: `--skip-adapters` (narrative-only changes), `--no-site` (fast loop while 
 | `UNRESOLVED page: path#anchor` | Page not written yet or wrong anchor | Write the page or fix the link; explicit `<a id>` for important anchors |
 | MkDocs "anchor not found" in reference | Adapter links to a missing anchor | Handled by `build_docs.py`; if it persists, fix the adapter's anchor format |
 | MkDocs "not in nav" | Page outside the generated nav block | Put it under `docs/_src/` (nav is generated) or exclude it |
-| Mermaid not rendering | Fence not ` ```mermaid ` or syntax error | Validate at mermaid.live |
+| Mermaid not rendering | Fence not ` ```mermaid `, or a syntax error (MkDocs does not report it) | `verify_docs.py` gate "Mermaid diagrams lint" names the line; otherwise open the page in the local site: the diagram shows Mermaid's parse error |
+| Diagrams show as text offline | Material loads Mermaid from unpkg.com at view time | `offline_mermaid.py --status`; then `--from <mermaid.min.js>` or, after the user approves the ~3 MB download, `--install` (cached for later workspaces) |
+| Thousands of "does not contain an anchor" warnings on one page | A code snippet cut mid-type (`List<Order`) opens an HTML tag that swallows every later `<a id>` | Adapters truncate with `_scan.cut()`; a custom adapter must do the same |
 
 Never hand-edit `docs/*.md` outputs of `_src` or `docs/reference/*`: they are overwritten on the next build.

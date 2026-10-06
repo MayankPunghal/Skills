@@ -45,3 +45,4 @@ Order matters: research before writing (pages are written from notes, not from m
 - Where: site path, zip path, how to install the skill.
 - Sensitive: which pages.
 - Left / out of scope: things outside the repository, runtime verification, any gaps.
+- Skill issues: the number of entries in `SKILL-ISSUES.md` (workspace root) and its path, for the skill owner. It is not part of the package.

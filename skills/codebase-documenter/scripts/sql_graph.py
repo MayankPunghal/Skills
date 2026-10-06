@@ -16,6 +16,8 @@ uses them are disconnected. This script parses both with sql_parse.py (Microsoft
           "markup SQL", from the code-behind class, else a node for the markup file)
           C# method -> table   references (context "name in code") for a bare table name in a table-name setting
           (TableName = "X", DestinationTableName, ToTable("X"), [Table("X")])
+          C# method -> procedure   calls (context "name in code (not defined in the repository)") for every procedure
+          code_routines.py finds the code running by name without a definition here (external node)
 Idempotent: nodes and edges with _origin "sql-parse" are replaced on every run; graphify's own are never touched.
 Writes sql-graph.json beside graph.json (counts, unresolved names) for reports.
 """
@@ -102,6 +104,8 @@ def main():
     if not eng:
         print("sql_graph: skipped (no SQL parser: run install_prerequisites.py)")
         return
+    if a.source_root and a.graph_dir:
+        cfg = {}
     g = json.load(open(gpath, encoding="utf-8"))
     g["nodes"] = [n for n in g["nodes"] if n.get("_origin") != ORIGIN]
     g["links"] = [e for e in g["links"] if e.get("_origin") != ORIGIN]
@@ -241,6 +245,20 @@ def main():
                 rel = "calls" if kind_of[real.lower()] in ("PROCEDURE", "FUNCTION") else "references"
                 link(max(cands)[1], node_id(real), rel, "name in code", rp, line, {"literal": value})
                 named += 1
+    # procedures the code runs by name with no definition in the repository (code_routines.py): an external node each, so
+    # `graphify affected "<procedure>"` still reaches the code that runs it in a code-only database
+    import code_routines
+    helpers = (cfg.get("adapter_options", {}).get("generic-sql", {}).get("code_only_helpers") if not a.source_root else None)
+    code_only = 0
+    for key, r in code_routines.find(src, helpers)["routines"].items():
+        if names.get(r["name"]) or names.get(f"{r['schema']}.{r['name']}" if r["schema"] else r["name"]):
+            continue  # defined in a script: the literal scan above already linked it
+        nid = ensure(f"{r['schema']}.{r['name']}" if r["schema"] else r["name"], "PROCEDURE")
+        for c in r["calls"]:
+            cands = [(ln, i) for ln, i in by_file.get(c["file"].lower(), []) if ln <= c["line"]]
+            if cands:
+                link(max(cands)[1], nid, "calls", "name in code (not defined in the repository)", c["file"], c["line"], {"via": c["via"]})
+                code_only += 1
     # Web Forms data source controls: Select/Insert/Update/DeleteCommand attributes hold SQL or a procedure name in the markup,
     # where the C# scan never looks. The edge starts at the page's code-behind class (or a node for the markup file).
     cmds, markup = [], 0
@@ -292,7 +310,7 @@ def main():
         json.dump(g, fh, ensure_ascii=False)
     os.replace(tmp, gpath)
     summary = {"engine": eng, "objects": len(objs), "external_objects": sum(1 for n in new_nodes if n.get("external")),
-               "edges": dict(kinds), "embedded_sql": stats, "embedded_sql_without_method": no_method, "markup_commands": len(cmds), "markup_commands_linked": markup,
+               "edges": dict(kinds), "embedded_sql": stats, "embedded_sql_without_method": no_method, "markup_commands": len(cmds), "markup_commands_linked": markup, "code_only_calls": code_only,
                "unresolved_names": dict(unresolved.most_common(50))}
     with open(os.path.join(gdir, "sql-graph.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(summary, fh, indent=1, ensure_ascii=False)
@@ -300,7 +318,8 @@ def main():
         print(f"sql_graph [{eng}]: {len(objs)} database objects (+{summary['external_objects']} referenced only from code), "
               f"{len(new_links)} edges: " + ", ".join(f"{k} {v}" for k, v in kinds.most_common(8))
               + f"; {stats.get('accepted', 0)} SQL statements in code ({no_method} outside a known method)"
-              + (f"; {markup}/{len(cmds)} data source commands in markup" if cmds else ""))
+              + (f"; {markup}/{len(cmds)} data source commands in markup" if cmds else "")
+              + (f"; {code_only} calls to procedures not defined in the repository" if code_only else ""))
 
 
 if __name__ == "__main__":

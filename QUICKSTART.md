@@ -27,6 +27,33 @@ Type the skill name on its own (for example `/migration-assessment`) and it show
 - **It asks first:** whether it may use subagents, and whether it may use an LLM key to name code areas (optional).
 - **Tip:** run it from an empty folder for the docs, not inside the code. Long runs can stop and pick up again: `/codebase-documenter resume`.
 
+### Ask questions about a documented codebase (docs + code together)
+
+The documentation run also creates a project skill (`<name>-docs`) and a lookup tool. Used together with the code, the agent reads the docs as a map instead of loading the whole codebase, then jumps to the exact `file:line` in the code. Its answers then cite the docs **and** show the real code.
+
+**Recommended: put the docs next to the code.**
+
+1. Unzip the package from `publish/` anywhere.
+2. In Claude Code, say: `Read README.md in C:\work\MyApp-Docs and install the docs skill into C:\code\MyApp`.
+3. It copies `docs/`, `AGENTS.md`, `CLAUDE.md` and `.claude/skills/<name>-docs/` to the **root of the code repository**, next to the code.
+4. Open Claude Code in `C:\code\MyApp` and ask (for example, "how does checkout work?").
+
+To keep the docs out of git, add `docs/`, `site/`, `AGENTS.md` and `.claude/skills/` to `.git/info/exclude`, which applies on your machine only. The security findings page should never reach a public remote.
+
+**Check that it is wired up.** Run `python docs/_tools/lookup.py <SomeClass> --list`. It should print a `doc:` line and a `src:` line:
+
+- `src: …` points into the code: docs and code are connected.
+- `src: … (file not found under the source root)`: the code was not found, so answers come from the docs only.
+
+**Docs in a separate folder also work.** The lookup tool finds the code through:
+
+1. `--src <path>`;
+2. the `DOCS_SOURCE_ROOT` environment variable;
+3. `source_root` in `codebase-docs.json`;
+4. otherwise, a search of the docs folder, its parent and nearby folders.
+
+Claude Code can only read folders the session was opened in or given access to, so add the code folder to the session too. The workspace where you ran the documentation skill already works this way: its `codebase-docs.json` points at the code.
+
 ### Assess a .NET app for AWS: `migration-assessment`
 
 ```

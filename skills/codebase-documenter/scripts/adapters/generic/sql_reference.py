@@ -18,7 +18,9 @@ Options (codebase-docs.json):
       {"name": "Reporting", "path": "reporting", "tables_page": "reportdb-tables.md", "routines_page": "reportdb-routines.md"}],
     "edmx": ["Web/Models/Model.edmx"],             # optional ORM alias maps (EF function imports)
     "postgres_notes": true,                        # db-postgres.md and PostgreSQL columns
-    "code_ext": [".cs", ".py", ".ts", ".js", ".java", ".cshtml"]}}
+    "code_ext": [".cs", ".py", ".ts", ".js", ".java", ".cshtml"],
+    "code_only_routines": true,                    # db-code-routines.md: procedures the code runs, not defined here
+    "code_only_helpers": {"ExecReporting": "Reporting"}}}   # extra helper methods -> database name (optional)
 Without "databases", every folder holding a .sqlproj is one database, else the shallowest folders whose scripts define
 tables (the first found writes db-tables.md / db-routines.md, others <folder>-tables.md / -routines.md).
 Writes docs/agent/db.json (machine-readable copy for generic-dbaccess, tracing, RAG cards). Run by build_site.py.
@@ -555,15 +557,58 @@ def postgres_page(dbs, code_sql, stats):
     write("db-postgres.md", "\n".join(out) + "\n")
 
 
+def code_only_page(found, have_ddl):
+    """db-code-routines.md: stored procedures the code runs by name whose definition is not in the repository. A lead for
+    the data model, not a schema: parameters, tables and bodies stay unknown until the database is exported."""
+    rows = sorted(found.values(), key=lambda r: r["name"].lower())
+    dbs = sorted({c["database"] for r in rows for c in r["calls"] if c["database"]})
+    out = ["# Stored procedures called from code" + (" (not in the database scripts)" if have_ddl else ""), "",
+           f"{len(rows)} stored procedures are run by name from the application code"
+           + (", but their definitions are not in the repository's database scripts." if have_ddl else
+              ". The repository holds no database scripts, so their definitions live only in the database.")
+           + " Each row is a lead found in the code (command text, a name variable or constant, a helper method that runs it, "
+           "Dapper with `commandType`, or an `EXEC` string), with every call site; parameters, result sets and the tables it "
+           "touches are unknown until the schema is exported (ask the database owner for it). Call sites with the calling "
+           "method and access technology are in [Database access](db-access.md).", ""]
+    if dbs:
+        out += ["Database per helper (adapter_options.generic-sql.code_only_helpers): " + ", ".join(f"`{d}`" for d in dbs), ""]
+    out += [anchor("index"), ""]
+    letters = sorted({(r["name"][:1].upper() if r["name"][:1].isalpha() else "#") for r in rows})
+    out.append(" · ".join(f"[{x}](#{slug('letter', x if x != '#' else 'other')})" for x in letters))
+    for letter in letters:
+        group = [r for r in rows if (r["name"][:1].upper() if r["name"][:1].isalpha() else "#") == letter]
+        out += ["", anchor(slug("letter", letter if letter != "#" else "other")), "", f"## {letter} ({len(group)})", "", BACK, "",
+                "| Procedure | Called from | Found by | Database |", "| --- | --- | --- | --- |"]
+        for r in group:
+            calls = r["calls"]
+            where = ", ".join(f"{md(c['method']) or 'top level'} (`{c['file']}:{c['line']}`)" for c in calls[:4]) + (
+                f" +{len(calls) - 4} more" if len(calls) > 4 else "")
+            via = ", ".join(sorted({c["via"].split(" (")[0] for c in calls}))
+            db = ", ".join(sorted({c["database"] for c in calls if c["database"]})) or "—"
+            full = f"{r['schema']}.{r['name']}" if r["schema"] else r["name"]
+            out.append(f"| {anchor(slug('sp', r['name']))}**{md(full)}** | {where} | {md(via)} | {md(db)} |")
+            DB_EXPORT["routines"].append({"name": r["name"], "schema": r["schema"], "full_name": full, "kind": "procedure",
+                                          "defined": False, "params": [], "returns": "", "touches": [], "reads": [], "writes": [],
+                                          "calls": [], "called_by": [], "used_by": sorted({c["file"] for c in calls}),
+                                          "call_sites": calls[:50], "file": calls[0]["file"], "line": calls[0]["line"],
+                                          "database": db if db != "—" else "", "page": "db-code-routines.md",
+                                          "anchor": slug("sp", r["name"])})
+    write("db-code-routines.md", "\n".join(out) + "\n")
+    return len(rows)
+
+
 def main():
     eng = sql_parse.engine()
     DB_EXPORT["engine"] = eng
+    code_only = OPT.get("code_only_routines", True)
     if not eng:
-        print("generic-sql: no SQL parser available (.NET SDK 8+ or pip sqlglot): run install_prerequisites.py")
-        return
-    results = sql_parse.scan_files(ROOT, SKIP_DIRS)
-    dbs_cfg = find_databases(results)
-    if not dbs_cfg:
+        print("generic-sql: no SQL parser available (.NET SDK 8+ or pip sqlglot): run install_prerequisites.py"
+              + ("; listing procedures called from code only" if code_only else ""))
+        if not code_only:
+            return
+    results = sql_parse.scan_files(ROOT, SKIP_DIRS) if eng else []
+    dbs_cfg = find_databases(results) if eng else []
+    if not dbs_cfg and eng:
         print("generic-sql: no SQL objects found under", ROOT)
     dbs = []
     for name, path, tp, rp in dbs_cfg:
@@ -576,10 +621,21 @@ def main():
         stat("sql-" + slug(name), tables=nt, routines=nr,  # plus one count per object kind: procedure, function, trigger, view ...
              **{k.lower().replace(" ", "_"): v for k, v in Counter(o["kind"] for o in db.objects).items()})
         print(f"generic-sql [{name}] tables {nt}, routines and other objects {nr}" + (f", {len(db.errors)} parse errors" if db.errors else "") + f" ({eng})")
-    code_sql, stats = sql_parse.scan_code(ROOT, SKIP_DIRS) if dbs else ([], {})
+    n_code_only = 0
+    if code_only:  # procedures the code runs by name with no definition here (a code-only database, or missing scripts)
+        import code_routines
+        found = code_routines.find(ROOT, OPT.get("code_only_helpers"))["routines"]
+        defined = {short(o["name"]).lower() for db in dbs for o in db.objects}
+        found = {k: v for k, v in found.items() if k not in defined}
+        if found:
+            n_code_only = code_only_page(found, bool(dbs))
+            stat("sql-code-only", routines=n_code_only)
+            print(f"generic-sql: {n_code_only} stored procedures called from code without a definition in the repository "
+                  "(db-code-routines.md)")
+    code_sql, stats = sql_parse.scan_code(ROOT, SKIP_DIRS) if (dbs or n_code_only) and eng else ([], {})
     if dbs and PG_NOTES:
         postgres_page(dbs, code_sql, stats)
-    if dbs:  # machine-readable copy for generic-dbaccess, tools and retrieval
+    if dbs or n_code_only:  # machine-readable copy for generic-dbaccess, tools and retrieval
         DB_EXPORT["code_sql"] = [{"file": s["file"], "line": s["line"], "reads": (s.get("script") or {}).get("reads", []),
                                   "writes": (s.get("script") or {}).get("writes", []), "calls": (s.get("script") or {}).get("calls", []),
                                   "functions": (s.get("script") or {}).get("functions", []), "dynamic": s.get("dynamic", False),

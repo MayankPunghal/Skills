@@ -10,6 +10,7 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
 - [Site and links](#site-and-links)
 - [Agent layer](#agent-layer)
 - [Packaging](#packaging)
+- [Big legacy repositories](#big-legacy-repositories)
 - [Working style](#working-style)
 
 ## Research
@@ -104,6 +105,22 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
 - One root folder, one README; everything else inside `repo-kit/` and `website/`.
 - Keep single sources and assert copies are identical; hand packaging drifts.
 - Never ship the graph cache or machine-specific graphs; ship rebuild instructions.
+- A docs-only workspace needs its own `CLAUDE.md` with every path under `repo-kit/` (`CLAUDE.docs-only.md`); the mode A file points at paths that do not exist there.
+
+## Big legacy repositories
+
+From a 2,000+ file ASP.NET MVC 5 + Web Forms app with ~1,000 stored procedures called by name and no SQL in the repository (27 issues logged by the agent in `SKILL-ISSUES.md`, all fixed in the skill):
+
+- Copied front-end libraries (highcharts, jspdf, summernote: 2,000+ files) outnumbered the app and drowned the graph, the network page and the survey. `vendor_files.py` finds them by banner, licence header, versioned folder and "most files beside it are libraries"; every consumer (graph excludes, survey, config, network) uses it, and nothing is dropped silently.
+- No `.sql` does not mean no database: `code_routines.py` reads procedure names from command text, name constants (the last assignment in the method, not the first `const` with that name) and `EXEC` strings, and `generic-sql` writes code-only routines, so the data model starts from the code.
+- MVC routes every public instance method, whatever it returns: 1,102 → 1,472 endpoints once helpers returning `DataTable` / `int` were listed. Filters on private or static helpers are never evaluated; custom role attributes deriving from `ActionFilterAttribute, IAuthenticationFilter` are found only by checking every base type. Global MVC filters never reach Web Forms pages: read `web.config` `<authorization>` / `<location>` for them.
+- Commented attributes (`//[HttpPost]`) were read as real until comments were blanked before parsing.
+- Real configuration lived in 35 machine environment variables read through a wrapper method; config files held 6 keys. Read env-var reads (and their wrappers) in code.
+- 700 "outbound calls" were jQuery calls to the app's own controllers (`basePath + '/Widget/X'`): count them apart. A business feature called "Backtest" is not a test: detect tests by test project and test case.
+- Regexes that run over 10,000-line controllers must not have ambiguous whitespace / optional groups: one such pattern hung the endpoint adapter for 10+ minutes; anchoring with `(?m)^` brought the run to under 20 s.
+- A dangling `<` in a truncated snippet (`List<Order…`) made MkDocs report 14,521 missing anchors: truncate with `_scan.cut()`.
+- Mermaid syntax errors (a `;` in a sequence message) and Mermaid loaded from unpkg pass MkDocs silently: lint diagrams and check for remote scripts in `verify_docs.py`.
+- Long steps need progress lines and a lock: a silent 20-minute graph build looked hung, and a second build started in parallel corrupted the first.
 
 ## Working style
 

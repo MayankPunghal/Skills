@@ -116,6 +116,70 @@ class Methods:
         return f"[{esc(m['name'])}]({page_prefix}{m.get('page', 'methods.md')}#{a})"
 
 
+def cut(s, n):
+    """Truncate code text to n characters with "…", and never leave an unclosed "<": MkDocs runs an HTML parser over the
+    whole Markdown page, and a dangling `List<Order` or `<asp:TextBox Rows="1"` opens a tag that swallows every
+    <a id> after it on the page (thousands of "does not contain an anchor" warnings)."""
+    s = str(s)
+    if len(s) > n:
+        s = s[:n].rstrip() + "…"
+    if s.rfind("<") > s.rfind(">"):
+        s += " …>"
+    return s
+
+
+GLOBAL_FILTER = re.compile(r"(?:GlobalFilters\.Filters|\bfilters|config\.Filters|options\.Filters|o\.Filters|opts\.Filters)\s*\.\s*Add"
+                           r"(?:<\s*(\w+)\s*>\s*\(|\(\s*new\s+([\w.]+))")
+
+
+def global_filters():
+    """[(filter class, file, line)] registered for every MVC / Web API action (GlobalFilters, FilterConfig, AddMvc options)
+    plus "RequireAuthorization" when controllers are mapped with it (ASP.NET Core). They never apply to Web Forms pages."""
+    out = []
+    for rp, full in walk(exts={".cs", ".vb"}):
+        t = read(full)
+        if "Filters" not in t and "RequireAuthorization" not in t:
+            continue
+        for m in GLOBAL_FILTER.finditer(t):
+            out.append(((m.group(1) or m.group(2)).split(".")[-1], rp, line_at(t, m.start())))
+        for m in re.finditer(r"Map(?:Default)?Controller(?:Route)?s?\s*\([^;]*?\)\s*\.\s*RequireAuthorization\(", t):
+            out.append(("RequireAuthorization", rp, line_at(t, m.start())))
+    return out
+
+
+_VENDORED = []
+
+
+def vendored():
+    """Relative paths of copied third-party files (scripts/vendor_files.py: configured graph.vendor_dirs, detected library
+    folders, banners). URLs, environment reads and calls inside them belong to the library, not to the application."""
+    if not _VENDORED:
+        # each adapter is its own process: share one scan per build through docs/agent/vendored.json, reused while it is
+        # newer than codebase-docs.json and less than an hour old (a build runs all adapters within minutes)
+        import sys
+        import time
+        cache = os.path.join(DOCS, "agent", "vendored.json")
+        try:
+            age = time.time() - os.path.getmtime(cache)
+            if age < 3600 and os.path.getmtime(cache) > os.path.getmtime("codebase-docs.json"):
+                c = json.load(open(cache, encoding="utf-8"))
+                if c.get("root") == os.path.abspath(ROOT):
+                    _VENDORED.append(set(c["files"]))
+                    return _VENDORED[0]
+        except (OSError, ValueError, KeyError):
+            pass
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+        try:
+            import vendor_files
+            _VENDORED.append(set(vendor_files.scan(ROOT)))
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            json.dump({"root": os.path.abspath(ROOT), "files": sorted(_VENDORED[0])}, open(cache, "w", encoding="utf-8"))
+        except Exception as e:  # never fail an adapter over this: say so and treat nothing as vendored
+            print(f"note: vendor file detection unavailable ({e}); third-party files are scanned too")
+            _VENDORED.append(set())
+    return _VENDORED[0]
+
+
 def write_page(name, lines):
     os.makedirs(OUT, exist_ok=True)
     open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")

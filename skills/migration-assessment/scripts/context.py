@@ -8,7 +8,7 @@ import re
 import sys
 from collections import Counter
 
-from _common import CONFIG_NAME, OUT, documenter_dir, load_config, load_state, read_json, run, utf8_stdout
+from _common import CONFIG_NAME, ISSUES_LOG, OUT, documenter_dir, issues_log, load_config, load_state, read_json, run, utf8_stdout
 import _findings as F
 
 
@@ -100,6 +100,9 @@ def main():
         nxt = "build_html_report.py, then verify_report.py"
     else:
         nxt = "build_report.py and build_html_report.py after any change, then verify_report.py"
+    n, still = issues_log(root, cfg.get("client") or "")
+    print(f"SKILL ISSUES: {n} logged ({still} open) in {ISSUES_LOG}. Log every script failure, misleading output, false gate, "
+          "unclear step or workaround there as it happens (symptom, cause, workaround, suggested fix).")
     print(f"NEXT: {nxt}")
 
 

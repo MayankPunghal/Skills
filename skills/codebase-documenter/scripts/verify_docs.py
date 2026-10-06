@@ -22,7 +22,11 @@ import xml.etree.ElementTree as ET
 from _common import load_config, run, tick, utf8_stdout
 
 SECRET_PATTERNS = [
-    (r"(?i)\b(password|pwd|passwd)\s*[=:]\s*['\"]?[^\s'\";<>]{4,}", "password assignment"),
+    # an assignment (password=x, pwd = 'x') or a colon followed by something that looks like a literal: quoted, or holding a
+    # digit, symbol or inner capital. "the account has no password: users created by …" is prose, not a leak.
+    (r"\b(?i:password|pwd|passwd)\s*(?:=\s*['\"]?[^\s'\";<>]{4,}|:\s*['\"][^\s'\"]{4,}['\"]|"
+     r":\s*(?=[^\s'\";<>]*(?:[\d_!@#$%^&*+=?~]|(?<=[a-z])[A-Z]))(?![\[(])[^\s'\";<>,.]{4,})",
+     "password assignment"),
     (r"\bsk-[A-Za-z0-9_-]{20,}", "API key (sk-...)"),
     (r"\bAKIA[0-9A-Z]{16}\b", "AWS access key"),
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "private key"),
@@ -31,7 +35,48 @@ SECRET_PATTERNS = [
     (r"\bghp_[A-Za-z0-9]{30,}", "GitHub token"),
     (r"\bxox[abp]-[A-Za-z0-9-]{10,}", "Slack token"),
 ]
+# capitalised words that can open a sentence before a real count ("The 6 tables", "All 40 endpoints")
+COUNT_LEAD = {"the", "all", "these", "those", "only", "about", "over", "of", "in", "with", "has", "have", "contains", "lists",
+              "and", "its", "their", "our", "every", "some", "another", "a", "an", "nearly", "almost", "around", "roughly", "exactly"}
 SECRET_KEY = re.compile(r"(?i)pass|pwd|secret|token|apikey|api_key|credential|private|connectionstring|key$")
+
+
+def strip_quoted(s):
+    return re.sub(r'"[^"]*"', '""', s)
+
+
+def mermaid_problems(block):
+    """Lint rules for the Mermaid errors that MkDocs never reports (the diagram only fails in the browser):
+    ';' in a sequence message or an unquoted label (statement separator), an odd number of '"' on a line, 'end' as a bare
+    node id in a flowchart, unbalanced brackets outside quotes."""
+    lines = block.splitlines()
+    kind = next((x.strip().split()[0] for x in lines if x.strip() and not x.strip().startswith("%%")), "")
+    out = []
+    for n, raw in enumerate(lines, 1):
+        s = raw.strip()
+        if not s or s.startswith("%%"):
+            continue
+        if s.count('"') % 2:
+            out.append(f"line {n}: unbalanced '\"' (use #quot; inside a label)")
+            continue
+        bare = strip_quoted(s)
+        if kind == "sequenceDiagram":
+            m = re.match(r"[^:]*?(?:-{1,2}>>?|-{1,2}[x)]|--?>)[^:]*:(.*)$", s)
+            if m and ";" in m.group(1):
+                out.append(f"line {n}: ';' in a sequence message ends the statement (use , or #59;)")
+        elif kind.startswith(("flowchart", "graph")):
+            # a line holding only "end" closes a subgraph; "end" next to an arrow is a node id
+            if re.search(r"(?:-->|---|-\.->|==>|&)\s*end\b(?![\w-])", bare) or re.match(r"end\s*(?:-->|---|-\.->|==>|[\[({&])", bare):
+                out.append(f"line {n}: 'end' as a node id breaks the flowchart (use End or end_)")
+            labels = re.findall(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}", bare)
+            if any(";" in x for x in labels):
+                out.append(f"line {n}: ';' inside an unquoted label (quote the label)")
+        if kind.startswith(("flowchart", "graph")):  # ER crow's feet and class / state bodies use braces across lines
+            for o, c in ("[]", "()", "{}"):
+                if bare.count(o) != bare.count(c):
+                    out.append(f"line {n}: unbalanced '{o}{c}'")
+                    break
+    return out
 
 
 def config_secret_values(src):
@@ -141,6 +186,32 @@ def main():
             issues.append(f"{r}: raw 'Community N' label")
     results.append(("page hygiene", not issues, "; ".join(issues[:8]) + (f" (+{len(issues) - 8})" if len(issues) > 8 else "") or "ok"))
 
+    # Mermaid syntax: MkDocs builds a broken diagram without a warning; it only fails in the browser
+    merm, blocks = [], 0
+    for p in glob.glob(os.path.join(docs, "_src", "**", "*.md"), recursive=True) + glob.glob(os.path.join(docs, "reference", "*.md")):
+        r = os.path.relpath(p, docs).replace("\\", "/")
+        for b in re.findall(r"```mermaid[^\n]*\n(.*?)```", open(p, encoding="utf-8", errors="ignore").read(), re.S):
+            blocks += 1
+            merm += [f"{r} {x}" for x in mermaid_problems(b)]
+    results.append(("Mermaid diagrams lint", not merm, "; ".join(merm[:6]) + (f" (+{len(merm) - 6})" if len(merm) > 6 else "")
+                    if merm else f"{blocks} diagrams"))
+
+    # offline site: no <script src="https://..."> in the built pages; Mermaid served locally when pages have diagrams
+    site = cfg.get("site_dir", "site")
+    if not a.no_site and os.path.isdir(site):
+        remote = sorted({m for p in glob.glob(os.path.join(site, "**", "*.html"), recursive=True)
+                         for m in re.findall(r"<script[^>]+src=\"((?:https?:)?//[^\"]+)\"", open(p, encoding="utf-8", errors="ignore").read())})
+        # Material's offline plugin adds the iframe-worker shim so search works under file://; it is the one known remote script
+        shim = [u for u in remote if "iframe-worker" in u]
+        remote = [u for u in remote if u not in shim]
+        results.append(("site loads no remote scripts", not remote, ", ".join(remote[:4]) or "none"
+                        + (" (iframe-worker search shim of the offline plugin only)" if shim else "")))
+        yml = open("mkdocs.yml", encoding="utf-8").read() if os.path.exists("mkdocs.yml") else ""
+        if blocks and "mermaid.min.js" not in yml:
+            print(f"NOTE  {blocks} diagrams load Mermaid from the internet at view time (Material fetches it from unpkg.com): "
+                  "offline, they show as text. Fix: offline_mermaid.py --from <mermaid.min.js>, or --install after the user "
+                  "approves the ~3 MB download")
+
     # typed counts that equal a generated headline number go stale on the next build: suggest the [[n:...]] tag
     sp = os.path.join(docs, "agent", "stats.json")
     stats = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
@@ -150,6 +221,11 @@ def main():
         body = re.sub(r"```.*?```", "", open(p, encoding="utf-8").read(), flags=re.S)
         r = os.path.relpath(p, os.path.join(docs, "_src")).replace("\\", "/")
         for m in re.finditer(r"(?<![\w.:\[-])(\d[\d,]*)\s+([a-z][a-z-]+)", body):
+            prev = re.search(r"([\w.#+]+)\s*$", body[max(0, m.start() - 40):m.start()])
+            prev = prev.group(1) if prev else ""
+            # a version after a product name ("Entity Framework 6 on", ".NET 4.8", "Identity 2 tables") is not a count
+            if prev and (re.search(r"[\d.#+]", prev) or (prev[0].isupper() and prev.lower() not in COUNT_LEAD)):
+                continue
             n, noun = int(m.group(1).replace(",", "")), m.group(2).rstrip("s")[:5]
             cands = [k for k, v in flat if v == n and noun in k.replace("-", "").replace("_", "")]
             if cands:

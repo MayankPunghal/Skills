@@ -101,7 +101,24 @@ def main():
         nxt = "verify-docs, then make-agent-skill and package-docs"
     else:
         nxt = "done — update-docs after code changes"
+    issues_log(cfg)
     print(f"NEXT: {nxt}")
+
+
+def issues_log(cfg):
+    """The run issues log for the skill owner (SKILL-ISSUES.md at the workspace root): created when missing (workspaces
+    made by an older version), counted, and the rule repeated so every session keeps it."""
+    p = "SKILL-ISSUES.md"
+    if not os.path.exists(p):
+        import setup_workspace as SW
+        from _common import render
+        open(p, "w", encoding="utf-8", newline="\n").write(render("SKILL-ISSUES.md.tmpl", {
+            "skill": "codebase-documenter", "version": SW.skill_version(), "product": cfg.get("product") or "this project"}))
+    t = re.sub(r"<!--.*?-->", "", open(p, encoding="utf-8").read(), flags=re.S)  # the entry format example is a comment
+    n = len(re.findall(r"(?m)^## ISSUE-\d+", t))
+    still = len(re.findall(r"(?m)^\| ISSUE-\d+ \|.*\|\s*open\s*\|\s*$", t))
+    print(f"SKILL ISSUES: {n} logged ({still} open) in {p}. Log every script failure, misleading output, false gate, unclear "
+          "step or workaround there as it happens (symptom, cause, workaround, suggested fix).")
 
 
 if __name__ == "__main__":

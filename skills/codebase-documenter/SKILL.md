@@ -2,7 +2,7 @@
 name: codebase-documenter
 description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, researches every area against the code, generates a cross-linked reference and narrative docs (architecture, modules, workflows, data model, security findings), builds a searchable offline MkDocs site, verifies quality gates, and adds an AI-agent layer. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA or technical specification for, or explain a whole codebase; to build a knowledge graph of a repo; to make project docs usable by AI agents; or to update, resume or package such documentation."
 metadata:
-  version: 1.11.0
+  version: 1.12.0
 user-invocable: true
 argument-hint: "[full-run · install-prerequisites · setup-workspace · build-code-graph · survey-codebase · research-area <area> · generate-reference · write-pages <section> · build-site · verify-docs · make-agent-skill · package-docs · update-docs · resume] [target]"
 license: Apache 2.0
@@ -21,6 +21,7 @@ Core principles:
 - **Scripts first.** If a script can answer it (state, counts, inventory, links, gates), run the script instead of exploring by hand. Read its output, not the tree.
 - **Silent, resumable work.** No step-by-step narration. Notes and `PROGRESS.md` are updated after every area so any session can resume. One short summary at the end: covered · left · out of scope.
 - **Fix causes, not outputs.** Never hand-edit generated files; fix the adapter / template and regenerate.
+- **Log skill problems as they happen.** Every script failure, misleading output, false gate, unclear step or workaround goes into `SKILL-ISSUES.md` at the workspace root (created by `setup-workspace` / `context.py`; the format is in the file): symptom, cause, workaround, suggested fix. Work around problems in the workspace, never by patching the installed skill unless the user allows it. The final summary gives the number of entries and the path, so the skill owner can improve the skill.
 
 ## Contents
 

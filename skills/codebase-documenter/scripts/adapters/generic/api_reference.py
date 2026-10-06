@@ -6,15 +6,30 @@ Recognises: ASP.NET Core / Web API controllers (attribute routes, [controller] /
 listed as ANY /{controller}/{action}), minimal APIs (MapGet ... with MapGroup prefixes), Express / Koa / Fastify style
 routers, NestJS, Flask, FastAPI, Django urls.py, Spring (@RequestMapping + @GetMapping ...), Go (net/http, gin, chi,
 echo) and OpenAPI / Swagger files (JSON, simple YAML). Handlers link to the method map when it exists.
-Options (adapter_options.generic-api): conventional_mvc (default true), skip_regex.
+Every public instance method of an MVC controller is listed (MVC routes it whatever it returns); the ones that do not return
+an action result are marked "helper exposed as action". Attributes are read after comments are blanked, so //[HttpPost] does
+not count. Auth is the EFFECTIVE authorisation: method attributes, else the controller or a base controller, else global
+filters (GlobalFilters / FilterConfig / AddMvc options), with the project's own attributes that derive from AuthorizeAttribute
+or an authorisation / authentication filter (any of their base types; anti-forgery filters excluded). A "Security review
+candidates" section lists what a reviewer must confirm: authorisation attributes on methods MVC never runs as actions,
+admin-looking actions (or most of a controller) missing the role attribute siblings carry, admin-area actions without a role
+filter, state-changing actions that accept GET, anonymous state-changing actions, test / temporary actions, user-id
+parameters without a user filter.
+Options (adapter_options.generic-api): conventional_mvc (default true), skip_regex, user_filters / role_filters (attribute
+names that check the user / the role, when they are not recognisable from their base class), sibling_role_min (default 2),
+test_name_ignore (regexes of action names that only look like test code).
 """
 import json
 import os
 import re
+import sys
 from collections import Counter, defaultdict
 
-from _scan import BACK, DOCS, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, Methods, esc, esc_text, global_filters, line_at, options, project_of, read, slug, walk, write_page
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from code_text import strip_comments  # noqa: E402
 
 OPT = options("generic-api")
 CONVENTIONAL = OPT.get("conventional_mvc", True)
@@ -44,8 +59,9 @@ def lambda_params(text):
 
 
 # ---------------------------------------------------------------- .NET
-CS_CLASS = re.compile(r"((?:\s*\[[^\]]+\]\s*)*)\s*(?:public\s+|internal\s+)?(?:sealed\s+|abstract\s+|partial\s+)*class\s+(\w+)(?:\s*\([^)]*\))?\s*(?::\s*([^{]+))?\{", re.S)
-CS_METHOD = re.compile(r"((?:[ \t]*\[[^\]\n]+\][ \t]*\r?\n)*)[ \t]*public\s+(?!class\b)(?:(?:async|virtual|override|new|sealed)\s+)*[\w<>\[\],.?() ]+?\s+(\w+)\s*(?:<[^>]*>)?\s*\(")
+CS_CLASS = re.compile(r"((?:\[[^\]]+\]\s*)*)(?<![\w.])(?:public\s+|internal\s+)?(?:sealed\s+|abstract\s+|partial\s+)*class\s+(\w+)(?:\s*\([^)]*\))?\s*(?::\s*([^{]+))?\{", re.S)
+# the attribute block may hold blank lines: a commented-out attribute between two others is blanked by strip_comments
+CS_METHOD = re.compile(r"(?m)^((?:[ \t]*(?:\[[^\]\n]+\][ \t]*)*\r?\n)*[ \t]*(?:\[[^\]\n]+\][ \t]*)*)public\s+(?!class\b)(?:(?:async|virtual|override|new|sealed)\s+)*[\w<>\[\],.?() ]+?\s+(\w+)\s*(?:<[^>]*>)?\s*\(")
 HTTP_ATTR = re.compile(r"\[(?:\w+,\s*)*Http(Get|Post|Put|Delete|Patch)(?:\s*\(\s*(?:template:\s*)?\"([^\"]*)\"[^)]*\))?", re.I)
 
 
@@ -79,14 +95,88 @@ def attr_route(attrs):
     return m.group(1) if m else None
 
 
+AUTH_BASES = {"AuthorizeAttribute", "AuthorizationFilterAttribute", "IAuthorizationFilter", "IAsyncAuthorizationFilter",
+              "AuthorizeFilter", "IAuthorizationRequirement", "IAuthenticationFilter", "IAsyncAuthenticationFilter"}
+AUTH_ATTRS = {"Authorize"}           # plus the project's own authorisation attributes (found in main)
+CLASS_ATTRS = {}                     # controller class -> (attribute block, base class), for inherited [Authorize]
+GLOBAL = []                          # global filters [(name, file, line)]
+FINDINGS = []                        # security review candidates
+CONTROLLERS = {}                     # class -> [{"meth", "auth", "verbs", "params", "file", "line", "action": bool}]
+# return types that make a method a real action: any ...Result, HttpResponseMessage, string (content), bare Task (empty result)
+ACTION_RESULT = re.compile(r"\b(?:\w*Result|HttpResponseMessage|string)\b(?!\s*\[)|\bTask\s*$|\bTask\s+\w+\s*$")
+STATE_CHANGE = re.compile(r"^(Update|Delete|Save|Set|Add|Remove|Reset|Insert|Create|Edit|Change|Cancel|Approve|Reject|Disable|"
+                          r"Enable|Activate|Deactivate|Upload|Import|Send|Assign|Grant|Revoke|Clear|Purge|Restore|Move|Merge|Post)(?=[A-Z_]|$)")
+TEST_ANYWHERE = {"test", "debug", "dummy", "sandbox"}   # a camel-case word anywhere in the name ("SaveDebug", "Test_Upload")
+TEST_EDGE = {"temp", "tmp", "fake", "demo"}             # only as the first or last word: "CreateUserWithTempPwd" is business
+NON_ACTION = re.compile(r"(?m)^((?:[ \t]*(?:\[[^\]\n]+\][ \t]*)*\r?\n)*[ \t]*(?:\[[^\]\n]+\][ \t]*)*)(?:(private|protected|internal)\s+|public\s+(?=(?:\w+\s+)*static\b))"
+                        r"(?:(?:static|async|virtual|override|new|sealed)\s+)*[\w<>\[\],.?() ]+?\s+(\w+)\s*(?:<[^>]*>)?\s*\(")
+
+
+ADMIN_NAME = re.compile(r"Admin|Authori[sz]ation|Role|Permission|Privilege|Impersonat", re.I)
+
+
+def role_like(auth):
+    """True when an auth label restricts more than "any signed-in user": Authorize with arguments, a custom attribute."""
+    return bool(auth) and auth != "anonymous" and bool(re.sub(r"\b(?:Authorize(?:Filter)?|RequireAuthorization)\b(?! \()", "", auth).strip(" ,"))
+
+
+def test_name(name):
+    """True when an action name reads as test / temporary code. Whole camel-case words only ("Tester", "Testing", "Template"
+    do not count), "Back"+"Test" is the business term backtest, and adapter option test_name_ignore lists more exceptions."""
+    if any(re.fullmatch(p, name) for p in OPT.get("test_name_ignore", [])):
+        return False
+    words = [w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", name)]
+    if any(w in TEST_ANYWHERE and not (w == "test" and k and words[k - 1] == "back") for k, w in enumerate(words)):
+        return True
+    return bool(words) and (words[0] in TEST_EDGE or words[-1] in TEST_EDGE)
+
+
+def attr_names(attrs):
+    """Attribute names in an attribute block ([A, B(x)] [C] -> A, B, C) with their argument text."""
+    out = []
+    for blk in re.findall(r"\[([^\]]*)\]", attrs):
+        for m in re.finditer(r"(?:^|,)\s*([\w.]+)\s*(?:\(([^)]*)\))?", blk):
+            out.append((m.group(1).split(".")[-1].removesuffix("Attribute"), (m.group(2) or "").strip()))
+    return out
+
+
 def auth_of(attrs):
-    if re.search(r"\[(?:\w+,\s*)*AllowAnonymous", attrs):
+    """Declared authorisation of an attribute block: "anonymous", "Authorize (Roles = …)", the project's own attributes."""
+    names = attr_names(attrs)
+    if any(n == "AllowAnonymous" for n, _ in names):
         return "anonymous"
-    m = re.search(r"\[(?:\w+,\s*)*Authorize(?:\s*\(([^)]*)\))?", attrs)
-    return ("authorize" + (f" ({m.group(1).strip()})" if m.group(1) else "")) if m else ""
+    found = [n + (f" ({a})" if a else "") for n, a in names if n in AUTH_ATTRS]
+    return ", ".join(found)
 
 
-def dotnet(path, text):
+def class_auth(name, seen=None):
+    """(auth, where) declared on the controller or inherited from a base controller of the code base."""
+    seen = seen or set()
+    if name in seen or name not in CLASS_ATTRS:
+        return "", ""
+    seen.add(name)
+    attrs, base = CLASS_ATTRS[name]
+    a = auth_of(attrs)
+    if a:
+        return a, "class" if not seen - {name} else f"base {name}"
+    return class_auth(base, seen) if base else ("", "")
+
+
+def effective(mauth, cname):
+    """Effective auth = method attributes, else controller / base controller, else global filters, else none declared."""
+    if mauth:
+        return mauth, "method"
+    ca, where = class_auth(cname)
+    if ca:
+        return ca, where
+    g = [n for n, _, _ in GLOBAL if n.removesuffix("Attribute") in AUTH_ATTRS or n in ("AuthorizeFilter", "RequireAuthorization")]
+    if g:
+        return ", ".join(sorted(set(n.removesuffix("Attribute") for n in g))), "global filter"
+    return "", ""
+
+
+def dotnet(path, raw):
+    text = strip_comments(raw)  # //[HttpPost] and /* [Authorize] */ are not attributes
     classes = list(CS_CLASS.finditer(text))
     for k, c in enumerate(classes):
         name, bases, cattrs = c.group(2), c.group(3) or "", c.group(1) or ""
@@ -99,17 +189,38 @@ def dotnet(path, text):
         # [Area("X")] (ASP.NET Core), else the Areas/<X>/Controllers folder (MVC 5 AreaRegistration convention)
         area = re.search(r"\[Area\(\s*\"([^\"]+)\"", cattrs) or re.search(r"(?i)(?:^|/)Areas/([^/]+)/Controllers/", path)
         prefix = attr_route(cattrs) or ""
-        cauth = auth_of(cattrs)
+        members = CONTROLLERS.setdefault(name, [])
+        # filters on methods MVC never runs as actions: private / protected / static / [NonAction]
+        for m in NON_ACTION.finditer(body):
+            a = auth_of(m.group(1))
+            if a and a != "anonymous":
+                line = line_at(text, start + m.start(3))
+                FINDINGS.append({"kind": "role attribute on a method that is not an action", "controller": name, "method": m.group(3),
+                                 "file": path, "line": line, "detail": f"{a} on a {m.group(2) or 'static'} method: MVC never evaluates "
+                                 "filters on non-actions; the action that calls it is not protected by it"})
         for m in CS_METHOD.finditer(body):
             attrs, meth = m.group(1) or "", m.group(2)
-            if meth in (name, "Dispose") or "NonAction" in attrs:
-                continue
             line = line_at(text, start + m.start(2))
+            if meth in (name, "Dispose") or re.search(r"\bstatic\b", m.group(0)):
+                continue
+            if "NonAction" in attrs:
+                a = auth_of(attrs)
+                if a and a != "anonymous":
+                    FINDINGS.append({"kind": "role attribute on a method that is not an action", "controller": name, "method": meth,
+                                     "file": path, "line": line, "detail": f"{a} on a [NonAction] method: never evaluated"})
+                continue
             verbs = HTTP_ATTR.findall(attrs)
             mroute = attr_route(attrs)
-            auth = auth_of(attrs) or cauth
+            mauth = auth_of(attrs)
+            eff, where = effective(mauth, name)
+            auth = (f"{eff} ({where})" if where and where != "method" else eff) or "none declared"
             handler = M.next_after(path, line, within=0) or M.enclosing(path, line)
             params = sig_params(body, m.end() - 1)
+            ret = m.group(0)[:m.start(2) - m.start()]
+            helper = not is_api and not ACTION_RESULT.search(re.sub(r"\[[^\]]*\]", "", ret))
+            members.append({"meth": meth, "auth": eff, "where": where, "declared": mauth, "file": path, "line": line,
+                            "verbs": [v.upper() for v, _ in verbs] or ["ANY"], "params": params, "helper": helper,
+                            "area": area.group(1) if area else ""})
 
             def tokens(r):
                 return r.replace("[controller]", ctl).replace("[action]", meth).replace("[area]", area.group(1) if area else "")
@@ -123,10 +234,16 @@ def dotnet(path, text):
                         continue
                     full = t if t.startswith(("/", "~/")) else f"{prefix}/{t}" if prefix else t
                     add(verb, tokens(full), "ASP.NET", path, line, handler, params=params, auth=auth)
-            elif CONVENTIONAL and not is_api and not re.search(r"\boverride\b", m.group(0)) and re.search(
-                    r"ActionResult|IActionResult|Task<|JsonResult|ViewResult|\bstring\b|\bvoid\b", m.group(0)):
-                add("ANY", conventional, "ASP.NET MVC (conventional)", path, line,
-                    handler, params=params, auth=auth, note="route from the default {controller}/{action} convention")
+            elif CONVENTIONAL and not is_api and not re.search(r"\boverride\b", m.group(0)):
+                # MVC routes EVERY public instance method of a controller, whatever it returns
+                add("ANY", conventional, "ASP.NET MVC (conventional)", path, line, handler, params=params, auth=auth,
+                    note="route from the default {controller}/{action} convention"
+                         + ("; helper exposed as action (does not return an action result, but MVC still routes it)" if helper else ""))
+            else:
+                members[-1]["listed"] = False
+                continue
+            if helper and (verbs or mroute is not None):
+                rows[-1]["note"] = (rows[-1]["note"] + "; " if rows[-1]["note"] else "") + "helper exposed as action"
     groups = {g.group(1): g.group(2) for g in re.finditer(r"(\w+)\s*=\s*[\w.]+\.MapGroup\(\s*\"([^\"]*)\"", text)}
     for m in re.finditer(r"(\w+)\s*\.\s*Map(Get|Post|Put|Delete|Patch|Methods|Fallback)\s*\(\s*\"([^\"]*)\"", text):
         recv, verb, route = m.group(1), m.group(2), m.group(3)
@@ -265,6 +382,7 @@ def openapi(path, text):
 
 def main():
     skip = re.compile(OPT["skip_regex"]) if OPT.get("skip_regex") else None
+    prepass([(p, f) for p, f in walk(exts={".cs"}) if not (skip and skip.search(p))])
     for path, full in walk(exts={".cs", ".vb", ".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".py", ".java", ".kt", ".go", ".json", ".yaml", ".yml"}):
         if skip and skip.search(path):
             continue
@@ -288,6 +406,7 @@ def main():
     if not rows:
         print("endpoints: none found")
         return
+    review()
     by_proj = defaultdict(list)
     for r in rows:
         by_proj[project_of(r["file"])].append(r)
@@ -295,10 +414,16 @@ def main():
     out = ["# Endpoints", "",
            f"Every HTTP endpoint declared in the code ({len(rows)}: " + ", ".join(f"{k} {v}" for k, v in fw.most_common()) + "). "
            "Routes are read from attributes, decorators and route registrations; anything built at run time (reflection, "
-           "convention plug-ins, gateways) is not visible here. Auth shows what the code declares on the endpoint or its "
-           "class; global filters and middleware apply on top.", "", '<a id="index"></a>', "",
-           "| Project | Endpoints |", "| --- | ---: |"]
+           "convention plug-ins, gateways) is not visible here. **Auth** is the effective authorisation the code declares: "
+           "the method's attributes, else its controller or a base controller (`class`, `base X`), else a global filter; "
+           "`none declared` means any visitor can call it unless middleware outside the controller checks. An MVC controller "
+           "routes every public instance method, so helpers that return data rather than an action result are listed too "
+           "(marked *helper exposed as action*)."
+           + (" Global filters: " + ", ".join(f"`{n}` (`{f}:{ln}`)" for n, f, ln in GLOBAL) + "." if GLOBAL else ""), "",
+           '<a id="index"></a>', "", "| Project | Endpoints |", "| --- | ---: |"]
     out += [f"| [{esc_text(p)}](#{slug('area', p)}) | {len(v)} |" for p, v in sorted(by_proj.items())]
+    if FINDINGS:
+        out += ["", f"[Security review candidates ({len(FINDINGS)})](#security-review)"]
     for p, rs in sorted(by_proj.items()):
         out += ["", f'<a id="{slug("area", p)}"></a>', "", f"## {p}", "", BACK, "",
                 "| Endpoint | Handler | Parameters | Auth | Source |", "| --- | --- | --- | --- | --- |"]
@@ -309,13 +434,96 @@ def main():
             params = ", ".join(f"`{esc(x)}`" for x in r["params"]) or "—"
             out.append(f'| <a id="{slug("ep", r["verb"] + " " + r["route"])}"></a>**{r["verb"]} {esc_text(r["route"])}** | {h} | {params} | '
                        f'{esc_text(r["auth"]) or "—"} | `{esc(r["file"])}:{r["line"]}` ({r["framework"]}) |')
+    if FINDINGS:
+        kinds = Counter(f["kind"] for f in FINDINGS)
+        out += ["", '<a id="security-review"></a>', "", "## Security review candidates", "", BACK, "",
+                "Patterns that often hide an authorisation or CSRF gap, found mechanically. Each is a **candidate** for "
+                "`security/findings.md`: read the code and confirm or dismiss it before it becomes a finding.", "",
+                "| Kind | Count |", "| --- | ---: |"] + [f"| {esc_text(k)} | {n} |" for k, n in kinds.most_common()]
+        out += ["", "| Kind | Controller · method | Detail | Source |", "| --- | --- | --- | --- |"]
+        for f in sorted(FINDINGS, key=lambda f: (f["kind"], f["controller"], f["method"])):
+            out.append(f"| {esc_text(f['kind'])} | {esc_text(f['controller'])} · {esc_text(f['method'])} | {esc_text(f['detail'])} | "
+                       f"`{esc(f['file'])}:{f['line']}` |")
     write_page("endpoints.md", out)
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
+    open(os.path.join(DOCS, "agent", "api-findings.json"), "w", encoding="utf-8", newline="\n").write(
+        json.dumps(FINDINGS, ensure_ascii=False, indent=1))
     for r in rows:
         r["anchor"] = slug("ep", r["verb"] + " " + r["route"])
     open(os.path.join(DOCS, "agent", "endpoints.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(rows, ensure_ascii=False, indent=1))
-    stat("endpoints", endpoints=len(rows), projects=len(by_proj))
-    print(f"endpoints: {len(rows)} in {len(by_proj)} projects (" + ", ".join(f"{k} {v}" for k, v in fw.most_common()) + ")")
+    stat("endpoints", endpoints=len(rows), projects=len(by_proj), review_candidates=len(FINDINGS),
+         anonymous=sum(1 for r in rows if r["auth"].startswith("anonymous")), no_auth=sum(1 for r in rows if r["auth"] == "none declared"))
+    print(f"endpoints: {len(rows)} in {len(by_proj)} projects (" + ", ".join(f"{k} {v}" for k, v in fw.most_common()) + ")"
+          + (f"; {len(FINDINGS)} security review candidates" if FINDINGS else ""))
+
+
+def prepass(files):
+    """The project's own authorisation attributes (classes deriving, directly or through each other, from AuthorizeAttribute
+    or an authorisation filter, plus user_filters / role_filters), controller attributes and bases, and global filters."""
+    bases = {}
+    for path, full in files:
+        t = strip_comments(read(full))
+        for m in CS_CLASS.finditer(t):
+            # every base type counts: "ActionFilterAttribute, IAuthenticationFilter" is an authentication gate
+            types = [b.strip().split("<")[0].split(".")[-1] for b in re.sub(r"<[^<>]*>", "", m.group(3) or "").split(",")]
+            name, base = m.group(2), types[0] if types else ""
+            bases[name] = [t for t in types if t]
+            if name.endswith("Controller") or "Controller" in base:
+                CLASS_ATTRS[name] = (m.group(1) or "", base)
+    changed = True
+    auth_classes = set()
+    while changed:
+        changed = False
+        for name, types in bases.items():
+            if name not in auth_classes and any(t in AUTH_BASES or t in auth_classes for t in types):
+                auth_classes.add(name)
+                changed = True
+    # anti-forgery filters implement IAuthorizationFilter but validate the request, they do not authorise the user
+    AUTH_ATTRS.update(n.removesuffix("Attribute") for n in auth_classes if not re.search(r"(?i)anti_?forgery|csrf|xsrf", n))
+    AUTH_ATTRS.update(OPT.get("user_filters", []) + OPT.get("role_filters", []))
+    GLOBAL.extend(global_filters())
+
+
+def review():
+    """Security review candidates from the controller members collected by dotnet()."""
+    sib_min = OPT.get("sibling_role_min", 2)
+    user_f = set(OPT.get("user_filters", []))
+    for cname, ms in CONTROLLERS.items():
+        acts = [m for m in ms if m.get("listed", True)]
+        declared = Counter(a.split(" (")[0] for m in acts for a in [m["declared"]] if role_like(a))
+        common = declared.most_common(1)[0] if declared else None
+        for m in acts:
+            loc = {"controller": cname, "method": m["meth"], "file": m["file"], "line": m["line"]}
+            state = bool(STATE_CHANGE.match(m["meth"]))
+            accepts_get = any(v in ("ANY", "GET") for v in m["verbs"])
+            # admin-looking action (or most siblings) with no role filter of its own while siblings declare one
+            if (common and common[1] >= sib_min and not role_like(m["auth"]) and (ADMIN_NAME.search(m["meth"])
+                                                                                   or common[1] * 2 >= len(acts))):
+                FINDINGS.append(dict(loc, kind="action without the role attribute its siblings carry",
+                                     detail=f"{common[1]} of {len(acts)} actions in the controller declare {common[0]}; this one has "
+                                     f"no role filter (effective: {m['auth'] or 'none'})"))
+            elif ADMIN_NAME.search(m["area"]) and not role_like(m["auth"]):
+                FINDINGS.append(dict(loc, kind="admin-area action without a role filter",
+                                     detail=f"in area {m['area']}; effective auth {m['auth'] or 'none'}: any signed-in user may call it"))
+            if state and accepts_get:
+                FINDINGS.append(dict(loc, kind="state-changing action accepting GET", detail=f"verbs: {', '.join(m['verbs'])}: a link or "
+                                     "image tag can trigger it, and anti-forgery checks that only cover POST do not apply"))
+            if m["auth"] == "anonymous" and state:
+                FINDINGS.append(dict(loc, kind="anonymous state-changing action", detail="[AllowAnonymous] on an action whose name "
+                                     "says it changes data"))
+            if not m["auth"] and state:
+                FINDINGS.append(dict(loc, kind="no authorisation declared", detail="no attribute on the method, the controller, a "
+                                     "base controller or a global filter"))
+            if test_name(m["meth"]):
+                FINDINGS.append(dict(loc, kind="test or temporary action left routable", detail=f"name suggests test / temporary code "
+                                     f"(effective auth: {m['auth'] or 'none'})"))
+            if m["helper"]:
+                FINDINGS.append(dict(loc, kind="helper exposed as action", detail="public method that returns data, not an action "
+                                     "result: MVC routes it; make it private or [NonAction] if it is not meant to be called"))
+            if user_f and not any(u in (m["auth"] or "") for u in user_f) and any(
+                    re.search(r"(?i)\b(user_?id|uid|userid)\b", p) for p in m["params"]):
+                FINDINGS.append(dict(loc, kind="user-id parameter without the user filter",
+                                     detail=f"takes a user id but declares none of {', '.join(sorted(user_f))}: may let one user act for another"))
 
 
 if __name__ == "__main__":

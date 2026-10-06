@@ -59,6 +59,9 @@ def main():
     for f in ("AGENTS.md", "mkdocs.yml", "codebase-docs.json"):
         shutil.copy2(f, kit)
     write(os.path.join(kit, "CLAUDE.md"), render("CLAUDE.block.md.tmpl", vals))
+    # docs-only workspace (README mode B): the same block with every path under repo-kit/, copied to the package root
+    write(os.path.join(kit, "CLAUDE.docs-only.md"),
+          render("CLAUDE.block.md.tmpl", dict(vals, docs_dir=f"repo-kit/{docs}")).replace("`AGENTS.md`", "`repo-kit/AGENTS.md`"))
     write(os.path.join(kit, "SETUP-GUIDE.md"), render("SETUP-GUIDE.md.tmpl", vals))
     write(os.path.join(pub, "README.md"), render("README.package.md.tmpl", vals))
     dst = os.path.join(kit, skill_src)

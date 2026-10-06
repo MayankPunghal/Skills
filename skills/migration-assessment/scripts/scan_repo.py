@@ -334,7 +334,14 @@ class Scan:
         except ImportError:
             self.facts["network"] = None
             return
-        net = NE.scan(self.root, sorted(SOURCE_DIR_SKIP | {s.lower() for s in self.cfg.get("exclude_dirs", [])}))
+        try:  # URLs and calls inside copied libraries (highcharts, jspdf ...) are not the application's destinations
+            import vendor_files
+            lib = set(vendor_files.scan(self.root))
+        except Exception:
+            lib = set()
+        net = NE.scan(self.root, sorted(SOURCE_DIR_SKIP | {s.lower() for s in self.cfg.get("exclude_dirs", [])}), lib)
+        net["outbound"] = [e for e in net["outbound"] if not e.get("third_party")]
+        net["clients"] = [c for c in net["clients"] if not c.get("same_app")]
         outbound = []
         for g in NE.destinations(net):
             f, ln = g["evidence"][0].rsplit(":", 1)

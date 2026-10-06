@@ -14,7 +14,10 @@ inbound   {port, scheme, host, source, file, line}   launchSettings, Kestrel end
           Dockerfile EXPOSE, docker-compose ports, UseUrls / Listen* in code, WCF service addresses, IIS-hosted .svc / .asmx
 clients   {tech, file, line, keys}   code that opens an outbound connection (HttpClient, WCF proxies, SmtpClient, FTP, Redis,
           RabbitMQ, Kafka, AWS / Azure SDK clients, LDAP, gRPC, SignalR client, sockets, MSMQ) and the configuration keys
-          named next to it, which is how a run-time destination is tied back to the code
+          named next to it, which is how a run-time destination is tied back to the code; "same_app": true for browser calls
+          (fetch / jQuery) to a relative URL or @Url.Action: the application calling itself, not an outbound destination
+Third-party code: scan(root, skip_dirs, vendored={relative paths}) marks outbound rows found in those files "third_party"
+(destinations() keeps the flag only when every evidence is third-party) and drops their client rows.
 config_users {key -> [(file, line)]}   code lines that read a configuration key that holds a destination
 
 Values are never returned: only scheme, host and port of a URL (no path, query or user info) and key NAMES.
@@ -111,6 +114,10 @@ CLIENTS = [("HTTP (HttpClient)", r"\bnew\s+HttpClient\b|\bAddHttpClient\b|\bIHtt
            ("Elasticsearch / OpenSearch", r"\bnew\s+(ElasticClient|ElasticsearchClient|OpenSearchClient)\b"),
            ("MongoDB", r"\bnew\s+MongoClient\b")]
 CLIENT_RX = [(t, re.compile(p)) for t, p in CLIENTS]
+# a browser call to the application itself: a relative URL string ('/Charting/Save', 'api/orders'), or a URL built by the
+# server-side view helpers (@Url.Action, Url.Content, ResolveUrl)
+SAME_APP = re.compile(r"""(?:\burl\s*:\s*|\bfetch\s*\(\s*|\$\.(?:ajax|get|post|getJSON)\s*\(\s*)(?:[\w.]+\s*\+\s*)?["'`](?![a-z][\w+.-]*:|//|\$\{)"""
+                      r"""|@?Url\.(?:Action|Content|RouteUrl)\s*\(|ResolveUrl\s*\(""", re.I)
 # configuration keys named in code: config["A:B"], GetValue<T>("A:B"), GetSection("A"), GetConnectionString("X"), AppSettings["K"]
 KEY_IN_CODE = re.compile(r"""(?:Configuration|config|_config|_configuration|cfg|settings|AppSettings|ConnectionStrings)\s*\[\s*["']([\w:.\-]+)["']\s*\]|"""
                          r"""(?:GetValue\s*<[^>]+>|GetValue\s*\(\s*Of\s+\w+\s*\)|GetSection|GetConnectionString|GetRequiredSection|"""
@@ -195,8 +202,9 @@ def split_host_port(value):
 
 
 class Scan:
-    def __init__(self, root, skip_dirs=None):
+    def __init__(self, root, skip_dirs=None, vendored=None):
         self.root = root
+        self.vendored = vendored or set()
         self.skip = SKIP_DIRS | {s.lower() for s in (skip_dirs or [])}
         self.outbound, self.inbound, self.clients = [], [], []
         self.dest_keys = set()
@@ -218,7 +226,8 @@ class Scan:
             return
         self.seen.add(k)
         self.outbound.append({"host": host, "port": port, "scheme": scheme, "kind": host_kind(host), "source": source, "key": key,
-                              "file": file, "line": line, "port_default": default, "role": role_of(scheme, source, key, f"{host} {hint}")})
+                              "file": file, "line": line, "port_default": default, "role": role_of(scheme, source, key, f"{host} {hint}"),
+                              "third_party": file in self.vendored})
         if key:
             self.dest_keys.add(key)
 
@@ -569,11 +578,16 @@ class Scan:
                     def found(txt):
                         return (sorted({a or b for a, b in KEY_IN_CODE.findall(txt)}),
                                 sorted({f"{m.group(1).lower()}://{m.group(2).lower()}" for m in URL.finditer(txt) if usable_host(m.group(2))}))
+                    if rp in self.vendored:  # a library's own calls (jszip, summernote ...) are not the application's
+                        break
                     keys, urls = found(line)
                     if not keys and not urls:  # var url = config["X"]; var http = new HttpClient { BaseAddress = new Uri(url) }
                         keys, urls = found(" ".join(x for x in lines[max(0, i - 3):i - 1] if not (cm and cm.match(x))
                                                     and not any(r.search(x) for _, r in CLIENT_RX)))  # not another call's address
-                    self.clients.append({"tech": t, "file": rp, "line": i, "keys": keys, "literals": urls})
+                    row = {"tech": t, "file": rp, "line": i, "keys": keys, "literals": urls}
+                    if t.startswith("HTTP (fetch") and not urls and SAME_APP.search(" ".join(lines[i - 1:i + 4])):
+                        row["same_app"] = True  # $.ajax({ url: '/Charting/Save' }) / fetch('@Url.Action(...)'): calls this application
+                    self.clients.append(row)
                     break
             for m in INBOUND_CODE.finditer(line):
                 if m.group(1) or m.group(4):
@@ -596,8 +610,8 @@ class Scan:
                 "clients": self.clients, "config_users": users, "drives": self.drives, "files_scanned": self.files}
 
 
-def scan(root, skip_dirs=None):
-    return Scan(root, skip_dirs).run()
+def scan(root, skip_dirs=None, vendored=None):
+    return Scan(root, skip_dirs, vendored).run()
 
 
 def destinations(net):
@@ -606,8 +620,9 @@ def destinations(net):
     for e in net["outbound"]:
         g = groups.setdefault((e["host"], e["port"], e["scheme"]), {"host": e["host"], "port": e["port"], "scheme": e["scheme"],
                                                                    "kind": e["kind"], "sources": set(), "keys": set(), "files": [], "evidence": [],
-                                                                   "port_default": True})
+                                                                   "port_default": True, "third_party": True})
         g["port_default"] = g["port_default"] and e.get("port_default", False)
+        g["third_party"] = g["third_party"] and e.get("third_party", False)
         g["sources"].add(e["source"])
         if g.get("role") in (None, "HTTP service / API", "Network service"):
             g["role"] = e.get("role") or g.get("role")
@@ -616,8 +631,13 @@ def destinations(net):
         if e["file"] not in g["files"]:
             g["files"].append(e["file"])
         g["evidence"].append(f"{e['file']}:{e['line']}")
+        g.setdefault("_tp", set()).update([e["file"]] if e.get("third_party") else [])
     out = []
     for g in groups.values():
+        tp = g.pop("_tp", set())
+        if tp and not g["third_party"]:  # named by the application too: cite the application's files, not the library copies
+            g["files"] = [f for f in g["files"] if f not in tp]
+            g["evidence"] = [x for x in g["evidence"] if x.rsplit(":", 1)[0] not in tp]
         g["sources"], g["keys"] = sorted(g["sources"]), sorted(g["keys"])
         g["users"] = sorted({u for k in g["keys"] for u in net.get("config_users", {}).get(k, [])})
         out.append(g)

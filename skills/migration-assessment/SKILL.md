@@ -2,7 +2,7 @@
 name: migration-assessment
 description: Assesses legacy .NET code bases (one repository or hundreds) for migration and modernization to AWS and Linux, and produces an evidence-backed, client-ready AWS Migration & Modernization Assessment Report with JSON/CSV exports. Inventories the estate, maps each repo with graphify, scans for everything that breaks on Linux or .NET 10 (Windows-only APIs, System.Web, WCF, COM, registry, SQL Server features, config secrets, vulnerable NuGet packages and more), classifies every application with the 7 Rs and estimates effort and timeline. Use when the user mentions migrating, modernizing, porting or assessing .NET Framework / ASP.NET / WCF apps for AWS, Linux, containers, .NET 8/10, the 7 Rs, AWS Transform, MAP or licensing cost reduction, or asks what will break when moving an app off Windows/SQL Server, even if they don't say "assessment".
 metadata:
-  version: 2.9.0
+  version: 2.10.0
 user-invocable: true
 argument-hint: "[help · assess-estate · discover-estate · map-code-graph · scan-repos · review-findings · classify-applications · estimate-effort · validate-linux-build · write-report · verify-report · calibrate-report · resume] [repo]"
 allowed-tools:
@@ -36,6 +36,7 @@ Assess legacy .NET code bases (one repository or hundreds) for migration and mod
 - **Ask before downloads or installs.** That covers container images, NuGet restore and Python. The user decides whether subagents may be used (default: no).
 - **Scenarios, not one answer.** Ask the client's preference (code side: modernize to .NET 10 on Linux, or lift-and-shift to Windows EC2; database code: dual SQL Server + PostgreSQL, PostgreSQL only, or none) and set it with `setup_assessment.py --target-hosting ... --target-database ...`. The report always shows all options.
 - **Resumable.** Run `scripts/context.py` first in every session; it prints the state and `NEXT`. Report at the end only: what was assessed, the headline result, gaps.
+- **Log skill problems as they happen.** Every script failure, misleading output, false gate, unclear step or workaround goes into `SKILL-ISSUES.md` at the workspace root (created by `setup_assessment.py` / `context.py`; the format is in the file): symptom, cause, workaround, suggested fix. Work around problems in the workspace, never by patching the installed skill unless the user allows it. The final report to the user gives the number of entries and the path.
 
 ## Workflow
 

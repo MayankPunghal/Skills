@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import network_endpoints as NE  # noqa: E402
-from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, options, project_of, read, slug, write_page  # noqa: E402
+from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, options, project_of, read, slug, vendored, write_page  # noqa: E402
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-endpoints")
@@ -28,10 +28,22 @@ KIND = {"internal": "Internal / on-premises", "external": "External service", "e
 SOURCE = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
           "unc-path": "UNC path", "session-state": "session state setting"}
 MAX_USERS = 8
+# environment variables whose name says they hold an address: set on the server, so the destination is not in the repository
+ENV_DEST = re.compile(r"(?i)(?:^|_)(HOST|HOSTNAME|SERVER|ENDPOINT|URL|URI|BASE_?URL|ADDRESS|DOMAIN)$")
+
+
+def env_destinations():
+    """[(variable, [(file, line, member)])] from docs/agent/config-reads.json (generic-config) for address-like names."""
+    p = os.path.join(DOCS, "agent", "config-reads.json")
+    if not os.path.exists(p):
+        return []
+    rows = json.load(open(p, encoding="utf-8"))
+    return [(r["key"], r["source"], r["reads"]) for r in rows if r["source"].startswith("environment") and ENV_DEST.search(r["key"])]
 
 
 def main():
-    net = NE.scan(ROOT, OPT.get("exclude_dirs"))
+    lib = vendored()
+    net = NE.scan(ROOT, OPT.get("exclude_dirs"), lib)
     M = Methods()
 
     comp = os.path.join(DOCS, "reference", "components.md")
@@ -46,7 +58,12 @@ def main():
         c = slug("cls", f, names[-1]) if names else ""
         return f"[{esc(names[-1])}](components.md#{c}) (`{esc(f.split('/')[-1])}:{ln}`)" if c in cls_anchors else f"`{esc(f)}:{ln}`"
 
-    dests = NE.destinations(net)
+    alld = NE.destinations(net)
+    dests = [g for g in alld if not g.get("third_party")]
+    third = [g for g in alld if g.get("third_party")]  # URLs inside copied libraries: documentation links, CDN fallbacks
+    same_app = [c for c in net["clients"] if c.get("same_app")]
+    net["clients"] = [c for c in net["clients"] if not c.get("same_app")]
+    envd = env_destinations()
     # literal URLs in code: the method holding them uses the destination
     for g in dests:
         lit = [e.rsplit(":", 1) for e in g["evidence"]]
@@ -60,8 +77,12 @@ def main():
            '<a id="index"></a>', "",
            f"- [Outbound destinations](#net-outbound): {len(dests)} "
            f"({', '.join(f'{KIND[k].lower()} {v}' for k, v in Counter(g['kind'] for g in dests).most_common()) or 'none'})",
+           *([f"- [Destinations set by environment variables](#net-env): {len(envd)}"] if envd else []),
            f"- [Inbound listeners](#net-inbound): {len(net['inbound'])}",
-           f"- [Outbound call sites](#net-clients): {len(net['clients'])}", "",
+           f"- [Outbound call sites](#net-clients): {len(net['clients'])}",
+           *([f"- [Browser calls to this application](#net-same-app): {len(same_app)} (not outbound)"] if same_app else []),
+           *([f"- [URLs found in third-party code](#net-third-party): {len(third)} (not the application's destinations)"] if third else []),
+           "",
            '<a id="net-outbound"></a>', "", "## Outbound destinations", "", BACK, ""]
     if dests:
         out += ["| Role | Destination | Port | Protocol | Kind | Defined in (how it is configured) | Used by | Evidence |",
@@ -81,6 +102,14 @@ def main():
         out += ["", "**Drive letters other than C:** (often mapped network drives: they do not exist in a container or on a new host; ask what "
                 "each maps to):", "", "| Drive | Config key | Evidence |", "| --- | --- | --- |"]
         out += [f"| `{d['drive']}` | {('`' + esc(d['key']) + '`') if d['key'] else '_code literal_'} | `{esc(d['file'])}:{d['line']}` |" for d in net["drives"]]
+    if envd:
+        out += ["", '<a id="net-env"></a>', "", "## Destinations set by environment variables", "", BACK, "",
+                "Variables whose name says they hold an address (`*_HOST`, `*_ENDPOINT`, `*_URL` …), read in code (see "
+                "[configuration](configuration.md#cfg-code)). Their values are set on the server, not in the repository: ask for "
+                "each one when building the allow-list.", "", "| Variable | Source | Read by |", "| --- | --- | --- |"]
+        for k, src, reads in envd:
+            users = list(dict.fromkeys(where(r["file"], r["line"]) for r in reads))
+            out.append(f'| <a id="{slug("net-env", k)}"></a>`{esc(k)}` | {esc_text(src)} | {", ".join(users[:MAX_USERS])} |')
     out += ["", '<a id="net-inbound"></a>', "", "## Inbound listeners", "", BACK, "",
             "Ports opened by the applications. Development-only sources (launchSettings, IIS Express) show local ports; production "
             "ports come from the container / host configuration. HTTP routes behind each port are on the [endpoints](endpoints.md) page.", ""]
@@ -110,15 +139,37 @@ def main():
                        f'`{esc(c["file"])}:{c["line"]}` |')
     else:
         out.append("_No outbound client construction found (HttpClient, WCF, SMTP, FTP, message brokers, cloud SDKs, sockets)._")
+    if same_app:
+        per_file = Counter(c["file"] for c in same_app)
+        out += ["", '<a id="net-same-app"></a>', "", "## Browser calls to this application", "", BACK, "",
+                f"{len(same_app)} fetch / jQuery calls to a relative URL (also `basePath + '/Controller/Action'`) or a "
+                "`Url.Action` address: the browser calling this application's own routes ([endpoints](endpoints.md)), not an "
+                "outbound destination. Check the base variable once if the front end can point at another host.", "",
+                "| Script | Calls |", "| --- | ---: |"]
+        out += [f"| `{esc(f)}` | {n} |" for f, n in per_file.most_common()]
+    if third:
+        out += ["", '<a id="net-third-party"></a>', "", "## URLs found in third-party code", "", BACK, "",
+                "Hosts named only inside copied libraries (vendor folders, files with a library banner, `graph.vendor_dirs`): "
+                "documentation links, licence URLs and optional features of the library. They are not the application's "
+                "destinations; check one only if the application turns that library feature on.", "",
+                "| Host | Files |", "| --- | --- |"]
+        for g in third:
+            files = ", ".join(f"`{esc(f)}`" for f in g["files"][:3]) + (f" +{len(g['files']) - 3}" if len(g["files"]) > 3 else "")
+            out.append(f"| `{esc(g['host'])}` | {files} |")
     write_page("network-endpoints.md", out)
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
     doc = {"outbound": [{k: v for k, v in g.items() if k != "code_users"} | {"anchor": slug("net", g["host"], g["port"] or "x")} for g in dests],
-           "inbound": net["inbound"], "clients": net["clients"], "drives": net.get("drives", [])}
+           "inbound": net["inbound"], "clients": net["clients"], "drives": net.get("drives", []),
+           "same_app_calls": len(same_app), "third_party_hosts": [g["host"] for g in third],
+           "env_destinations": [{"variable": k, "source": s} for k, s, _ in envd]}
     open(os.path.join(DOCS, "agent", "network.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(doc, ensure_ascii=False, indent=1, default=list))
     kinds = Counter(g["kind"] for g in dests)
-    stat("network", outbound=len(dests), inbound=len(net["inbound"]), call_sites=len(net["clients"]))
+    stat("network", outbound=len(dests), inbound=len(net["inbound"]), call_sites=len(net["clients"]), env_destinations=len(envd),
+         same_app_calls=len(same_app), third_party_hosts=len(third))
     print(f"network-endpoints: {len(dests)} outbound destinations ({', '.join(f'{k} {v}' for k, v in kinds.most_common()) or 'none'}), "
-          f"{len(net['inbound'])} inbound listeners, {len(net['clients'])} outbound call sites in {net['files_scanned']} files")
+          f"{len(net['inbound'])} inbound listeners, {len(net['clients'])} outbound call sites in {net['files_scanned']} files"
+          + (f"; {len(envd)} set by environment variables" if envd else "")
+          + (f"; {len(same_app)} browser calls to this application and {len(third)} third-party hosts set apart" if same_app or third else ""))
 
 
 if __name__ == "__main__":

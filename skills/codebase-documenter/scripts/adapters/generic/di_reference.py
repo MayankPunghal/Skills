@@ -19,7 +19,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _scan import BACK, CFG, DOCS, Methods, esc, esc_text, slug, write_page
+from _scan import BACK, CFG, DOCS, Methods, cut, esc, esc_text, slug, write_page
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 GRAPH_DIR = CFG.get("graph_dir", "graphify-out")
@@ -118,7 +118,7 @@ def main():
             "Framework and library services each application switches on (`services.Add…` calls other than plain registrations): "
             "session, caching, health checks, authentication, SignalR, MediatR, message buses, validators …", "",
             "| Feature | Application | Call | Where |", "| --- | --- | --- | --- |"]
-    out += [f"| {esc(n['kind'])} | `{esc(n.get('host') or '')}` | `{esc(n['text'][:120])}` | {src_ref(n['file'], n['line'])} |"
+    out += [f"| {esc(n['kind'])} | `{esc(n.get('host') or '')}` | `{esc(cut(n['text'], 120))}` | {src_ref(n['file'], n['line'])} |"
             for n in sorted(d.get("notes", []), key=lambda n: (n.get("host") or "", n["kind"]))]
 
     # composition roots
@@ -224,7 +224,7 @@ def main():
             "listed when the rule could be read (AssignableTo, name filters); otherwise the scan is unresolved.", "",
             "| Scan | Lifetime | Classes matched | Where |", "| --- | --- | --- | --- |"]
     for c in d.get("conventions", []):
-        out.append(f"| `{esc(c['text'][:160])}` | {esc(c.get('lifetime', '?'))} | {', '.join(cls(x) for x in c.get('resolved', [])[:20]) or 'unresolved'} | {src_ref(c['file'], c['line'])} |")
+        out.append(f"| `{esc(cut(c['text'], 160))}` | {esc(c.get('lifetime', '?'))} | {', '.join(cls(x) for x in c.get('resolved', [])[:20]) or 'unresolved'} | {src_ref(c['file'], c['line'])} |")
 
     # partial types
     out += ["", '<a id="di-partials"></a>', "", "## Partial types", "", BACK, "",
@@ -255,7 +255,7 @@ def main():
             "Calls decided at run time that no static reading can resolve: reflection, `Activator.CreateInstance`, types loaded "
             "by name, `dynamic`, containers configured from XML / JSON files, and proxies. The sites found are listed so they can "
             "be checked by hand.", "", "| What | Where |", "| --- | --- |"]
-    out += [f"| `{esc(r['text'])}` | {src_ref(r['file'], r['line'])} |" for r in d.get("reflection", [])[:200]]
+    out += [f"| `{esc(cut(r['text'], 200))}` | {src_ref(r['file'], r['line'])} |" for r in d.get("reflection", [])[:200]]
     write_page("dependency-injection.md", out)
 
     agent = os.path.join(DOCS, "agent")

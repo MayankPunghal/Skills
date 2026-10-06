@@ -104,7 +104,37 @@ def cmd_check(cfg, a):
     print("graph:", "present" if os.path.exists(os.path.join(cfg["graph_dir"], "graph.json")) else "not built")
 
 
+def graph_size(cfg):
+    """(nodes per source language, top folders by script nodes) from graph.json, for the size check after extract."""
+    try:
+        g = load_graph(cfg)
+    except (OSError, ValueError):
+        return Counter(), Counter()
+    langs, js_dirs = Counter(), Counter()
+    for n in g.get("nodes", []):
+        sf = str(n.get("source_file") or "").replace("\\", "/")
+        ext = os.path.splitext(sf)[1].lower()
+        if not ext:
+            continue
+        lang = {".cs": "C#", ".vb": "VB", ".js": "JavaScript", ".mjs": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript",
+                ".jsx": "JavaScript", ".py": "Python", ".java": "Java", ".sql": "SQL"}.get(ext, ext)
+        langs[lang] += 1
+        if lang == "JavaScript":
+            rel = os.path.relpath(sf, cfg["source_root"]).replace("\\", "/") if os.path.isabs(sf) else sf
+            js_dirs["/".join(rel.split("/")[:3][:-1]) or "."] += 1
+    return langs, js_dirs
+
+
 def cmd_build(cfg, a):
+    from _common import GraphLock
+    with GraphLock(cfg, "build"):
+        build(cfg, a)
+
+
+def build(cfg, a):
+    import time
+    from _common import step
+    t_all = time.time()
     src = cfg["source_root"]
     args = ["extract", src, "--out", "."]
     if not a.semantic:
@@ -116,11 +146,15 @@ def cmd_build(cfg, a):
     if a.postgres:
         args += ["--postgres", a.postgres]
     from vendor_files import graphify_excludes  # copied-in jQuery / Bootstrap / WebForms scripts are not the project's code
-    excl = graphify_excludes(src)
+    t = time.time()
+    step("finding vendored front-end libraries ...")
+    rep = {}
+    excl = graphify_excludes(src, report=rep)
     for x in excl:
         args += ["--exclude", x]
     if excl:
-        print(f"excluding {len(excl)} vendored front-end library pattern(s) (vendor_files.py)")
+        step(f"excluding {len(excl)} vendored pattern(s): {len(rep.get('configured', []))} configured folder(s), "
+             f"{len(rep.get('folders', []))} library folder(s), {rep.get('files', 0)} single file(s)", t)
     env = None
     if a.semantic:
         env, backend, name = label_env(cfg)
@@ -136,18 +170,39 @@ def cmd_build(cfg, a):
             skip = True
             continue
         shown.append(x)
-    print("$ graphify " + " ".join(shown) + (f" (+{len(excl)} --exclude patterns)" if excl else ""))
+    print("$ graphify " + " ".join(shown) + (f" (+{len(excl)} --exclude patterns)" if excl else ""), flush=True)
+    t = time.time()
+    step("1/6 graphify extract (the longest step on a big repository) ...")
     code, out = gfy(args, env=env)
-    print(out[-1500:])
+    print(out[-1500:], flush=True)
     if code:
         sys.exit(code)
+    langs, js_dirs = graph_size(cfg)
+    step("1/6 extract done: " + (", ".join(f"{k} {v}" for k, v in langs.most_common(6)) + " nodes" if langs else "no nodes"), t)
+    code_nodes = langs.get("C#", 0) + langs.get("VB", 0)
+    if code_nodes and langs.get("JavaScript", 0) > code_nodes:
+        print(f"WARNING: the graph holds more JavaScript nodes ({langs['JavaScript']}) than C# / VB nodes ({code_nodes}). Copied "
+              "libraries are probably still inside. Largest script folders: "
+              + ", ".join(f"{d} ({n})" for d, n in js_dirs.most_common(5))
+              + ". Add the library folders to graph.vendor_dirs in codebase-docs.json and rerun with --force.", flush=True)
+    t = time.time()
+    step("2/6 C# call resolver (first pass) ...")
     resolve_calls(quiet=True)  # before clustering: DI / dispatch edges help communities group interfaces with implementations
+    step("3/6 database layer (first pass) ...", t)
+    t = time.time()
     sql_layer(quiet=True)      # database objects + SQL edges, so tables cluster with the code that uses them
+    step("4/6 clustering ...", t)
+    t = time.time()
     code, out = gfy(["cluster-only", ".", "--no-label"] + (["--no-viz"] if a.no_viz else []))
-    print(out[-800:])
+    print(out[-800:], flush=True)
+    step("5/6 C# call resolver and database layer (second pass) ...", t)
+    t = time.time()
     resolve_calls()            # again after: graphify stores an undirected simple graph, so A->B merges into an existing B->A
     sql_layer()
+    step("6/6 naming communities ...", t)
+    t = time.time()
     name_communities([])       # heuristic names straight away (free, unique); `label` upgrades them with an LLM
+    step("graph build finished", t_all)
     if code == 0:
         tick(cfg, "graphify installed, graph built")
 
@@ -175,8 +230,10 @@ def sql_layer(quiet=False):
 
 
 def cmd_resolve(cfg, a):
-    resolve_calls()
-    sql_layer()
+    from _common import GraphLock
+    with GraphLock(cfg, "resolve"):
+        resolve_calls()
+        sql_layer()
 
 
 def cmd_label(cfg, a):

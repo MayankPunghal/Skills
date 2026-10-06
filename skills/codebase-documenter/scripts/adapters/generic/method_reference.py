@@ -7,8 +7,9 @@ Part of the generic-graph adapter (runs after graph_reference.py). Writes into d
                         (default 2000): methods.md becomes the index and each project gets its own page
 and docs/agent/methods.json (compact, for tools and the flow viewer):
   {"<anchor>": {"name", "file", "line", "decl", "params": [...], "returns", "calls": [anchor...], "callers": [anchor...],
-                "via": {anchor: "di registration" | "override" | "message" | ...}}}   (via: only calls bound at run time,
-  from csharp_resolve.py; trace_flow.py prints them on each hop)
+                "via": {anchor: "di registration" | "override" | "message" | ...}, "note"}}   (via: only calls bound at run
+  time, from csharp_resolve.py; trace_flow.py prints them on each hop. note: filter attributes on a controller method
+  that is not an action, "present, not evaluated")
 
 Calls come from graphify: EXTRACTED edges are shown plainly, INFERRED ones in italics (resolved by name, verify in code).
 Declarations are parsed from the source text, so they work for any language with name(...) declarations
@@ -20,6 +21,7 @@ import re
 from collections import defaultdict
 
 from graph_reference import CFG, DOCS, GRAPH, OPT, OUT, SKIP_PATH, esc, line_of, norm, slug
+from _scan import cut  # noqa: E402  (truncation that never leaves a dangling "<")
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 SRC_ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
@@ -170,13 +172,40 @@ def parse_decl(n, name):
         toks = [t for t in (prefix[: prefix.rfind(name)] if name in prefix else "").split() if t.lower() not in MODIFIERS]
         returns = " ".join(toks)
     decl = (prefix + "(" + ", ".join(params) + ")" + ("" if not body else body if body.startswith(":") else " " + body)).strip()
-    return decl[:220], params, returns
+    return cut(decl, 220), params, returns
 
 
 def first_line(n):
     lines = source_lines(n.get("source_file") or "")
     ln = line_of(n)
-    return (lines[ln - 1].strip()[:160] if lines and ln and ln <= len(lines) else "")
+    return (cut(lines[ln - 1].strip(), 160) if lines and ln and ln <= len(lines) else "")
+
+
+NOT_FILTERS = {"NonAction", "Obsolete", "SuppressMessage", "MethodImpl", "DebuggerStepThrough", "DebuggerHidden",
+               "ExcludeFromCodeCoverage", "CompilerGenerated", "Conditional", "Description", "DisplayName"}
+
+
+def idle_filters(n, cls):
+    """Attributes on a controller method MVC never runs as an action (private / protected / internal / static /
+    [NonAction]): filters there are never evaluated, so the action calling the helper is not protected by them."""
+    if not cls.endswith("Controller") or os.path.splitext(n.get("source_file") or "")[1].lower() != ".cs":
+        return []
+    lines, ln = source_lines(n.get("source_file") or ""), line_of(n)
+    if not lines or not ln or ln > len(lines):
+        return []
+    head = [lines[ln - 1]]
+    while re.fullmatch(r"\s*(?:\[[^\]]*\]\s*)+", head[-1]) and ln + len(head) - 1 < len(lines) and len(head) < 12:
+        head.append(lines[ln + len(head) - 1])  # graphify may report the first attribute line: read on to the declaration
+    k = ln - 2
+    while k >= 0 and (not lines[k].strip() or lines[k].strip().startswith("[")) and len(head) < 12:
+        head.insert(0, lines[k])
+        k -= 1
+    text = " ".join(head)
+    decl = re.sub(r"\[[^\]]*\]", " ", text)
+    names = [a.split("(")[0].strip().split(".")[-1].removesuffix("Attribute")
+             for blk in re.findall(r"\[([^\]]*)\]", text) for a in split_top(blk)]
+    idle = "NonAction" in names or re.search(r"\b(?:private|protected|internal|static)\b", decl)
+    return [a for a in names if a and a not in NOT_FILTERS] if idle else []
 
 
 def project_of(path, cache={}):
@@ -260,6 +289,10 @@ def main():
         ov = overload_lines(n["source_file"], name, cls_name(i))
         if len(ov) > 1:
             info[i]["overloads"] = ov
+        idle = idle_filters(n, cls_name(i) or "")
+        if idle:
+            info[i]["note"] = ("attribute" + ("s " if len(idle) > 1 else " ") + ", ".join(f"[{a}]" for a in idle)
+                               + " present, not evaluated: not an action")
 
     def link(j, here, inferred=False, how=""):
         target = "" if page[j] == here else page[j]
@@ -296,7 +329,8 @@ def main():
                 body.append(f'| <a id="{aid[i]}"></a>**{esc(x["name"])}** (`{esc(f)}:{x["line"] or "?"}`) | '
                             f'`{esc(x["decl"])}`'
                             + (f' · {len(x["overloads"])} overloads (lines {", ".join(map(str, x["overloads"]))}) share this entry: '
-                               f'calls and callers are merged' if x.get("overloads") else "") + f' | {calls} | '
+                               f'calls and callers are merged' if x.get("overloads") else "")
+                            + (f' · ⚠ {esc(x["note"])}' if x.get("note") else "") + f' | {calls} | '
                             f'{links(in_e[i], here)} |')
             body.append("")
         pages[here] += body

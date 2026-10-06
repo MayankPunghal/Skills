@@ -20,7 +20,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-from _scan import BACK, DOCS, Methods, esc, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, Methods, cut, esc, options, project_of, read, slug, walk, write_page
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from code_text import code_match  # noqa: E402  (same string-literal rule as migration-assessment's scan)
@@ -96,7 +96,7 @@ def blank_comments(text, ftype):
 
 def snippet(line):
     s = line.strip()
-    return "(line holds a secret-like setting; open the file)" if SECRETISH.search(s) else (s[:140] + "…" if len(s) > 140 else s)
+    return "(line holds a secret-like setting; open the file)" if SECRETISH.search(s) else cut(s, 140)
 
 
 def main():

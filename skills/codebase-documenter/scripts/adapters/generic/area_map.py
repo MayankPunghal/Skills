@@ -5,9 +5,12 @@ report counts each item as discussed and readers can browse the system by busine
 Area assignment (deterministic, first rule wins):
   1. adapter_options["generic-areas"]["rules"]: [{"area": "Orders", "regex": "order|invoice"}, ...]  (matched on the name,
      then on the file path)
-  2. classes: their graphify community name; tables / routines: the first word of the name (Order_Line -> Order)
+  2. the research areas in docs/_notes/areas.json (use_research_areas, default true): the most specific area path holding
+     the class file, the routine's definition file, or (procedures known only from code) its first call site
+  3. classes: their graphify community name; tables / routines: the first word of the name (Order_Line -> Order)
 Run by build_site.py after the other adapters (cwd = workspace root).
 """
+import fnmatch
 import json
 import os
 import re
@@ -33,6 +36,58 @@ def by_rule(name, path=""):
         if rx.search(name) or (path and rx.search(path)):
             return area
     return None
+
+
+def research_areas():
+    """[(title, matcher)] from docs/_notes/areas.json (the research areas every note and page uses), most specific path first.
+    A path is a folder (everything below it), a file, a * pattern, or "." (files directly in the source root)."""
+    p = os.path.join(DOCS, "_notes", "areas.json")
+    if not OPT.get("use_research_areas", True) or not os.path.exists(p):
+        return []
+    try:
+        areas = json.load(open(p, encoding="utf-8"))
+    except ValueError:
+        return []
+    rules = []
+    for a in areas:
+        for path in a.get("paths") or []:
+            path = str(path).replace("\\", "/").strip("/")
+            if path:
+                rules.append((len(path) if path != "." else 0, a.get("title") or a.get("id"), path))
+    rules.sort(key=lambda r: -r[0])
+
+    def match(file_path, pat):
+        f = file_path.replace("\\", "/").lstrip("./")
+        if pat == ".":
+            return "/" not in f
+        if any(c in pat for c in "*?["):
+            return fnmatch.fnmatch(f, pat)  # fnmatch's * also crosses "/": Scripts/Orders* holds Scripts/Orders/edit.js
+        return f == pat or f.startswith(pat + "/")
+    return [(title, (lambda f, pat=pat: match(f, pat))) for _, title, pat in rules]
+
+
+AREA_RULES = None
+
+
+def by_area(path):
+    global AREA_RULES
+    if AREA_RULES is None:
+        AREA_RULES = research_areas()
+    if not path:
+        return None
+    for title, m in AREA_RULES:
+        if m(path):
+            return title
+    return None
+
+
+def routine_files():
+    """routine anchor -> the file that defines it, or (procedures known only from code) the file of its first call site."""
+    p = os.path.join(DOCS, "agent", "db.json")
+    if not os.path.exists(p):
+        return {}
+    db = json.load(open(p, encoding="utf-8"))
+    return {r["anchor"]: r.get("file") for r in db.get("routines", []) + db.get("tables", []) if r.get("anchor")}
 
 
 def main():
@@ -62,9 +117,11 @@ def main():
         for aid, name, path in rows:
             c = comm_of.get(aid)
             folder = "/".join(path.split("/")[:-1][:3]) or "(root)"
-            area = by_rule(name, path) or (c if c and size[c] >= min_comm and not re.match(r"(?i)community \d+$", c) else folder)
+            area = by_rule(name, path) or by_area(path) or (
+                c if c and size[c] >= min_comm and not re.match(r"(?i)community \d+$", c) else folder)
             areas[area]["classes"].append((name, aid))
-    for page, kind in (("db-routines.md", "routines"), ("db-tables.md", "tables")):
+    files = routine_files()
+    for page, kind in (("db-routines.md", "routines"), ("db-tables.md", "tables"), ("db-code-routines.md", "routines")):
         p = os.path.join(REF, page)
         if not os.path.exists(p):
             continue
@@ -75,7 +132,7 @@ def main():
             toks = [t for t in re.split(r"_|(?<=[a-z])(?=[A-Z])", name) if t]
             while len(toks) > 1 and toks[0].lower() in STOP:
                 toks = toks[1:]
-            area = by_rule(name) or (toks[0].title() if toks else name)
+            area = by_rule(name) or by_area(files.get(a)) or (toks[0].title() if toks else name)
             areas[area][kind].append((name, a))
     if not areas:
         print("area-map: nothing to map (no components.md / SQL reference)")

@@ -17,7 +17,7 @@ import re
 import sys
 from collections import defaultdict
 
-from _scan import BACK, ROOT, esc, line_at, options, read, slug, walk, write_page
+from _scan import BACK, ROOT, cut, esc, line_at, options, read, slug, walk, write_page
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import scheduled_jobs as SJ  # noqa: E402
@@ -30,7 +30,7 @@ sections = defaultdict(list)  # section -> markdown lines
 
 def cmd(s):
     s = re.sub(r"\s+", " ", s.strip())
-    return "(command hidden: contains a credential-like word)" if SECRETISH.search(s) and "secrets." not in s else s[:160]
+    return "(command hidden: contains a credential-like word)" if SECRETISH.search(s) and "secrets." not in s else cut(s, 160)
 
 
 def item(section, title, path, lines):
@@ -49,18 +49,44 @@ def toolchain():
         item("toolchain", os.path.basename(path), path, [f"- {esc(x)}" for x in t.splitlines()[:8]])
 
 
+TEST_REF = re.compile(r"(?i)Microsoft\.NET\.Test\.Sdk|<IsTestProject>\s*true|\b(?:xunit|nunit|MSTest\.TestFramework|MSTest\.Sdk)\b|"
+                      r"Microsoft\.VisualStudio\.(?:QualityTools\.)?UnitTest")
+
+
+def is_test_project(full, text):
+    """References a test framework or the test SDK, in the project file or (legacy projects) its packages.config."""
+    pc = os.path.join(os.path.dirname(full), "packages.config")
+    return bool(TEST_REF.search(text) or (os.path.exists(pc) and TEST_REF.search(read(pc))))
+
+
 def dotnet():
     projs = list(walk(exts={".csproj", ".vbproj", ".fsproj"}))
+    info = {}
+    for path, full in projs:
+        t = read(full)
+        info[os.path.normcase(os.path.abspath(full))] = (not re.search(r'<Project\s+Sdk="([^"]+)"', t), is_test_project(full, t))
     for path, full in walk(exts={".sln", ".slnx"}):
-        item("commands", f"Solution {os.path.basename(path)}", path, [f"- Restore and build: `dotnet build \"{path}\"`",
-                                                                      f"- Test: `dotnet test \"{path}\"`"])
+        # the projects the solution builds: legacy (non-SDK) ones need msbuild, and `dotnet test` only helps with a test project
+        refs = [os.path.normcase(os.path.abspath(os.path.join(os.path.dirname(full), r.replace("\\", os.sep))))
+                for r in re.findall(r'"([^"]+\.(?:cs|vb|fs)proj)"', read(full), re.I)]
+        mine = [info[r] for r in refs if r in info] or list(info.values())
+        legacy, tests = any(lg for lg, _ in mine), any(ts for _, ts in mine)
+        if legacy:
+            lines = [f"- Restore: `nuget restore \"{path}\"` (packages.config projects; Windows)",
+                     f"- Build: `msbuild \"{path}\" /p:Configuration=Release` (non-SDK-style projects: `dotnet build` does not "
+                     "build them reliably; Visual Studio Build Tools)"]
+            lines.append("- Test: `vstest.console` on the built test assemblies" if tests else "- Test: no test project in this solution")
+        else:
+            lines = [f"- Restore and build: `dotnet build \"{path}\"`",
+                     f"- Test: `dotnet test \"{path}\"`" if tests else "- Test: no test project in this solution"]
+        item("commands", f"Solution {os.path.basename(path)}", path, lines)
     for path, full in projs:
         t = read(full)
         name = os.path.splitext(os.path.basename(path))[0]
         sdk = re.search(r'<Project\s+Sdk="([^"]+)"', t)
         legacy = not sdk
         lines = []
-        if re.search(r"Microsoft\.NET\.Test\.Sdk|<IsTestProject>\s*true", t, re.I):
+        if info[os.path.normcase(os.path.abspath(full))][1]:
             lines.append(f"- Test: `dotnet test \"{path}\"`" if not legacy else "- Test: build with msbuild, run with vstest.console")
         elif (sdk and "Web" in sdk.group(1)) or re.search(r"<OutputType>\s*(Exe|WinExe)", t, re.I):
             lines.append(f"- Run: `dotnet run --project \"{path}\"`" if not legacy else
