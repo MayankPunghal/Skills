@@ -16,6 +16,8 @@
 npx -y github:MayankPunghal/Skills
 ```
 
+New here? The one-page **[Quick start](QUICKSTART.md)** covers install and the three main skills.
+
 </div>
 
 ---
