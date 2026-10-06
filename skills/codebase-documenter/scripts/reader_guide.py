@@ -1,5 +1,7 @@
 """Site furniture the skill owns, refreshed on every build_site.py run:
 
+- docs/assets/site-theme.css (the site's look) and docs/assets/fonts/ (IBM Plex, SIL OFL), loaded before the project's
+  extra.css; an extra.css or logo.svg still identical to the previous template is upgraded, an edited one is left alone;
 - docs/assets/readability.css (sticky table headers, readable line length) and its mkdocs.yml extra_css entry;
 - the theme font: the template default (Inter from Google Fonts) becomes system fonts, so the offline site makes no
   internet requests; a font the project chose itself is left alone;
@@ -23,18 +25,53 @@ def title_of(path):
     return os.path.splitext(os.path.basename(path))[0].replace("-", " ").capitalize()
 
 
+OLD_DEFAULT_ACCENT = "#3f51b5"  # the previous template default; an untouched copy moves to the current default
+DEFAULT_ACCENT = "#0b6e74"
+
+
+def upgrade_stock_theme(docs):
+    """extra.css and logo.svg belong to the project once written. Only a copy still identical to the previous template
+    (any accent) is replaced with the current one, so a project's own edits are never overwritten."""
+    tdir = os.path.join(SKILL_DIR, "templates")
+    extra = os.path.join(docs, "assets", "extra.css")
+    old_tmpl = os.path.join(tdir, "legacy", "extra.css.v1.tmpl")
+    if os.path.exists(extra) and os.path.exists(old_tmpl):
+        pat = re.escape(open(old_tmpl, encoding="utf-8").read().strip()).replace(re.escape("{{accent_hex}}"), r"(#[0-9a-fA-F]{3,8})")
+        m = re.fullmatch(pat, open(extra, encoding="utf-8").read().replace("\r\n", "\n").strip())
+        if m:
+            accent = DEFAULT_ACCENT if m.group(1).lower() == OLD_DEFAULT_ACCENT else m.group(1)
+            new = open(os.path.join(tdir, "extra.css.tmpl"), encoding="utf-8").read().replace("{{accent_hex}}", accent)
+            open(extra, "w", encoding="utf-8", newline="\n").write(new)
+    logo = os.path.join(docs, "assets", "logo.svg")
+    old_logo = os.path.join(tdir, "legacy", "logo.v1.svg")
+    if os.path.exists(logo) and os.path.exists(old_logo) and open(logo, encoding="utf-8").read().strip() == open(old_logo, encoding="utf-8").read().strip():
+        shutil.copy2(os.path.join(tdir, "assets", "logo.svg"), logo)
+
+
+def add_extra_css(text, entry, first=False):
+    """Register a stylesheet in mkdocs.yml's extra_css list (first = before the project's own files)."""
+    if entry in text:
+        return text
+    m = re.search(r"^extra_css:[ \t]*\n((?:[ \t]+-.*\n)*)", text, re.M)
+    if not m:
+        return text.rstrip("\n") + f"\n\nextra_css:\n  - {entry}\n"
+    at = m.start(1) if first else m.end(1)
+    return text[:at] + f"  - {entry}\n" + text[at:]
+
+
 def site_assets(docs, yml="mkdocs.yml"):
+    assets = os.path.join(SKILL_DIR, "templates", "assets")
     os.makedirs(os.path.join(docs, "assets"), exist_ok=True)
-    shutil.copy2(os.path.join(SKILL_DIR, "templates", "assets", "readability.css"), os.path.join(docs, "assets", "readability.css"))
+    for name in ("readability.css", "site-theme.css"):
+        shutil.copy2(os.path.join(assets, name), os.path.join(docs, "assets", name))
+    if os.path.isdir(os.path.join(assets, "fonts")):  # IBM Plex (SIL OFL), served locally so the site stays offline
+        shutil.copytree(os.path.join(assets, "fonts"), os.path.join(docs, "assets", "fonts"), dirs_exist_ok=True)
+    upgrade_stock_theme(docs)
     if not os.path.exists(yml):
         return
     text = open(yml, encoding="utf-8").read()
-    new = text
-    if "assets/readability.css" not in new:
-        if re.search(r"^extra_css:\s*$", new, re.M):
-            new = re.sub(r"^(extra_css:\s*\n(?:[ \t]+-.*\n)*)", r"\1  - assets/readability.css\n", new, count=1, flags=re.M)
-        else:
-            new = new.rstrip("\n") + "\n\nextra_css:\n  - assets/readability.css\n"
+    new = add_extra_css(text, "assets/site-theme.css", first=True)
+    new = add_extra_css(new, "assets/readability.css")
     # only the template's own default is replaced; any other font choice is the project's
     new = re.sub(r"^  font:\n    text: Inter\n    code: JetBrains Mono\n", "  font: false\n", new, count=1, flags=re.M)
     if new != text:
@@ -65,8 +102,17 @@ def write_guide(docs, cfg):
            f"{link('architecture/index.md', 'the architecture')}.",
            "- Looking for one thing (a class, table, setting or screen): use search.",
            "- Changing code: start from the reference page for what you are changing, then follow its links to the "
-           "workflows and data it touches.", "",
-           "## Finding things", "",
+           "workflows and data it touches.", ""]
+    exists = lambda rel: os.path.exists(os.path.join(src, rel))  # noqa: E731
+    roles = [(who, [link(rel, text) for rel, text in pages if exists(rel)]) for who, pages in (
+        ("Business analyst or product owner", [("modules/index.md", "business modules"), ("workflows/index.md", "workflows")]),
+        ("Developer", [("architecture/index.md", "architecture"), ("data/index.md", "data model"), ("shared/index.md", "shared code")]),
+        ("Architect", [("architecture/index.md", "architecture"), ("integrations/index.md", "integrations"), ("security/index.md", "security")]),
+        ("Operations and support", [("operations/index.md", "operations"), ("integrations/index.md", "integrations")]))]
+    roles = [(who, ls) for who, ls in roles if ls]
+    if roles:
+        out += ["### By role", ""] + [f"- **{who}:** {', then '.join(ls)}." for who, ls in roles] + [""]
+    out += ["## Finding things", "",
            "- **Search** works offline. Press <kbd>/</kbd> or <kbd>S</kbd> to start typing.",
            "- **Tabs** along the top are the sections; the left sidebar lists the pages in a section; the right sidebar "
            "lists the headings on the current page.",

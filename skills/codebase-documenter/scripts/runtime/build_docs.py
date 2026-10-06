@@ -311,7 +311,7 @@ def write_nav():
     for d in sorted(dirs, key=section_key):
         if d == "":
             for f in pages_of(""):
-                lines.append(f"  - {f}" if f == "index.md" else f"  - {q(h1(os.path.join(SRC, f)))}: {f}")
+                lines.append("  - Home: index.md" if f == "index.md" else f"  - {q(h1(os.path.join(SRC, f)))}: {f}")  # "Home", so the product name is not repeated as the first tab
             continue
         pad = "  " + "    " * d.count("/")  # a sub-folder nests under its parent's page list (YAML indent 2 + 4 per level)
         idx = os.path.join(SRC, d, "index.md")

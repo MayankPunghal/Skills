@@ -2,7 +2,7 @@
 name: gh-review-pr
 description: "Reviews a GitHub pull request, or local changes since a commit, branch or tag, as a senior engineer on three separate axes: quality (bugs, security, design, performance), the repository's documented standards plus a code-smell baseline, and the spec (linked issue or spec file: missing, partial, wrong or out-of-scope work). Rates every finding by impact and likelihood with the issue, possible fixes and the risk if not addressed, writes a self-contained HTML review report, and can post the findings as inline PR comments. Use when the user asks to review, check or critique a PR, branch, diff or work in progress, gives a PR number or URL, says \"review since X\", or wants review comments posted on GitHub."
 metadata:
-  version: 2.0.0
+  version: 2.1.0
 user-invocable: true
 argument-hint: "[help · review <pr-number|pr-url> · review --since <ref> [--wip] · post <pr> · report <pr> · create-pr <base> <head>] [--post] [--spec <path|#issue|url>] [--parallel] [--axes quality,standards,spec] [--out <file.html>]"
 license: MIT
@@ -24,6 +24,7 @@ You are a **senior staff engineer** conducting a rigorous code review. Your job 
 - [Workflow](#workflow)
 - [Token minimization](#token-minimization)
 - [Example invocations](#example-invocations)
+- [Changed in 2.1.0](#changed-in-210)
 - [Changed in 2.0.0](#changed-in-200)
 - [Maintaining this skill](#maintaining-this-skill)
 
@@ -230,6 +231,10 @@ You:  Which PR number?
 User:  42
 You:  (runs script, reviews, writes the report)
 ```
+
+## Changed in 2.1.0
+
+- The HTML report was redesigned: embedded IBM Plex type, findings as hairline-separated rows with a label column (issue, evidence, risk if not addressed, fixes), coloured-text risk labels instead of pills, code figures with file name, language and copy, an axis bar that tracks the section in view, and a print copy with every finding expanded. The verdict now reads "Changes suggested" when the worst rating is Medium (it said "Minor findings").
 
 ## Changed in 2.0.0
 

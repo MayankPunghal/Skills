@@ -94,7 +94,8 @@ node <skill-base-dir>/scripts/render-report.mjs --findings-file <work>/findings.
 ```
 
 - Default `--out`: `~/.claude/gh-review-pr/reports/<key>.html`; use the user's path when they give one.
-- One self-contained file: no external fonts, scripts or styles, so it opens offline and is safe to share privately. Light and dark themes follow the system; it prints cleanly.
+- One self-contained file: no external fonts, scripts or styles, so it opens offline and is safe to share privately. IBM Plex Sans and Plex Mono are embedded from `scripts/assets/fonts/` (SIL Open Font License, `OFL.txt` beside them). Light and dark themes follow the system; printing expands every finding.
+- Design rules it keeps: findings are rows separated by hairlines, not cards; a risk rating is a coloured square plus coloured text, never a filled pill; only real identifiers (commit, file:line, finding ID, code) are monospace; icons are inline SVG, never emoji or Unicode glyphs; zero counts are left out rather than shown greyed.
 - It shows: the PR header (author, branches, commit, state), a verdict, counts per risk rating, an impact × likelihood matrix, the three axes with every finding (issue, evidence with line numbers, risk if not addressed, possible fixes, suggested change, rule and rating), risk filters, "Copy as PR comment" per finding, and a "What was reviewed" panel (files, spec sources, standards, tooling, CI).
 - File locations link to the exact lines on GitHub at the reviewed commit.
 

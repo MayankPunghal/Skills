@@ -11,6 +11,14 @@ const lk = a => a[0] + 0.4 * (a[1] - a[0]);
 const csv = (cols, rows, name) => { const q = v => '"' + String(v ?? '').replace(/"/g,'""') + '"'; const body = [cols.map(c=>q(c.label)).join(',')].concat(rows.map(r => cols.map(c => q(c.csv ? c.csv(r) : r[c.key])).join(','))).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + body], {type:'text/csv'})); a.download = name + '.csv'; a.click(); };
 const list = a => a && a.length ? '<ul>' + a.map(x => `<li>${hl(x)}</li>`).join('') + '</ul>' : '<p class="muted">—</p>';
+// Display names for the classifier's type slugs (data and CSV keep the slug only when no name is known)
+const TYPE = {'aspnet-core':'ASP.NET Core','aspnet-mvc':'ASP.NET MVC','aspnet-webapi':'ASP.NET Web API','aspnet-webforms':'ASP.NET Web Forms','website':'ASP.NET website',
+  'class-library':'Class library','web-library':'Web library','web-service':'ASMX web service','wcf-service':'WCF service','wcf-desktop':'WCF desktop client',
+  'netcore-console':'.NET console app','netcore-worker':'.NET worker service','netcore-other':'.NET (other)','console':'Console app','windows-service':'Windows service',
+  'windows-desktop':'Windows desktop app','winforms':'WinForms','wpf':'WPF'};
+const typeName = s => TYPE[s] || String(s ?? '').replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
+// Filter menu wording ("All 7R decisions", not "All 7r") for columns whose label does not pluralise on its own
+const FLABEL = {r7:'7R decisions', type:'types', risk:'risk levels', repo:'repositories', kind:'kinds', status:'statuses', size:'sizes', level:'readiness levels', vulnerable:'advisory states', reviewed:'decision states', area:'areas', service:'services', severity:'severities', confidence:'confidence levels'};
 const TABLES = [];
 const SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
@@ -30,13 +38,14 @@ function DataTable(host, opt) {
     const r = rows(); const pages = Math.max(1, Math.ceil(r.length / st.size)); st.page = Math.min(st.page, pages - 1);
     const view = r.slice(st.page * st.size, (st.page + 1) * st.size);
     const sel = (opt.filters || []).map(k => { const c = opt.cols.find(c => c.key === k) || {label: k}; const vals = [...new Set(base().map(x => String(x[k])))].sort((a,b)=> (SEV.indexOf(a) - SEV.indexOf(b)) || a.localeCompare(b));
-      return vals.length > 1 || st.filters[k] ? `<select data-f="${k}"><option value="">All ${esc((c.flabel || c.label).toLowerCase())}</option>${vals.map(v => `<option ${st.filters[k]===v?'selected':''}>${esc(v)}</option>`).join('')}</select>` : ''; }).join('');
+      const fl = c.flabel || FLABEL[k] || c.label.toLowerCase();
+      return vals.length > 1 || st.filters[k] ? `<select data-f="${k}" aria-label="Filter by ${esc(fl)}"><option value="">All ${esc(fl)}</option>${vals.map(v => `<option value="${esc(v)}" ${st.filters[k]===v?'selected':''}>${esc(c.fmt ? c.fmt(v) : v)}</option>`).join('')}</select>` : ''; }).join('');
     wrap.innerHTML = `${opt.title ? `<h3>${esc(opt.title)}</h3>` : ''}<div class="tools">${sel}<button class="btn" data-a="csv">Download CSV</button>${opt.detail ? `<button class="btn" data-a="expand">${st.open.size ? 'Collapse all' : 'Expand all'}</button>` : ''}<span class="count" aria-live="polite">${r.length} of ${base().length} shown</span></div>
      <div class="tablewrap"><table class="dt"><thead><tr>${opt.cols.map(c => `<th scope="col" tabindex="0" data-k="${c.key}" aria-sort="${st.sort===c.key?(st.asc?'ascending':'descending'):'none'}" title="Sort by ${esc(c.label)}" class="${st.sort===c.key?'sorted'+(st.asc?' asc':''):''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>
      ${view.map((x,i) => { const id = opt.id ? opt.id(x) : (st.page*st.size+i); const open = st.open.has(String(id));
         return `<tr class="row" data-id="${esc(id)}" ${opt.detail ? `tabindex="0" aria-expanded="${open}"` : ''} ${opt.anchor ? `data-anchor="${esc(opt.anchor(x))}"` : ''}>${opt.cols.map(c => `<td class="${c.cls||''}">${c.html ? c.html(x) : hl(x[c.key])}</td>`).join('')}</tr>` +
           (opt.detail && open ? `<tr class="detail"><td colspan="${opt.cols.length}"><div class="detail">${opt.detail(x)}</div></td></tr>` : ''); }).join('') || `<tr><td colspan="${opt.cols.length}" class="muted">${Q ? 'No rows match the search.' : (opt.empty || 'Checked, none found.')}</td></tr>`}
-     </tbody></table></div>${pages > 1 ? `<div class="pager"><button class="btn" data-a="prev" aria-label="Previous page">‹</button> page ${st.page+1} / ${pages} <button class="btn" data-a="next" aria-label="Next page">›</button></div>` : ''}`;
+     </tbody></table></div>${pages > 1 ? `<div class="pager"><button class="btn" data-a="prev" ${st.page ? '' : 'disabled'}>Previous</button><span>Page ${st.page+1} of ${pages}</span><button class="btn" data-a="next" ${st.page + 1 < pages ? '' : 'disabled'}>Next</button></div>` : ''}`;
     wrap.querySelectorAll('select[data-f]').forEach(s => s.onchange = () => { st.filters[s.dataset.f] = s.value; st.page = 0; render(); });
     wrap.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => { if (st.sort === th.dataset.k) st.asc = !st.asc; else { st.sort = th.dataset.k; st.asc = true; } render(); });
     if (opt.detail) wrap.querySelectorAll('tr.row').forEach(tr => tr.onclick = e => { if (e.target.closest('a')) return; const id = tr.dataset.id; st.open.has(id) ? st.open.delete(id) : st.open.add(id); render(); });
@@ -63,21 +72,25 @@ function findings(h, seg) {
   DataTable(h, {name: 'findings-' + seg, title: seg === 'all' ? 'All findings' : `Findings in this area (${rows.length})`, rows, filters: seg === 'all' ? ['segment','severity','confidence','category','apps'] : ['severity','confidence','category','apps'],
     sort:'severity', asc:true, id: x => x.ref, anchor: x => 'finding-' + x.ref, cols: findingCols(seg !== 'all'), csvCols: findingCsv, text: findingText, detail: findingDetail, empty: 'Checked, none found in this area.'});
 }
-const sevBars = (rows, label, click) => { const m = Math.max(1, ...rows.map(c => SEV.reduce((a,s)=>a+c[s],0)));
-  return `<div class="legend">${SEV.map(s => `<span style="--c:var(--${s.toLowerCase()})">${s}</span>`).join('')}</div>` + rows.map((c,i) => { const n = SEV.reduce((a,s)=>a+c[s],0);
-    return `<div class="bar ${click?'click':''}" data-i="${i}" ${click ? 'tabindex="0" role="button"' : ''} title="${esc(n ? n + ' findings' : 'Checked, none found' + (c.scanned ? ': ' + c.scanned : ''))}"><span class="lab">${esc(c[label])}</span><span class="track">${SEV.map(s => c[s] ? `<span class="seg sev-${s}" style="width:${c[s]/m*100}%"></span>` : '').join('')}</span><span class="n">${n || '✓'}</span></div>`; }).join(''); };
+// Rows with findings get a bar; rows checked with nothing found are named once underneath instead of drawing empty tracks.
+const sevBars = (rows, label, click) => { const tot = c => SEV.reduce((a,s)=>a+c[s],0); const m = Math.max(1, ...rows.map(tot));
+  const used = SEV.filter(s => rows.some(c => c[s])); const none = rows.filter(c => !tot(c));
+  return (used.length ? `<div class="legend">${used.map(s => `<span style="--c:var(--${s.toLowerCase()})">${s}</span>`).join('')}</div>` : '') + rows.map((c,i) => { const n = tot(c); if (!n) return '';
+    return `<div class="bar ${click?'click':''}" data-i="${i}" ${click ? 'tabindex="0" role="button"' : ''} title="${esc(n + ' finding' + (n === 1 ? '' : 's') + ': ' + SEV.filter(s => c[s]).map(s => c[s] + ' ' + s.toLowerCase()).join(', '))}"><span class="lab">${esc(c[label])}</span><span class="track">${SEV.map(s => c[s] ? `<span class="seg sev-${s}" style="width:${c[s]/m*100}%"></span>` : '').join('')}</span><span class="n">${n}</span></div>`; }).join('')
+    + (none.length ? `<p class="none-line">Checked, nothing found: ${none.map(c => `<span title="${esc(c.scanned || '')}">${esc(c[label])}</span>`).join(', ')}.</p>` : ''); };
 const card = (h, inner) => { h.className = 'card'; h.innerHTML = inner; };
 
 const C = {
   'kpis': h => h.innerHTML = '<div class="kpis">' + D.kpis.map(k => `<div class="kpi"><div class="l">${esc(k[0])}</div><div class="v">${esc(k[1])}</div><div class="s">${esc(k[2])}</div></div>`).join('') + '</div>',
-  'chart:segments': h => { card(h, `<h3>Findings by area — click to open</h3>` + sevBars(D.segs, 'title', true)); h.querySelectorAll('.bar').forEach(b => b.onclick = () => show(D.segs[b.dataset.i].id)); },
-  'chart:categories': h => { card(h, `<h3>Findings by category — click to filter</h3>` + sevBars(D.cats, 'title', true) + '<p class="muted small">✓ = checked, none found. Hover a bar to see what was checked.</p>');
+  'chart:segments': h => { card(h, `<h3>Findings by area</h3><p class="muted small">Select an area to open it.</p>` + sevBars(D.segs, 'title', true)); h.querySelectorAll('.bar').forEach(b => b.onclick = () => show(D.segs[b.dataset.i].id)); },
+  'chart:categories': h => { card(h, `<h3>Findings by category</h3><p class="muted small">Select a category to filter the findings table.</p>` + sevBars(D.cats, 'title', true));
      h.querySelectorAll('.bar').forEach(b => b.onclick = () => { const t = TABLES.find(t => t.opt.name === 'findings-all'); if (t) { t.st.filters.category = D.cats[b.dataset.i].title; t.st.page = 0; t.render(); t.host.scrollIntoView({behavior:SMOOTH}); } }); },
   'chart:r7': h => { const t = Object.values(D.r7).reduce((a,b)=>a+b,0) || 1; card(h, `<h3>Recommended path (7R)</h3>${Object.entries(D.r7).sort((a,b)=>b[1]-a[1]).map(([k,v]) => `<div class="bar"><span class="lab">${esc(k)}</span><span class="track"><span class="seg" style="width:${v/t*100}%;background:var(--accent)"></span></span><span class="n">${v}</span></div>`).join('')}`); },
   'chart:severity': h => { const t = SEV.reduce((a,s)=>a+(D.sev[s]||0),0) || 1; card(h, `<h3>Findings by severity</h3>${SEV.map(s => `<div class="bar"><span class="lab">${s}</span><span class="track"><span class="seg sev-${s}" style="width:${(D.sev[s]||0)/t*100}%"></span></span><span class="n">${D.sev[s]||0}</span></div>`).join('')}`); },
   'apps-table': h => DataTable(h, {name:'applications', rows: D.apps, filters:['r7','type','risk','repo'], sort:'lh', id: x => x.id,
-     cols: [{key:'name',label:'Application'},{key:'type',label:'Type'},{key:'framework',label:'Framework'},{key:'loc',label:'LOC',cls:'num',html:x=>x.loc.toLocaleString()},{key:'r7',label:'7R'},
-            {key:'target',label:'Target',cls:'mid',html:x=>hl(x.target.split(' - ')[0])},{key:'lh',label:'Effort (P10–P90)',html:x=>hd(x.h,x.d),csv:x=>rng(x.h,' h')},{key:'size',label:'Size'},{key:'risk',label:'Risk'},{key:'reviewed',label:'Decision'}],
+     cols: [{key:'name',label:'Application'},{key:'type',label:'Type',fmt:typeName,html:x=>hl(typeName(x.type)),csv:x=>typeName(x.type)},{key:'framework',label:'Framework'},{key:'loc',label:'LOC',cls:'num',html:x=>x.loc.toLocaleString()},{key:'r7',label:'7R'},
+            {key:'target',label:'Target',cls:'mid',html:x=>hl(x.target.split(' - ')[0])},{key:'lh',label:'Effort (P10–P90)',html:x=>hd(x.h,x.d),csv:x=>rng(x.h,' h')},{key:'size',label:'Size'},
+            {key:'risk',label:'Risk',html:x=>SEV.includes(x.risk)?pill(x.risk):hl(x.risk),sortv:x=>SEV.indexOf(x.risk)},{key:'reviewed',label:'Decision',fmt:v=>v==='reviewed'?'Reviewed':'Draft',html:x=>x.reviewed==='reviewed'?'Reviewed':'<span class="muted">Draft</span>'}],
      detail: x => `<h5>Target</h5><p>${hl(x.target)}</p><h5>Why</h5>${list(x.rationale)}<h5>Options considered</h5>${list(x.options)}<h5>Blocking / high findings</h5>${list(x.blockers)}<h5>Main effort drivers</h5>${list(x.drivers)}<h5>Work items</h5>${list(x.work)}${x.notes.length ? '<h5>To confirm</h5>' + list(x.notes) : ''}`}),
   'linux-scorecard': h => { const lv = {}; D.linux.forEach(r => lv[r.level] = (lv[r.level]||0) + 1);
      const names = {ready:['Linux-ready','already cross-platform, no blockers'], port:['Ready after porting','moves to .NET 10 on Linux with code changes (and replacing any Windows-only parts)'], blocked:['Blocked','Windows-bound: stays on Windows until redesigned'], windows:['Windows-only (desktop)','client app on user machines'], na:['Retiring','not assessed for Linux']};
@@ -156,7 +169,7 @@ function drawMap(h) {
   window.addEventListener('resize', lines); h._draw = lines;
 }
 function renderPlans(h) { h = h || document.getElementById('app-plans-host'); if (!h) return;
-  h.innerHTML = D.apps.map(x => `<div class="plan"><h4>${hl(x.name)} <span class="muted small">${esc(x.repo)}</span></h4><div class="row2"><span class="tag">${esc(x.r7)}</span><span class="tag">${esc(x.type)}</span><span class="tag">risk ${esc(x.risk)}</span><span class="tag">${rng(x.h)} h (${dd(x.d)} d)</span><span class="tag">${x.reviewed==='reviewed'?'reviewed decision':'draft — pending review'}</span></div>
+  h.innerHTML = D.apps.map(x => `<div class="plan"><h4>${hl(x.name)} <span class="muted small">${esc(x.repo)}</span></h4><div class="row2"><span class="tag">${esc(x.r7)}</span><span class="tag">${esc(typeName(x.type))}</span><span class="tag">${esc(x.risk)} risk</span><span class="tag">${rng(x.h)} h (${dd(x.d)} d)</span><span class="tag">${x.reviewed==='reviewed'?'reviewed decision':'draft — pending review'}</span></div>
   <p><b>Target:</b> ${hl(x.target)}</p><p><b>Why:</b> ${x.rationale.map(hl).join(' ')}</p>${x.options.length ? `<p><b>Options:</b> ${x.options.map((o,i)=>`(${i+1}) ${hl(o)}`).join(' ')}</p>` : ''}${x.drivers.length ? `<p class="muted small"><b>Effort drivers:</b> ${x.drivers.map(esc).join('; ')}</p>` : ''}</div>`).join(''); }
 
 document.querySelectorAll('.component').forEach(h => { const n = h.dataset.component;
@@ -190,5 +203,9 @@ const toTop = document.getElementById('totop'); window.addEventListener('scroll'
 document.getElementById('theme').onclick = () => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch (e) {} };
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (document.getElementById('tab-' + h)) show(h, false); });
-document.querySelector('.skip').onclick = e => { e.preventDefault(); document.getElementById('main').focus(); };
+// Copy buttons on code blocks (narratives): clipboard API, with a fallback for pages opened from disk
+document.addEventListener('click', async e => { const b = e.target.closest('[data-copy]'); if (!b) return; const code = b.closest('figure').querySelector('pre').innerText; let ok = false;
+  try { await navigator.clipboard.writeText(code); ok = true; } catch (err) { const t = document.createElement('textarea'); t.value = code; document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (x) {} t.remove(); }
+  const s = b.querySelector('span'); const was = s.textContent; s.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { s.textContent = was; }, 1400); });
+document.querySelector('.skip').onclick =e => { e.preventDefault(); document.getElementById('main').focus(); };
 show((location.hash || '#overview').slice(1), false);
