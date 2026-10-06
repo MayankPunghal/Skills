@@ -326,7 +326,7 @@ AppDomain creation, CodeDom compilation, ProtectedData, CNG/CSP key containers, 
 | `INV-LEGACY-PROJECT`, `INV-PACKAGES-CONFIG`, `INV-TFM-SUPPORT`, `INV-CORE-ON-FRAMEWORK`, `INV-WEBSITE-PROJECT` | Project format, package format, target-framework support status, ASP.NET Core on .NET Framework, Web Site projects |
 | `PKG-<status>` / `SEC-VULN-<package>` | Package map + api.nuget.org metadata (blocker, replace, windows-only, licence, private; published advisories) |
 | `NET-ENDPOINT-INTERNAL` / `-PUBLIC-IP` / `-EXTERNAL` | URLs, host names, IPs, connection-string servers classified on-prem vs external |
-| `CFG-SECRET-SETTING`, `CFG-PLAINTEXT-DB-PASSWORD`, `CFG-DEV-DATABASE` | Secret-like appSettings (names only), passwords in connection strings (never copied), developer-only databases |
+| `CFG-SECRET-SETTING`, `CFG-PLAINTEXT-DB-PASSWORD`, `CFG-LOCAL-DB-PASSWORD`, `CFG-DEV-DATABASE` | Secret-like appSettings (names only), passwords in connection strings (never copied; template files and placeholder values skipped; git-ignored local files reported separately at Low), developer-only databases |
 | `FILE-CASE-MISMATCH` | Path literals whose case differs from the file on disk |
 | `DB-SSIS`, `DB-SSRS`, `DB-SSAS`, `INT-CRYSTAL-FILES`, `INT-RDLC-FILES`, `BUILD-SCRIPTS` | Artefact files |
 | `TEST-LOW-COVERAGE`, `LOG-NO-HEALTHCHECK`, `MOD-ON-WINDOWS`, `DEV-ACTIVITY` | Test density, health endpoint, modern .NET on Windows hosting, repository activity |

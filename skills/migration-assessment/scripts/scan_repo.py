@@ -29,6 +29,14 @@ from collections import Counter, defaultdict
 from _common import (OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
                      utf8_stdout, write_json)
 
+# appsettings*.json, jobsettings.json, settings.json, secrets.json …: .NET configuration JSON (launchSettings is IDE-only)
+SETTINGS_JSON = re.compile(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$")
+# copies kept as templates: appsettings.Development.example.json, ConnectionStrings.sample.config, web.config.dist …
+TEMPLATE_FILE = re.compile(r"(?i)[._-](example|sample|template|tmpl|dist)([._-]|$)")
+PLACEHOLDER = re.compile(r"(?i)^\s*(|<.*>|\$\{.*\}|\$\(.*\)|#\{.*\}|%.*%|\{\{.*\}\}|\{\w*\}|x{3,}|\*+|\.+|changeme|change[-_ ]?me\w*|"
+                         r"password|pass|pwd|secret|your[-_ ]?\w*|placeholder|replace[-_ ]?\w*|set[-_ ]by[-_ ].*|to[-_ ]?do|tbd|dummy|sample|example)\s*$")
+# __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
+TOKEN_SHAPED = re.compile(r"^__\w+__$")
 MAX_EVIDENCE = 25
 MAX_FILE_BYTES = 2_500_000
 TYPE_BY_EXT = {".cs": "cs", ".vb": "vb", ".aspx": "markup", ".ascx": "markup", ".master": "markup", ".asax": "markup", ".ashx": "markup",
@@ -116,6 +124,22 @@ class Scan:
         self.proj_by_path = {p["path"]: p for p in inv["projects"]}
         self.files_ci = None
         self.parsed_sql = False
+        self._ignored = None
+
+    def git_ignored(self, rp):
+        """True when git ignores the file: a local copy (developer settings), not part of the repository."""
+        if self._ignored is None:
+            import subprocess
+            self._ignored = set()
+            try:
+                p = subprocess.run(["git", "-C", self.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+                if p.returncode == 0:
+                    self._ignored = {x.strip().rstrip("/") for x in p.stdout.splitlines() if x.strip()}
+            except (OSError, subprocess.SubprocessError):
+                pass
+        parts = rp.split("/")
+        return any("/".join(parts[:i]) in self._ignored for i in range(1, len(parts) + 1))
 
     def project_of(self, path):
         path = os.path.normpath(path)
@@ -206,7 +230,7 @@ class Scan:
                 if rp.lower().startswith(".github/workflows/") or (CI_NAMES.match(fn) and not fn.lower().endswith((".yml", ".yaml"))) or \
                         re.match(r"(?i)^(azure-pipelines|buildspec|\.gitlab-ci|appveyor|bitbucket-pipelines)", fn):
                     ftype = "ci"
-                elif fn.lower().startswith("appsettings") and ext == ".json":
+                elif ext == ".json" and SETTINGS_JSON.search(fn):
                     ftype = "config"
                 elif fn.lower().startswith("dockerfile") or fn.lower() == "nuget.config":
                     ftype = "any-only"
@@ -328,7 +352,7 @@ class Scan:
                 self.connection(rp, project, add.get("name"), add.get("connectionString"), add.get("providerName", ""), self.line_of(text, add.get("name")))
             key = add.get("key")
             val = add.get("value")
-            if key and val and re.search(r"(?i)(pass|pwd|secret|token|apikey|api_key|accesskey|privatekey|credential|clientkey|sharedkey)", key) \
+            if key and val and not TEMPLATE_FILE.search(os.path.basename(rp)) and not PLACEHOLDER.match(val) and re.search(r"(?i)(pass|pwd|secret|token|apikey|api_key|accesskey|privatekey|credential|clientkey|sharedkey)", key) \
                     and not re.fullmatch(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|__\w+__|\{.*\}|xxx+|\*+|changeme)\s*", val):
                 self.facts["secret_settings"].append({"file": rp, "key": key})
                 r = self.synthetic("CFG-SECRET-SETTING", "configuration-secrets", "Secret-like value stored in configuration", "High", "Likely",
@@ -345,7 +369,8 @@ class Scan:
         server = next((v for k, v in parts.items() if CONN_KEYS["server"].match(k)), "")
         db = next((v for k, v in parts.items() if CONN_KEYS["database"].match(k)), "")
         integrated = bool(re.search(r"(?i)(integrated\s*security\s*=\s*(sspi|true|yes)|trusted_connection\s*=\s*(yes|true))", cs))
-        has_pwd = bool(re.search(r"(?i)(password|pwd)\s*=\s*[^;]+", cs))
+        pwd = next((v for k, v in parts.items() if k in ("password", "pwd")), None)
+        has_pwd = pwd is not None and not PLACEHOLDER.match(pwd) and not TEMPLATE_FILE.search(os.path.basename(rp))
         ef = "metadata=" in cs.lower()
         if ef:
             inner = re.search(r'(?i)provider connection string\s*=\s*"?([^"]*)', cs)
@@ -354,14 +379,29 @@ class Scan:
         host = re.split(r"[\\,:]", server.replace("tcp:", ""))[0] if server else ""
         entry = {"file": rp, "line": line, "name": name, "provider": provider, "server": server, "host": host, "database": db,
                  "auth": "integrated" if integrated else ("sql-login" if has_pwd else "unspecified"), "password_in_config": has_pwd,
-                 "attachdb": "attachdbfilename" in cs.lower(), "localdb": "(localdb)" in server.lower()}
+                 "attachdb": "attachdbfilename" in cs.lower(), "localdb": "(localdb)" in server.lower(),
+                 "template": bool(TEMPLATE_FILE.search(os.path.basename(rp))), "git_ignored": self.git_ignored(rp)}
+        if pwd is not None and not has_pwd:
+            entry["auth"] = "sql-login (placeholder password)"
         self.facts["connection_strings"].append(entry)
-        if has_pwd:
-            r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High", "Confirmed",
-                               "Plain-text database credentials in config files are a compliance finding and block credential rotation.",
+        if has_pwd and entry["git_ignored"]:
+            r = self.synthetic("CFG-LOCAL-DB-PASSWORD", "configuration-secrets", "Database password in a git-ignored local config file", "Low", "Confirmed",
+                               "The file is excluded from the repository (.gitignore), so the password is not committed; it exists on this copy "
+                               "of the code only. Deployed environments still need a secure source for the credential.",
+                               "Keep local credentials out of git (as now); use Secrets Manager or environment variables for deployed environments.",
+                               "User secrets / environment variables locally", "trivial", ["S11"])
+            self.add(r, project, rp, line, f'{name}: "…password=***…" (git-ignored local file)')
+        elif has_pwd:
+            token = bool(TOKEN_SHAPED.match(pwd))
+            r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High",
+                               "Needs verification" if token else "Confirmed",
+                               "Plain-text database credentials in config files are a compliance finding and block credential rotation."
+                               + (" The value has a __token__ shape: confirm whether a release step replaces it (then it is a placeholder) "
+                                  "or it is the real password." if token else ""),
                                "Store credentials in AWS Secrets Manager (with rotation); build the connection string at start-up.",
-                               "Secrets Manager + rotation", "trivial", ["S11"])
-            self.add(r, project, rp, line, f'<add name="{name}" connectionString="…password=***…" />')
+                               "Secrets Manager + rotation", "trivial", ["S11"],
+                               question="Is the __token__-shaped password in the committed configuration replaced at deployment, and by what?" if token else None)
+            self.add(r, project, rp, line, f'{name}: "…password=***…"' + (" (value has a __token__ shape)" if token else ""))
         if host and not entry["localdb"] and host not in (".", "(local)", "localhost", "127.0.0.1"):
             self.endpoint(host, "sql", rp, project, line, f"connection string '{name}' -> {host}", "config")
 
@@ -1081,9 +1121,16 @@ def main():
     names = [a.repo] if a.repo else (sorted(st["repos"]) if a.all else [])
     if not names:
         sys.exit("pass --repo NAME or --all")
+    here = os.path.dirname(os.path.abspath(__file__))
+    newest_rule = max(os.path.getmtime(p) for p in [os.path.join(here, f) for f in os.listdir(here) if f == "scan_repo.py" or (f.startswith("_") and f.endswith(".py"))]
+                      + [os.path.join(here, "data", f) for f in os.listdir(os.path.join(here, "data")) if f.endswith(".json")])
     for n in names:
+        out = os.path.join(OUT, "scan", f"{n}.json")
         if a.all and not a.force and st["repos"].get(n, {}).get("scan") == "done":
-            continue
+            if os.path.exists(out) and os.path.getmtime(out) >= newest_rule:
+                print(f"skip {n}: already scanned (--force to rescan)")
+                continue
+            print(f"{n}: the scanner or its rules changed since the last scan; rescanning")
         scan_repo(n, cfg, online)
         mark(root, n, "scan")
 
