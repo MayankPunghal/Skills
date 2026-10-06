@@ -26,7 +26,7 @@ DEFAULTS = {
     "graph_dir": "graphify-out",
     "adapters": ["generic-graph", "generic-deps", "generic-sql", "generic-config", "generic-build", "generic-api",
                  "generic-errors", "generic-di", "generic-tests", "generic-dbaccess", "generic-trace", "generic-views",
-                 "generic-portability", "generic-flows", "generic-areas"],
+                 "generic-portability", "generic-endpoints", "generic-flows", "generic-areas"],
                                              # generic-di / generic-views / generic-portability: .NET only; no-ops elsewhere
     "adapter_options": {},
     "coverage": [

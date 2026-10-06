@@ -43,6 +43,48 @@ def package_group(p):
             "unknown": "Private / unknown", "ok": "Compatible", "remove": "Not needed on .NET 10"}.get(st, "Compatible")
 
 
+SOURCE_LABEL = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
+                "unc-path": "UNC path"}
+NEEDS = {"internal": "Route from the AWS VPC to the client network (Site-to-Site VPN / Direct Connect), DNS for the name "
+                     "(Route 53 Resolver outbound rule), security-group egress to the port; or the system moves to AWS too",
+         "external": "Egress through a NAT gateway to the port; give the provider the NAT Elastic IPs if it allow-lists callers",
+         "external-ip": "As external, and replace the literal IP with a DNS name in configuration"}
+
+
+def network(c):
+    """Network allow-list: outbound destinations (with ports) and inbound listeners from scan facts["network"]."""
+    apps = c.cls["applications"]
+    out, inb, clients, runtime, missing = [], [], [], 0, []
+    for r in c.repos:
+        net = c.scan[r].get("network")
+        inv = c.inv[r]
+        if net is None:
+            missing.append(r)
+            continue
+        for g in net["outbound"]:
+            used = apps_for_files(g["files"], inv, apps) if inv else []
+            needs = NEEDS.get(g["kind"], "")
+            if g["scheme"] in ("sqlserver", "postgresql", "mysql"):
+                needs = "Database: security-group rule to the database port (RDS in the VPC, or on-premises over VPN / Direct Connect)"
+            elif g["scheme"] == "smb":
+                needs = "SMB 445 to a file share: keep it on-premises over VPN / Direct Connect, or move it (Amazon FSx for Windows File Server / S3)"
+            out.append({"host": g["host"], "port": (f"{g['port']} (default)" if g.get("port_default") else str(g["port"])) if g["port"] else "?",
+                        "protocol": g["scheme"], "kind": g["kind"], "applications": ", ".join(used) or ", ".join(p.split("/")[-1] for p in g["projects"][:3]) or "-",
+                        "defined": ", ".join([f"`{k}`" for k in g["keys"][:4]] + (["…"] if len(g["keys"]) > 4 else [])
+                                             + [SOURCE_LABEL.get(s, s) for s in g["sources"] if s != "url" or not g["keys"]]),
+                        "evidence": "; ".join(g["evidence"][:2]) + (f" +{len(g['evidence']) - 2}" if len(g["evidence"]) > 2 else ""),
+                        "needs": needs, "repo": r})
+        for e in net["inbound"]:
+            used = apps_for_files([e["file"]], inv, apps) if inv else []
+            inb.append({"application": ", ".join(used) or e.get("app") or e["project"].split("/")[-1], "port": e["port"] or "?", "protocol": e["scheme"],
+                        "source": e["source"], "evidence": f"{e['file']}:{e['line']}", "repo": r})
+        for cl in net["clients"]:
+            if not cl["keys"] and not cl["literals"]:
+                runtime += 1
+            clients.append(cl)
+    return {"outbound": out, "inbound": inb, "clients": clients, "runtime_clients": runtime, "missing": missing}
+
+
 def apps_for_files(files, inv, apps):
     pidx = F.project_index(inv)
     hit = set()

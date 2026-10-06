@@ -26,7 +26,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
+from _common import (OUT, SOURCE_DIR_SKIP, data, documenter_dir, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
                      utf8_stdout, write_json)
 
 # appsettings*.json, jobsettings.json, settings.json, secrets.json …: .NET configuration JSON (launchSettings is IDE-only)
@@ -288,6 +288,37 @@ class Scan:
             self.config_file(rp, project, text)
         if ftype in ("cs", "vb") and re.search(r"(?i)(MapHealthChecks|AddHealthChecks|/health|HealthCheck|\bhealthz\b)", clean):
             self.facts["health_endpoints"].append(rp)
+
+    # ---------------------------------------------------------------- network allow-list
+    def network(self):
+        """Allow-list view from the codebase-documenter's network_endpoints.py: ports, inbound listeners, bare host settings
+        (Smtp:Host, Kafka:BootstrapServers), UNC shares, WCF client endpoints and outbound call sites. Destinations the line
+        scan did not see become endpoint findings too, so findings and allow-list agree."""
+        d = documenter_dir()
+        if not d:
+            self.facts["network"] = None
+            return
+        sys.path.insert(0, os.path.join(d, "scripts"))
+        try:
+            import network_endpoints as NE
+        except ImportError:
+            self.facts["network"] = None
+            return
+        net = NE.scan(self.root, sorted(SOURCE_DIR_SKIP | {s.lower() for s in self.cfg.get("exclude_dirs", [])}))
+        outbound = []
+        for g in NE.destinations(net):
+            f, ln = g["evidence"][0].rsplit(":", 1)
+            projects = sorted({self.project_of(os.path.join(self.root, x)) for x in g["files"]})
+            if g["host"] not in self.facts["endpoints"] and not any(cs.get("host", "").lower() == g["host"] for cs in self.facts["connection_strings"]):
+                label = SOURCE_LABEL.get(g["sources"][0], g["sources"][0])
+                self.endpoint(g["host"], g["scheme"], f, projects[0] if projects else "(repository)", int(ln),
+                              f"{label}" + (f" {', '.join(g['keys'][:3])}" if g["keys"] else "") + f" -> {g['host']}:{g['port'] or '?'}", "config")
+            outbound.append({"host": g["host"], "port": g["port"], "port_default": g["port_default"], "scheme": g["scheme"], "kind": g["kind"],
+                             "sources": g["sources"], "keys": g["keys"], "files": g["files"][:30], "evidence": g["evidence"][:10],
+                             "projects": projects, "used_in": sorted({u[0] for u in g["users"]})[:20]})
+        inbound = [dict(e, project=self.project_of(os.path.join(self.root, e["file"]))) for e in net["inbound"]]
+        clients = [dict(c, project=self.project_of(os.path.join(self.root, c["file"]))) for c in net["clients"]]
+        self.facts["network"] = {"outbound": outbound, "inbound": inbound, "clients": clients[:500], "clients_total": len(clients)}
 
     # ---------------------------------------------------------------- endpoints
     def endpoints(self, rp, project, text, ftype):
@@ -761,6 +792,8 @@ LOCALDB_RULE = {"id": "CFG-DEV-DATABASE", "cat": "configuration-secrets", "title
                 "fix": "Obtain the production connection configuration (names, servers, auth mode) from the client; move it to Parameter Store / Secrets Manager.",
                 "alt": "", "effort": "trivial", "refs": ["S11"], "question": "Where are production connection strings configured (IIS, transforms, deployment tool), and do they use Windows or SQL authentication?"}
 SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+SOURCE_LABEL = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
+                "unc-path": "UNC path"}
 
 
 def ver_tuple(v):
@@ -1115,6 +1148,7 @@ def scan_repo(name, cfg, online):
     s.facts["db_inventory"] = _dbinventory.inventory(inv["root"], cfg.get("exclude_dirs", []))
     s.parsed_sql = bool(s.facts["db_inventory"].get("engine"))
     s.scan_files()
+    s.network()
     s.db_findings(s.facts["db_inventory"])
     s.packages(online)
     s.structure()

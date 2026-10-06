@@ -20,7 +20,7 @@ KIND = {"tbl": "table", "sp": "routine", "ctl": "controller", "act": "action", "
         "views": "view-folder", "enum": "enum", "seed": "seed", "claim": "claim", "role": "role", "js": "script",
         "rpt": "report", "area": "area", "kind": "section", "fn": "function", "mod": "module", "com": "community",
         "ep": "endpoint", "cfg": "config-key", "mth": "method", "prj": "project", "pkg": "package",
-        "err": "error", "run": "runbook", "dba": "db-access", "ui": "ui-trigger", "ent": "entry-point"}
+        "err": "error", "net": "network-endpoint", "run": "runbook", "dba": "db-access", "ui": "ui-trigger", "ent": "entry-point"}
 CFG = json.load(open("codebase-docs.json", encoding="utf-8")) if os.path.exists("codebase-docs.json") else {}
 FRONT = re.compile(r"\A---\n.*?\n---\n", re.S)  # YAML front matter
 SKIP_DIRS = {"_src", "_notes", "_tools", "agent", "assets"}

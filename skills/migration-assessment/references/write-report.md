@@ -37,6 +37,9 @@ All in `assessment/report/`:
 - `applications.csv`;
 - `packages.csv`;
 - `open-questions.csv`, with an empty answer column for the client;
-- `endpoints.csv`.
+- `endpoints.csv`;
+- `network-allowlist.csv`: one row per outbound destination (host, port, protocol, internal / external, applications, the config key or literal that names it, what the AWS VPC needs) and per inbound listener. The network team can use it for security groups, NAT egress, VPN routes and partner allow-lists. The same table is in section 4.4 and on the HTML **Third-party & integrations** tab.
+
+The allow-list comes from the codebase-documenter's `network_endpoints.py`. It covers URL literals in code, config, scripts and front end; bare host settings (`Smtp:Host`, `Kafka:BootstrapServers`); connection-string servers and ports; WCF client endpoints; UNC shares (SMB 445); and listeners (launchSettings, Kestrel, `ASPNETCORE_URLS`, Dockerfile `EXPOSE`, docker-compose, WCF services). Destinations built at run time are invisible. The block counts the outbound call sites with no key or literal next to them: ask the client where those addresses come from.
 
 The report contains security findings and architecture details. **Share it privately with the client**, never publicly.

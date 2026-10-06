@@ -85,11 +85,12 @@
     {
      "id": "integrations",
      "title": "Third-party & integrations",
-     "intro": "External services and APIs the code calls, on-premises systems it depends on, service SDKs, identity providers, email and file transfer.",
+     "intro": "External services and APIs the code calls, on-premises systems it depends on, service SDKs, identity providers, email and file transfer, and the network allow-list (outbound destinations with ports, inbound listeners) for the AWS VPC.",
      "items": [
       "integrations-summary",
       "thirdparty-table",
       "onprem-table",
+      "block:network",
       "sdk-table",
       "findings:integrations"
      ]
