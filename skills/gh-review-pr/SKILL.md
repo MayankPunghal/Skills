@@ -1,262 +1,224 @@
 ---
 name: gh-review-pr
-description: "Reviews a GitHub pull request as a senior engineer (bugs, security, design, performance) using the gh CLI and returns structured findings, optionally posting them as inline review comments. Use when the user asks to review, check or critique a PR, gives a PR number or URL, or wants review comments posted on GitHub."
-argument-hint: "[pr-number|pr-url] [--post]"
+description: "Reviews a GitHub pull request, or local changes since a commit, branch or tag, as a senior engineer on three separate axes: quality (bugs, security, design, performance), the repository's documented standards plus a code-smell baseline, and the spec (linked issue or spec file: missing, partial, wrong or out-of-scope work). Rates every finding by impact and likelihood with the issue, possible fixes and the risk if not addressed, writes a self-contained HTML review report, and can post the findings as inline PR comments. Use when the user asks to review, check or critique a PR, branch, diff or work in progress, gives a PR number or URL, says \"review since X\", or wants review comments posted on GitHub."
+metadata:
+  version: 2.0.0
+user-invocable: true
+argument-hint: "[help · review <pr-number|pr-url> · review --since <ref> [--wip] · post <pr> · report <pr> · create-pr <base> <head>] [--post] [--spec <path|#issue|url>] [--parallel] [--axes quality,standards,spec] [--out <file.html>]"
+license: MIT
+allowed-tools:
+  - Bash(node <skill-base-dir>/scripts/*)
 ---
 
 # PR Code Review Skill
 
 You are a **senior staff engineer** conducting a rigorous code review. Your job is to find **meaningful, actionable issues** — bugs, regressions, security vulnerabilities, design flaws, performance problems, and maintainability concerns — and return them as structured findings. Be brief, precise, and evidence-based. No praise, no restating the diff, no style nits unless they cause real problems.
 
----
-
 ## Contents
 
-- Inputs
-- Authentication
-- Workflow (resolve the PR, persist and resume, review methodology, review process, output format, post findings)
-- Token minimization
-- Example invocations
-- Severity decision guide
+- [Full scope](#full-scope)
+- [Principles](#principles)
+- [Commands](#commands)
+- [Inputs](#inputs)
+- [Authentication](#authentication)
+- [Workflow](#workflow)
+- [Token minimization](#token-minimization)
+- [Example invocations](#example-invocations)
+- [Changed in 2.0.0](#changed-in-200)
+- [Maintaining this skill](#maintaining-this-skill)
+
+## Full scope
+
+Reviews one GitHub pull request (by number or URL, including forks, drafts and very large PRs) or the local changes since a fixed point (`--since <commit|branch|tag>`, optionally with uncommitted work via `--wip`). Three axes are reviewed and reported separately, never merged or reranked across each other:
+
+- **Quality**: correctness, security, design, performance, maintainability and language-specific pitfalls (lenses A–F).
+- **Standards**: the repository's documented rules (CONTRIBUTING, coding standards, AGENTS.md / CLAUDE.md, architecture docs) plus a fixed Fowler code-smell baseline; the repo overrides the baseline, smells are always judgement calls, and anything a configured linter or formatter enforces is skipped.
+- **Spec**: what the linked issue, spec file or stated requirements asked for: missing, partial, wrong, or scope creep, each quoting the spec line.
+
+Every finding carries the issue, evidence, the risk if not addressed, one to three possible fixes, an optional one-click GitHub suggestion, and a risk rating (impact × likelihood → critical / high / medium / low). Output: a self-contained HTML report (offline, light/dark, printable), a per-axis Markdown summary, a cached JSON record, and on request inline PR comments with blame-based mentions, duplicate protection and a summary comment. It also drafts and opens PRs (`create-pr`).
+
+## Principles
+
+- **Evidence or nothing.** Every finding cites a new-file line at the reviewed commit and quotes the code. Each one is re-checked against the code before it is reported ([false-positive filters](references/review-lenses.md#false-positive-filters)).
+- **Nothing silently skipped.** Read every file in the context's `coverage` block (no patch, cut off, or not in the diff). Say in the summary what was not reviewed and why.
+- **Axes stay separate.** Each axis is judged only against its own source of truth and ordered only within itself ([why](references/standards-and-spec.md#why-separate-axes)).
+- **Fail early.** A bad ref, an empty diff, `gh` missing or logged out stops the review at step 1 with what to do next.
+- **Ask, don't guess.** No spec found → ask once; posting → always confirm; sub-agents → only when the user asks (`--parallel`).
+- **The reviewed repository is read-only.** Work files live in `~/.claude/gh-review-pr/`, never in the repo.
+- **Review the code, not the author.**
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| *(bare)* / `help` | Ask which PR to review (or offer `--since` for local changes) and show this table; start nothing. |
+| `review <pr-number\|pr-url>` | Full three-axis review of a PR → HTML report + summary; offers to post. A bare number or URL means this. |
+| `review --since <ref> [--wip]` | Review local commits since a commit / branch / tag (`--wip` adds uncommitted changes). No GitHub needed. |
+| `post <pr>` | Post a review: reuses the cached one if the PR head has not moved, else reviews first. Same as `review <pr> --post`. |
+| `report <pr>` | Re-render the HTML report from the cached review. |
+| `create-pr <base> <head>` | Draft a title and body from the commits and diff, confirm, open the PR ([create-pr](#create-a-pr)). |
+
+Flags: `--post` (post after confirmation) · `--spec <path|#issue|url>` (the spec to measure against) · `--parallel` (one sub-agent per axis) · `--axes quality,standards,spec` (any subset) · `--out <file.html>` (report location).
 
 ## Inputs
 
 The user may provide:
-- A PR number (e.g., `42`)
+- A PR number (e.g., `42`) — the repository is the current folder's GitHub repo unless they name one
 - A full PR URL (e.g., `https://github.com/owner/repo/pull/42`)
+- A fixed point for a local review (`--since main`, `--since HEAD~5`, a tag or SHA), optionally `--wip`
 - Nothing (first time — you'll ask for repo and PR)
 
 Optional flag: `--post` — if present, post findings as inline review comments after confirmation.
-
----
 
 ## Authentication
 
 **Always use the `gh` CLI** for all GitHub operations. Do not ask for a PAT — `gh` handles auth via its own login (`gh auth login`), token caching, and `gh auth token`.
 
-If `gh` is not authenticated, tell the user to run `gh auth login` first.
-
----
+If `gh` is not authenticated, tell the user to run `gh auth login` first. Local reviews (`--since`) work without `gh`; linked issues then show as unresolved references.
 
 ## Workflow
 
-### 1. Resolve the PR
+All scripts are in `<skill-base-dir>/scripts/` (`<skill-base-dir>` is the directory the runtime reports for this skill); run them with `node`, never read them unless one fails. Copy this checklist and tick it off:
 
-If the user didn't give a PR identifier, ask:
+```
+Review progress:
+- [ ] 1. Resolve the target, fetch context (fails early)
+- [ ] 2. Reuse a cached review? (post only)
+- [ ] 3. Pin the spec
+- [ ] 4. Load the standards
+- [ ] 5. Read everything in coverage
+- [ ] 6. Review each axis
+- [ ] 7. Verify and rate every finding
+- [ ] 8. Save, render the report, show the summary
+- [ ] 9. Post (only on --post / the user's yes)
+```
+
+### 1. Resolve the target and fetch context
+
+If the user didn't give a PR identifier or a `--since` ref, ask:
 ```
 Which repository? (owner/name or full URL)
 Which PR number?
+(or: review local changes since which commit / branch?)
 ```
 
-Once you have `owner/repo` and `prNumber`, fetch the PR data using the **deterministic script**:
+Fetch the context with the **deterministic script** and save it to the work folder `~/.claude/gh-review-pr/work/<key>/` (`<key>` = `<owner>-<repo>-pr<N>`, or `<repo-folder>-local-<branch>`):
 
 ```bash
-node scripts/gh-context.mjs --owner <owner> --repo <repo> --pr <number>
+node <skill-base-dir>/scripts/gh-context.mjs --pr <number|url> [--owner <owner> --repo <repo>] > <work>/context.json
+node <skill-base-dir>/scripts/gh-context.mjs --since <ref> [--wip] > <work>/context.json      # inside the repo
 ```
 
-This script returns a JSON object with:
-- `pr`: { number, title, body, baseRef, headRef, headSha, url, state, draft }
+It returns:
+- `pr`: { number, title, body, baseRef, headRef, headSha, headRepo, url, state, merged, draft, author, assignees, labels }
 - `diff`: filtered, size-capped unified diff (excludes lockfiles, vendor dirs, minified files)
-- `commits`: array of { sha, message, author, date }
-- `files`: array of { filename, status, additions, deletions, patch }
-- `stats`: { filesChanged, insertions, deletions }
+- `commits`, `files` (every page, with `previousFilename` for renames), `stats`
+- `linkedIssues`, `unresolvedRefs`, `specCandidates`: the spec sources ([step 3](#3-pin-the-spec))
+- `standards`, `tooling`, `issueTrackerDoc`: the standards sources ([step 4](#4-load-the-standards))
+- `checks` (CI), `existingComments` (so nothing is posted twice), `notes` (draft, merged, fork, failing CI)
+- `coverage`: `excluded`, `patchMissing`, `truncated`, `notInDiff`, `untracked` (local `--wip`), `diffSource`
 
-**Use this script — do not call `gh`/`git` directly.** The script handles filtering, capping, and consistent output.
+**Use this script — do not call `gh`/`git` directly for context.** It handles pagination, filtering, capping, very large PRs and consistent output. If it exits non-zero, relay its message (it says what to fix) and stop.
 
-**If `--post` was given**, before doing any of the above, check for a reusable cached review first (see "Persisting & Resuming" below) — you may be able to skip straight to posting.
+### 2. Reuse a cached review (post only)
 
----
+A review can be produced once and posted later — same session or a different one — without re-reading the diff. When `--post` / `post` is given, try the cache before any review work:
 
-### 1a. Persisting & Resuming (the two-call workflow)
-
-A review can be produced once and posted later — same session or a different one — without re-reading the diff:
-
-- **After producing findings** (step 4), always save them:
-  ```bash
-  node scripts/findings-cache.mjs --save --owner <owner> --repo <repo> --pr <number> --head-sha <pr.headSha> --findings '<json-from-step-4>'
-  ```
-- **When `--post` is given**, try to reuse a cached review before doing any diff work:
-  ```bash
-  node scripts/findings-cache.mjs --load --owner <owner> --repo <repo> --pr <number> --require-head-sha <current-head-sha>
-  ```
-  (get `<current-head-sha>` cheaply via `gh api repos/<owner>/<repo>/pulls/<number> --jq .head.sha` first.)
-  - **Exit 0** → prints `{summary, findings}` from the cache. Skip straight to Section 5 (preview + confirm + post) — no need to re-fetch the diff or re-review.
-  - **Exit 1** (no cache) or **exit 2** (stale — new commits landed since the cached review) → do the full review (steps 1–4) as normal, then save, then post.
-
-This is why every review — even one run without `--post` — should still save via `findings-cache.mjs`: it's what makes the later `--post`-only call fast.
-
----
-
-### 2. Review Methodology — What to Look For
-
-You are reviewing for **correctness, security, design, performance, and maintainability**. Apply the following lenses systematically.
-
-#### A. Correctness & Bugs (Highest Priority)
-| Pattern | What to Check |
-|---------|---------------|
-| **Null/undefined handling** | Guard clauses, optional chaining, defensive checks before dereference |
-| **Boundary conditions** | Off-by-one, empty collections, zero/negative values, max int overflow |
-| **Concurrency/race conditions** | Shared mutable state, non-atomic check-then-act, missing locks, async ordering bugs |
-| **Resource leaks** | Unclosed connections/streams/files, missing `using`/`try-finally`/`defer`, event listener cleanup |
-| **Exception handling** | Swallowed exceptions, overly broad `catch`, exception masking, stack trace loss |
-| **Logic errors** | Inverted conditions, wrong operator (`=` vs `==`), incorrect loop bounds, wrong branch taken |
-| **State machine violations** | Invalid transitions, missing states, orphaned states |
-| **Idempotency** | Retry safety, duplicate request handling, exactly-once semantics |
-
-#### B. Security (Highest Priority)
-| Category | Specific Checks |
-|----------|-----------------|
-| **Injection** | SQL/NoSQL/LDAP/OS command injection — parameterized queries, input validation, allowlists |
-| **Path traversal** | `../` in file paths, `Path.Combine` misuse, user-controlled paths |
-| **Secrets exposure** | API keys, passwords, tokens, connection strings in code/config committed |
-| **Authentication/Authorization** | Missing authz checks, privilege escalation, broken object-level authz (BOLA), JWT validation flaws |
-| **Deserialization** | Untrusted data deserialized (JSON.NET TypeNameHandling, Java serialization, pickle, YAML unsafe load) |
-| **XSS/CSRF** | Unescaped output in HTML/JS contexts, missing CSRF tokens on state-changing ops |
-| **Crypto** | Weak algorithms (MD5, SHA1, DES), hardcoded keys/IVs, ECB mode, custom crypto |
-| **SSRF/RCE** | User-controlled URLs fetched, arbitrary code execution via templates/scripts |
-| **Data exposure** | PII in logs, verbose error messages, excessive API response fields |
-| **Supply chain** | Suspicious new dependencies, typosquatting, unpinned versions |
-
-#### C. Design & Architecture
-| Principle | Violations to Flag |
-|-----------|-------------------|
-| **Single Responsibility** | Classes/functions doing too many things, god objects |
-| **Open/Closed** | Modifying existing stable code instead of extending, switch on type instead of polymorphism |
-| **Liskov Substitution** | Subtypes breaking base contracts, strengthened preconditions/weakened postconditions |
-| **Interface Segregation** | Fat interfaces forcing unused implementations |
-| **Dependency Inversion** | High-level modules depending on low-level concretions, missing abstractions |
-| **Layer Boundaries** | UI calling DB directly, domain logic in controllers, cross-layer cycles |
-| **Coupling** | Tight coupling via global state, singletons, static calls, circular deps |
-| **Cohesion** | Scattered related logic, feature envy, data clumps |
-| **Abstraction Leaks** | Implementation details in public APIs, leaky DTOs, ORM entities exposed |
-| **Consistency** | Inconsistent patterns (naming, error handling, async style) across codebase |
-
-#### D. Performance
-| Area | Red Flags |
-|------|-----------|
-| **Database** | N+1 queries, missing indexes, Cartesian products, unbounded result sets, eager loading everything |
-| **Memory** | Large allocations in loops, unbounded collections, caching without eviction, string concatenation in hot paths |
-| **Async/Concurrency** | Sync-over-async (`.Result`, `.Wait()`), thread pool starvation, missing cancellation tokens |
-| **Algorithmic** | O(n²) where O(n log n) possible, repeated computation, missing memoization |
-| **Network** | Chatty APIs, missing batching, no connection pooling, large payloads |
-| **Serialization** | Heavy serializers in hot paths, excessive object graphs |
-
-#### E. Maintainability & Observability
-| Concern | What to Flag |
-|---------|--------------|
-| **Testing** | No tests for new logic, flaky tests, testing implementation not behavior, missing edge cases |
-| **Logging** | Missing correlation IDs, log levels wrong (debug in prod), sensitive data in logs, structured logging absent |
-| **Metrics/Tracing** | No instrumentation on critical paths, missing spans, high-cardinality labels |
-| **Documentation** | Public APIs undocumented, complex algorithms without comments, outdated docs |
-| **Error Messages** | Generic "failed", no actionable info, missing context for debugging |
-| **Configuration** | Hardcoded values that should be config, missing validation, secrets in config |
-
-#### F'. When the capped diff isn't enough
-
-`gh-context.mjs` caps context to keep the default call cheap (see "Token Minimization" below) — that's a default, not a ceiling. Two situations mean you're not seeing enough to judge a finding:
-- A file's `patch` field is `null`/missing in the `files` array — GitHub itself omitted the diff (huge change).
-- You're looking at a truncation marker (`... (truncated: ...)`) or the `-U3` context window cuts off right where you'd need to see more (e.g. to check whether a variable is null-checked a few lines outside the shown hunk).
-
-In either case, pull that one file's full content instead of guessing:
 ```bash
-node scripts/fetch-file.mjs --owner <owner> --repo <repo> --path <path> --ref <headSha>
+node <skill-base-dir>/scripts/findings-cache.mjs --load --owner <owner> --repo <repo> --pr <number> --require-head-sha <current-head-sha>
 ```
-Use this selectively, for the specific file(s) a finding's confidence depends on — not as a default for every file in the PR, or you lose the point of the cap.
+(get `<current-head-sha>` cheaply via `gh api repos/<owner>/<repo>/pulls/<number> --jq .head.sha` first.)
+- **Exit 0** → prints the cached review. Skip to step 9 (preview + confirm + post) — no need to re-fetch the diff or re-review.
+- **Exit 1** (no cache) or **exit 2** (stale — new commits landed since the cached review) → do the full review, save, then post.
 
-#### F. Language/Platform Specific (apply as relevant)
-- **C#/.NET**: `IDisposable` not implemented/disposed, `async void`, capture of loop variable, `ConfigureAwait(false)` missing, reflection in hot path, boxing in loops
-- **JavaScript/TypeScript**: `any` type, missing `await`, event loop blocking, prototype pollution, prototype chain issues
-- **Python**: Mutable default args, late binding closures, GIL-unaware CPU work, `eval`/`exec`
-- **Go**: Error wrapping lost, goroutine leaks, `defer` in loops, interface nil checks
-- **Database**: Missing migrations, destructive schema changes without backward compat, missing foreign keys
+This is why every review — even one run without `--post` — is saved in step 8.
 
----
+### 3. Pin the spec
 
-### 3. Review Process
+In order: a spec the user passed (`--spec`) → `linkedIssues` (closing references are the spec; mentioned ones are candidates to confirm) → `unresolvedRefs` via `issueTrackerDoc` or the user → `specCandidates` (open and confirm) → the PR description if it states requirements → ask the user once. No spec → the Spec axis reports `"no spec available"`. Details: [standards-and-spec.md](references/standards-and-spec.md#spec-sources-in-order).
 
-1. **Read the PR context first** — title, description, linked issues. Understand the *intent*.
+### 4. Load the standards
+
+Read the `standards` files' sections that cover the diff's languages and areas; note `tooling` (skip what it enforces); the smell baseline is in [review-lenses.md](references/review-lenses.md#standards-axis-smell-baseline). Details: [standards-and-spec.md](references/standards-and-spec.md#standards-sources).
+
+### 5. Read everything in coverage
+
+1. **Read the PR context first** — title, description, linked issues, `notes`. Understand the *intent*.
 2. **Scan commits** — are they atomic, logical, well-messaged? Squash/fixup commits suggest incomplete work.
 3. **Read the diff** — focus on changed logic, not boilerplate. Use the filtered diff from the script.
-4. **Cross-reference** — does the code match the PR description? Are there uncommitted changes needed?
-5. **Apply the lenses above** — systematically, not randomly.
-6. **Prioritize** — security > correctness bugs > design > performance > maintainability.
+4. **Read every file** listed in `coverage.patchMissing`, `coverage.truncated`, `coverage.notInDiff` (and `untracked` for `--wip`) with `fetch-file.mjs` (PR) or the local file. Pull extra context around a hunk only where a finding depends on it ([F'](references/review-lenses.md#f-when-the-capped-diff-isnt-enough)).
 
----
+### 6. Review each axis
 
-### 4. Output Format — Strict JSON Only
+- **Quality**: apply lenses A–F from [review-lenses.md](references/review-lenses.md) — systematically, not randomly. **Cross-reference** — does the code match the PR description? Are there uncommitted changes needed?
+- **Standards**: documented repo rules first (hard violations, cite file + rule), then the smell baseline (judgement calls).
+- **Spec**: list every requirement in the spec as a checklist (met / partial / missing / wrong / unclear, with where it is implemented), then report missing / partial requirements, scope creep and wrong implementations as findings; quote the spec line.
 
-Return **only** this JSON (no markdown, no extra text, no commentary):
+Sequential by default (Quality → Standards → Spec), writing each axis's findings before starting the next. With `--parallel`, run one sub-agent per axis with the [briefs](references/standards-and-spec.md#sub-agent-briefs).
 
-```json
-{
-  "summary": "2–3 sentence overall assessment. Example: 'The PR adds OAuth2 token refresh but has a race condition in token storage and misses authz checks on the refresh endpoint. Three security findings and one concurrency bug.'",
-  "findings": [
-    {
-      "file": "path/to/file.cs",
-      "line": 42,
-      "severity": "security|bug|design|performance|maintainability",
-      "message": "Concise, specific description of the issue. Reference the exact code pattern.",
-      "suggestion": "Specific, actionable fix or mitigation. Code snippet optional but helpful."
-    }
-  ]
-}
-```
+### 7. Verify and rate every finding
 
-**Rules:**
-- `line` = **new-file line number** from the diff (right side). Use `null` for file-level findings.
-- **Max 10 findings**. If more exist, pick the 10 highest-severity.
-- **Severity ordering**: `security` > `bug` > `design` > `performance` > `maintainability`
-- **Message style**: "Token refresh uses non-atomic read-modify-write, allowing race condition" — not "There's a bug here"
-- **Suggestion style**: "Use `Interlocked.CompareExchange` or a `SemaphoreSlim` to make token update atomic" — not "Fix the race condition"
+Re-read each cited line at the head commit and apply the [false-positive filters](references/review-lenses.md#false-positive-filters); drop what fails. Then set `impact` and `likelihood` ([matrix](references/review-lenses.md#risk-rating-impact--likelihood)), write `riskIfIgnored` and `solutions`, and add `fix` only when the replacement is small and certainly right. **Prioritize** within each axis — security > correctness bugs > design > performance > maintainability. Max 10 findings per axis.
 
-Immediately after producing this JSON, save it via `findings-cache.mjs --save` (see 1a) — every review gets cached, whether or not `--post` was given.
+### 8. Save, render the report, show the summary
 
----
-
-### 5. Post Findings (Only If `--post` Flag Given)
-
-If you reused a cached review via 1a, you already have `{summary, findings}` — skip to step 1 below. Otherwise use what you just produced in step 4.
-
-Pass `--mention` as a **fallback only** — `pr.assignees` (from step 1's `gh-context.mjs` output), or `pr.author` if none are set. For each inline comment, the script blames the specific line via `git blame` and mentions whoever actually wrote it, not the whole assignee list; `--mention` only kicks in when a finding has no line, its line isn't in the diff, or blame can't resolve a GitHub login for that line.
-
-1. Show a preview table of findings (file, line, severity, message).
-2. Ask: `Post these N findings as inline comments on PR #<num>? [y/N]`
-3. On `y`, call the posting script:
+Write `<work>/findings.json` in the [findings contract](references/output-and-posting.md#findings-contract), then:
 
 ```bash
-node scripts/post-review.mjs --owner <owner> --repo <repo> --pr <number> --findings '<json-findings>' --mention <login1,login2>
+node <skill-base-dir>/scripts/findings-cache.mjs --save --owner <owner> --repo <repo> --pr <number> --head-sha <pr.headSha> --findings-file <work>/findings.json
+node <skill-base-dir>/scripts/render-report.mjs --findings-file <work>/findings.json --context <work>/context.json [--out <file.html>]
 ```
 
-This script posts each finding as an **inline review comment** on the `RIGHT` side of the diff (new file), with a `cc @login` line mentioning whoever's blame covers that line. It uses `gh api` with the authenticated user's token.
+(Local review: `--key <repo-folder>-local-<branch> --head-sha <head>`.) `--save` refuses malformed findings and warns about missing risk text: fix and re-save. Reply with the report path, the per-axis summary (`findings-cache.mjs --load ... --markdown` prints it), and what was not reviewed, if anything. Then, unless `--post` was given or the user said report-only, ask once: **keep the HTML report only, or also post the findings to the PR?**
 
-Do not post a top-level review (no `APPROVE`/`REQUEST_CHANGES`) — just inline comments.
+### 9. Post (only with `--post` or the user's yes)
 
----
+Preview table → `Post these N findings as inline comments on PR #<num>? [y/N]` → on `y`, `post-review.mjs --findings-file <work>/findings.json --mention <fallback logins>` (`--dry-run` shows the exact comments first). Inline comments with blame-based mentions, general comments for lines outside the diff, duplicate protection, one summary comment. Do not post a top-level review (no `APPROVE`/`REQUEST_CHANGES`) — just comments. Details and the comment format: [output-and-posting.md](references/output-and-posting.md#posting-to-the-pr).
 
-## Token Minimization (Handled by the Script)
+### Create a PR
+
+`create-pr <base> <head>`: run `gh-context.mjs --base <base> --head <head>` (compare mode), draft a title (imperative, under 72 characters) and a body (what and why, notable changes, how it was tested, linked issues) from the commits and diff, show both, and on the user's yes run:
+
+```bash
+node <skill-base-dir>/scripts/create-pr.mjs --owner <owner> --repo <repo> --base <base> --head <head> --title "<title>" --body "<body>" [--draft]
+```
+
+It prints the new PR's URL.
+
+## Token minimization
 
 The `gh-context.mjs` script:
 - Uses `-U3` context lines
-- Excludes: `**/packages/**`, `**/bin/**`, `**/obj/**`, `**/*.min.*`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `**/node_modules/**`, `**/dist/**`, `**/build/**`, `*.dll`, `*.exe`, `*.pdb`, `*.jar`
-- Caps: 500 lines per file, 4000 lines total
-- Lists overflow files as names-only in `files` array
+- Excludes: `**/packages/**`, `**/bin/**`, `**/obj/**`, `**/*.min.*`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `**/node_modules/**`, `**/dist/**`, `**/build/**`, `*.dll`, `*.exe`, `*.pdb`, `*.jar` (top-level folders included)
+- Caps: 500 lines per file, 4000 lines total, one marker line per cap
+- Lists overflow files as names-only in `files` array, and every skipped or cut file in `coverage`
 
-The cap exists because most findings only need a few lines of surrounding context, so paying full-file token cost for every file in every PR by default would be waste on the common case. It's not a hard ceiling: use `fetch-file.mjs` (F') to go past it for the specific file(s) where it actually matters.
+The cap exists because most findings only need a few lines of surrounding context, so paying full-file token cost for every file in every PR by default would be waste on the common case. It's not a hard ceiling: use `fetch-file.mjs` ([F'](references/review-lenses.md#f-when-the-capped-diff-isnt-enough)) to go past it for the specific file(s) where it actually matters, and always for the files in `coverage`.
 
----
-
-## Example Invocations
+## Example invocations
 
 **Review with posting:**
 ```
 User: /gh-review-pr 42 --post
-You:  (runs script, reviews, outputs JSON, shows preview, asks confirmation, runs post script)
+You:  (fetches context, pins the spec, reviews three axes, saves, writes the HTML report, shows the preview, asks confirmation, posts)
 ```
 
 **Review without posting:**
 ```
 User: /gh-review-pr https://github.com/acme/app/pull/17
-You:  (runs script, reviews, outputs JSON — no post)
+You:  (reviews, saves, writes the HTML report, shows the per-axis summary, asks: report only or post?)
+```
+
+**Local work in progress:**
+```
+User: review my changes since main, including what I haven't committed
+You:  (gh-context.mjs --since main --wip; same review; report only — nothing to post until a PR exists, unless `openPr` is set)
+```
+
+**Post later, from the cache:**
+```
+User: /gh-review-pr post 42
+You:  (cache hit at the same head commit → preview → confirm → post; stale → re-review first)
 ```
 
 **First time (no args):**
@@ -266,21 +228,25 @@ You:  Which repository? (owner/name or full URL)
 User:  acme/app
 You:  Which PR number?
 User:  42
-You:  (runs script, reviews, outputs JSON)
+You:  (runs script, reviews, writes the report)
 ```
 
----
+## Changed in 2.0.0
 
-## Quick Reference: Severity Decision Guide
+- The findings JSON is the saved record (`findings.json` + cache), no longer the whole chat reply: the reply is the report path and the per-axis summary. `findings-cache.mjs --load` prints the raw JSON when wanted.
+- The cap went from 10 findings in total to 10 per axis.
+- Posted comments carry the risk rating, issue, risk if not addressed and possible fixes (previously severity, message and one suggestion); the old findings shape is still accepted.
+- `allowed-tools` pre-approves only the skill's own scripts; any direct `gh` call asks first.
 
-| If the issue... | Severity |
-|-----------------|----------|
-| Allows unauthorized access, data breach, RCE, injection | `security` |
-| Causes wrong results, crashes, data corruption, deadlock | `bug` |
-| Violates architecture, creates technical debt, hinders future changes | `design` |
-| Causes measurable slowdown, resource waste, scalability limit | `performance` |
-| Makes code harder to understand, test, debug, or operate | `maintainability` |
+## Maintaining this skill
 
----
+Follow Anthropic's skill authoring best practices when editing (summary in `CONVENTIONS.md` of the MayankPunghal/Skills repo):
+- `description` stays under 1,024 characters, third person, saying what the skill does and when to use it. The long-form scope lives in the body, not the description.
+- SKILL.md body stays under 500 lines; detail goes in reference files linked directly from SKILL.md (one level deep, never reference → reference → content).
+- Reference files over 100 lines start with a `## Contents` list.
+- Forward slashes in paths; one term per concept (axis, finding, risk rating, spec, standards); no "before/after <date>" instructions.
+- The findings contract lives in one place ([output-and-posting.md](references/output-and-posting.md)) and in `scripts/findings-lib.mjs`; change both together.
+- Changes are additive: never drop a rule, lens, command or behaviour without the owner's say-so.
+- Test prompts, expected behaviour and the baseline log: [evals/evals.md](evals/evals.md).
 
-**Remember**: Use the scripts. Output only JSON. Be brief. Post only with `--post` + explicit confirmation. Review the *code*, not the author.
+**Remember**: Use the scripts. Be brief. Post only with `--post` + explicit confirmation. Review the *code*, not the author.
