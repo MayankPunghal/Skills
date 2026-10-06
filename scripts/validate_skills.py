@@ -362,6 +362,22 @@ def check_imports(path, add):
                         third.setdefault(top, set()).add(rel(os.path.join(root, f), path))
     if not third:
         return
+    sibling = {}  # modules a skill loads from a sibling skill at run time (sys.path), e.g. a shared parser
+    parent = os.path.dirname(os.path.abspath(path))
+    for other in os.listdir(parent):
+        op = os.path.join(parent, other)
+        if other == os.path.basename(os.path.abspath(path)) or not os.path.isfile(os.path.join(op, "SKILL.md")):
+            continue
+        for root, _, files in walk(op):
+            for f in files:
+                if f.endswith(".py") and f[:-3] in third:
+                    sibling.setdefault(f[:-3], other)
+    if sibling:
+        add("INFO", "imports from sibling skills: " + ", ".join(f"{m} ({o})" for m, o in sorted(sibling.items()))
+            + "; those skills must be installed alongside")
+        third = {k: v for k, v in third.items() if k not in sibling}
+    if not third:
+        return
     if os.path.exists(os.path.join(path, "scripts", "install_prerequisites.py")):
         add("INFO", "third-party Python imports: " + ", ".join(sorted(third)) + " (scripts/install_prerequisites.py installs them)")
     else:
