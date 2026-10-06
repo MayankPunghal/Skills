@@ -5,7 +5,8 @@
         --description "Order management platform for ..." [--adapters generic-graph,generic-sql,generic-areas] [--force-config]
 
 Creates: codebase-docs.json, docs/_src/** page scaffold (from templates/pages.json), docs/_notes/PROGRESS.md,
-docs/_tools/ (runtime scripts: build_docs.py, gen_agent_index.py, gen_rag_cards.py, lookup.py), docs/assets/, mkdocs.yml, .gitignore lines.
+docs/_tools/ (runtime scripts: build_docs.py, gen_agent_index.py, gen_rag_cards.py, lookup.py), docs/assets/, mkdocs.yml, .gitignore lines,
+SKILL-ISSUES.md (the run issues log for the skill owner, at the workspace root so it never ships in the package).
 """
 import argparse
 import json
@@ -69,6 +70,9 @@ def main():
         shutil.copy2(os.path.join(TEMPLATES, "assets", "logo.svg"), os.path.join(docs, "assets", "logo.svg"))
     created += write(os.path.join(docs, "assets", "extra.css"), render("extra.css.tmpl", vals), overwrite=False)
     created += write("mkdocs.yml", render("mkdocs.yml.tmpl", vals), overwrite=False)
+    # run issues log for the skill owner: at the workspace root, outside docs/, so it never ships in the package
+    created += write("SKILL-ISSUES.md", render("SKILL-ISSUES.md.tmpl", dict(vals, skill="codebase-documenter",
+                                                                             version=skill_version())), overwrite=False)
     gi = ".gitignore"
     have = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
     add = [x for x in ("site/", "publish/", "graphify-out/cache/") if x not in have]
@@ -77,6 +81,12 @@ def main():
             fh.write(("\n" if have and not have.endswith("\n") else "") + "\n".join(add) + "\n")
     print(f"workspace ready: {CONFIG_NAME}, {created} new files, runtime tools in {docs}/_tools, mkdocs.yml")
     print(f"source root: {cfg['source_root']} ({'found' if os.path.isdir(cfg['source_root']) else 'NOT FOUND'})")
+
+
+def skill_version():
+    import re
+    m = re.search(r"(?m)^\s*version:\s*[\"']?([\w.\-]+)", open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8").read())
+    return m.group(1) if m else "unknown"
 
 
 def render_str(s, vals):

@@ -209,3 +209,21 @@ def mark_step(root, step, status="done"):
     st = load_state(root)
     st["steps"][step] = status
     save_state(root, st)
+
+
+ISSUES_LOG = "SKILL-ISSUES.md"  # run issues log for the skill owner, at the workspace root (never part of the report)
+
+
+def issues_log(root, client=""):
+    """Create SKILL-ISSUES.md from the template when missing; return (entries, open entries)."""
+    p = os.path.join(root, ISSUES_LOG)
+    if not os.path.exists(p):
+        ver = re.search(r"(?m)^\s*version:\s*[\"']?([\w.\-]+)", read_text(os.path.join(SKILL_DIR, "SKILL.md")) or "")
+        t = read_text(os.path.join(SKILL_DIR, "templates", "SKILL-ISSUES.md.tmpl")) or ""
+        for k, v in (("skill", "migration-assessment"), ("version", ver.group(1) if ver else "unknown"),
+                     ("product", client or "this estate")):
+            t = t.replace("{{" + k + "}}", v)
+        write_text(p, t)
+    t = re.sub(r"<!--.*?-->", "", read_text(p) or "", flags=re.S)  # the entry format example is a comment
+    return (len(re.findall(r"(?m)^## ISSUE-\d+", t)),
+            len(re.findall(r"(?m)^\| ISSUE-\d+ \|.*\|\s*open\s*\|\s*$", t)))

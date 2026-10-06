@@ -4,14 +4,14 @@
         [--prepared-by "Your Company"] [--compliance HIPAA "PCI DSS"] [--hosting "on-prem VMware"] [--online] [--target net10.0]
 
 Run in the folder that will hold the assessment (not inside the client's repositories). Writes assessment.json,
-creates assessment/ (inventory, graphs, findings, reviews, narrative, report) and the narrative stubs the report
-builder includes. Existing values are kept unless passed again.
+creates assessment/ (inventory, graphs, findings, reviews, narrative, report), the narrative stubs the report
+builder includes and SKILL-ISSUES.md (the run issues log for the skill owner). Existing values are kept unless passed again.
 """
 import argparse
 import os
 import shutil
 
-from _common import CONFIG_NAME, DEFAULTS, OUT, SKILL_DIR, save_config, utf8_stdout, write_json, read_json
+from _common import CONFIG_NAME, DEFAULTS, OUT, SKILL_DIR, issues_log, save_config, utf8_stdout, write_json, read_json
 
 NARRATIVE = ["executive-summary", "architecture", "application-plans", "database", "risks-and-questions", "testing-and-merge", "cost", "dependencies"]
 
@@ -73,6 +73,7 @@ def main():
         dst = os.path.join(root, OUT, "narrative", f"{n}.md")
         if not os.path.exists(dst) and os.path.exists(os.path.join(tdir, f"{n}.md")):
             shutil.copy2(os.path.join(tdir, f"{n}.md"), dst)
+    issues_log(root, cfg.get("client") or "")  # SKILL-ISSUES.md: problems and workarounds met during the run
     if not os.path.exists(os.path.join(root, OUT, "state.json")):
         write_json(os.path.join(root, OUT, "state.json"), {"repos": {}, "steps": {"setup": "done"}})
     gi = os.path.join(root, ".gitignore")
