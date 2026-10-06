@@ -4,6 +4,12 @@
     python <skill>/scripts/install_prerequisites.py              # check, then install what is missing
     python <skill>/scripts/install_prerequisites.py --check      # report only; exit 1 if something required is missing
     python <skill>/scripts/install_prerequisites.py --no-dotnet  # never download the .NET SDK (SQL falls back to sqlglot)
+    python <skill>/scripts/install_prerequisites.py --check-updates  # installed / tested / latest versions; installs nothing
+    python <skill>/scripts/install_prerequisites.py --update     # move installed tools to the tested versions
+
+Tools are installed at the versions this skill was tested with (scripts/data/tool_versions.json), never "latest": a new
+graphify release once changed how graph.json is saved. `npx -y github:MayankPunghal/Skills update` runs --check-updates,
+which reports newer releases without installing them (tool_updates.py).
 
 Python itself cannot be installed from here (this script needs it): reference/install-prerequisites.md gives the
 per-OS commands for that step. Runs from any folder; does not need codebase-docs.json.
@@ -29,6 +35,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import run, tool_exe, utf8_stdout  # noqa: E402
 import offline_mermaid  # noqa: E402
+import tool_updates  # noqa: E402
 
 GRAPHIFY_PKG = "graphifyy[sql,openai]"
 SQLGLOT_PKG = "sqlglot"
@@ -74,12 +81,67 @@ def pip_install(*pkgs):
     if sys.prefix == sys.base_prefix:  # not a virtualenv: install for this user only
         args.append("--user")
     code, out = run(args + list(pkgs), timeout=1800)
+    LAST_OUT[0] = out
     if code and "externally-managed" in out:
         print("  this Python is managed by the OS (PEP 668): create a virtual environment and rerun with its python:\n"
               "    python3 -m venv ~/.venvs/codebase-documenter && ~/.venvs/codebase-documenter/bin/python " + os.path.abspath(__file__))
     elif code:
         print(out[-1500:])
     return code == 0
+
+
+def pinned(name, pkg):
+    """`pkg==<tested version>` (scripts/data/tool_versions.json): every machine gets the release the skill was tested with."""
+    return f"{pkg}=={tool_updates.tested()[name]['tested']}"
+
+
+LAST_OUT = [""]  # output of the last pip / uv install, to tell "no build of that version" from other failures
+NO_BUILD = ("No matching distribution", "Could not find a version", "No solution found", "no version of")
+
+
+def no_build():
+    return any(s in LAST_OUT[0] for s in NO_BUILD)
+
+
+def pip_pinned(name, pkg):
+    """The tested version; only when it has no build for this Python, the newest release instead, said aloud. Any other
+    failure (network, proxy, an OS-managed Python) stops here, so a hiccup never ends with an untested release."""
+    if pip_install(pinned(name, pkg)):
+        return True
+    if not no_build():
+        return False
+    print(f"  {name}: the tested version has no build for this Python; installing the newest release (untested with this skill)")
+    return pip_install(pkg)
+
+
+def graphify_pinned():
+    if install_graphify(pinned("graphify", GRAPHIFY_PKG)):
+        return True
+    if not no_build():
+        return False
+    print("  graphify: the tested version has no build for this Python; installing the newest release (untested with this skill)")
+    return install_graphify(GRAPHIFY_PKG)
+
+
+def update_tools():
+    """Move every installed tool that is not at its tested version to it (older or newer). Never to a newer release."""
+    tools = tool_updates.check(offline=True)
+    todo = {n: t for n, t in tools.items() if t["status"] in ("older than tested", "newer than tested")}
+    if not todo:
+        print("All installed tools are at the tested versions; nothing to change.")
+    specs = tool_updates.tested()
+    for name, t in todo.items():
+        print(f"  {name} {t['installed']} -> {t['tested']} ...")
+        if name == "graphify":  # into the environment it already lives in
+            ok = pip_install(pinned(name, GRAPHIFY_PKG)) if has_module("graphify") else install_graphify(pinned(name, GRAPHIFY_PKG))
+        elif name == "mermaid":
+            ok, msg = offline_mermaid.fetch_to_cache()
+            print("  " + msg + (" (sites pick it up on their next build_site.py)" if ok else ""))
+        else:
+            ok = pip_install(pinned(name, specs[name]["package"]))
+        print(f"  {name}: {'done' if ok else 'FAILED (see above)'}")
+    print()
+    tool_updates.print_report(tool_updates.check())
 
 
 def install_graphify(pkg=GRAPHIFY_PKG):
@@ -89,6 +151,7 @@ def install_graphify(pkg=GRAPHIFY_PKG):
     if tool_exe("uv") or run(PY + ["-m", "uv", "--version"])[0] == 0:
         uv = [tool_exe("uv")] if tool_exe("uv") else PY + ["-m", "uv"]
         code, out = run(uv + ["tool", "install", "--force", pkg], timeout=1800)
+        LAST_OUT[0] = out
         if code == 0:
             run(uv + ["tool", "update-shell"])  # adds the uv tool folder to PATH for future shells
             return True
@@ -196,7 +259,16 @@ def main():
     ap.add_argument("--check", action="store_true", help="report only")
     ap.add_argument("--no-key-prompt", action="store_true", help="never ask for an LLM key")
     ap.add_argument("--no-dotnet", action="store_true", help="do not download the .NET SDK (SQL parsing falls back to sqlglot)")
+    ap.add_argument("--check-updates", action="store_true",
+                    help="report installed vs tested vs latest tool versions; installs nothing (run by npx ... update)")
+    ap.add_argument("--update", action="store_true", help="move installed tools to the versions this skill was tested with")
     a = ap.parse_args()
+    if a.check_updates:
+        tool_updates.print_report(tool_updates.check())
+        return
+    if a.update:
+        update_tools()
+        return
     print(f"platform: {platform.system()} {platform.release()} ({platform.machine()})")
     state = report()
     if not state["python 3.10+"]:
@@ -213,10 +285,10 @@ def main():
         run(PY + ["-m", "ensurepip", "--upgrade", "--user"], timeout=600)
     if "mkdocs-material" in missing:
         print("  mkdocs-material ...")
-        pip_install("mkdocs-material")
+        pip_pinned("mkdocs-material", "mkdocs-material")
     if "graphify" in missing:
         print("  graphify ...")
-        install_graphify()
+        graphify_pinned()
     elif "graphify SQL" in missing:  # add the extra to the environment graphify already lives in
         print(f"  graphify SQL extra ({GRAPHIFY_PKG}) ...")
         # pin the installed version (uv tool or pip, both answer --version): adding the extra must not upgrade graphify
@@ -229,7 +301,7 @@ def main():
             install_graphify(pkg)
     if "sqlglot" in missing:
         print("  sqlglot ...")
-        pip_install(SQLGLOT_PKG)
+        pip_pinned("sqlglot", SQLGLOT_PKG)
     if ".NET SDK 8+" in missing:
         if a.no_dotnet:
             print("  .NET SDK: skipped (--no-dotnet); SQL is parsed with sqlglot only (procedural T-SQL partly unparsed)")

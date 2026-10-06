@@ -52,6 +52,21 @@ It prints one line per tool (`ok` / `MISSING` / `absent` for optional ones), ins
 | `dotnet` installed but not found | Open a new terminal (the installer adds it to the user PATH); the scripts also look in the per-user folders directly. |
 | Corporate proxy / no internet | Report it; the user sets `HTTPS_PROXY` or installs from an internal mirror. |
 
-## 3. Done when
+## 3. Tool versions and updates
+
+The installer puts in the versions this skill was tested with (`scripts/data/tool_versions.json`: graphify, MkDocs
+Material, sqlglot, Mermaid), never "latest", because a new graphify release once changed how `graph.json` is saved.
+When a tested version has no build for the machine's Python, it installs the newest release and says so.
+
+| Command | What it does |
+| --- | --- |
+| `install_prerequisites.py --check-updates` | Installed, tested and latest version of each tool; installs nothing. `npx -y github:MayankPunghal/Skills update` runs it after updating the skills, and `context.py` repeats its one-line `TOOLS:` summary for 30 days |
+| `install_prerequisites.py --update` | Moves each installed tool that is not at its tested version (older or newer) to the tested version; never to an untested release |
+| `tool_updates.py --offline` | The same report without the pypi.org / npmjs.org lookups (only public package names are sent) |
+
+A newer release is reported, not installed. It becomes the tested version once both skills have been run with it on the
+testbed; raise the version in `tool_versions.json` in the same pull request as any fix it needed.
+
+## 4. Done when
 
 `install_prerequisites.py --check` prints `READY`. `context.py` then stops reporting missing tools. Tick it in PROGRESS if the project already exists.

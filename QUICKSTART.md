@@ -88,6 +88,8 @@ Claude Code can only read folders the session was opened in or given access to, 
 npx -y github:MayankPunghal/Skills update
 ```
 
+It also lists the tools the skills use (graphify, MkDocs Material, sqlglot, Mermaid) with the installed version, the version the skills were tested with, and the newest release. It never upgrades them. To move to the tested versions, run `python <codebase-documenter>/scripts/install_prerequisites.py --update`.
+
 ## Good to know
 
 - **Your code is read-only.** The skills write only to their own output folders.

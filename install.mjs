@@ -3,7 +3,9 @@
  * Installer for MayankPunghal/Skills — zero dependencies, Node 18+.
  *
  *   npx -y github:MayankPunghal/Skills              interactive install (pick skills, agents, global/project)
- *   npx -y github:MayankPunghal/Skills update       reinstall everything recorded in the manifest from the latest repo
+ *   npx -y github:MayankPunghal/Skills update       reinstall everything recorded in the manifest from the latest repo,
+ *                                                  then report prerequisite tools not at their tested versions
+ *                                                  (report only; --no-update-check skips it)
  *   npx -y github:MayankPunghal/Skills setup        install the prerequisites (Python packages) of installed skills
  *   npx -y github:MayankPunghal/Skills zips         rebuild the upload-ready zips for the Claude app (opens the folder on Windows)
  *   npx -y github:MayankPunghal/Skills list         show what is installed where
@@ -266,6 +268,18 @@ function runSetup(names, installedPathFor, { quiet = false } = {}) {
   return ok;
 }
 
+/** After an update: installed prerequisite tools vs the versions the skills were tested with, and newer releases.
+ *  Report only: moving a tool is an explicit `install_prerequisites.py --update` (a new release once broke the graph). */
+function checkToolVersions(m) {
+  const script = m.installs.map((i) => path.join(i.path, ...SETUP_SCRIPT)).find((p) => fs.existsSync(p));
+  if (!script) return;
+  const py = findPython();
+  if (!py) return;
+  say(bold("\n▸ Prerequisite tool versions") + dim("  (report only; nothing is installed)"));
+  const r = spawnSync(py[0], [...py.slice(1), script, "--check-updates"], { stdio: "inherit" });
+  if (r.status !== 0) say(yellow(`! the version check did not finish (exit ${r.status}); the skills are updated anyway`));
+}
+
 // ---------- upload-ready zips (Claude app / claude.ai) ----------
 // App chats use skills stored in the claude.ai account, which no installer can reach. So every run also writes one
 // zip per skill (the skill folder at the top level, as Settings -> Capabilities -> Skills expects) and reports which
@@ -420,6 +434,7 @@ async function cmdUpdate(flags) {
   saveManifest(m);
   say(green(`\nUpdated ${n} install(s).`));
   if (!flags["no-zips"]) buildZips();
+  if (!flags["no-update-check"]) checkToolVersions(m);
 
   // Skills added to the repo since the last install: offer them, into the same folders the others went to.
   const have = new Set(m.installs.map((i) => i.skill));
@@ -545,7 +560,7 @@ syncPersonal(flags);
 const cmdZips = () => { const c = buildZips(); if (process.platform === "win32" && c.length) spawnSync("explorer", [ZIP_DIR]); };
 const run = { install: cmdInstall, update: cmdUpdate, setup: cmdSetup, list: cmdList, uninstall: cmdUninstall, zips: cmdZips }[cmd];
 if (!run || flags.help) {
-  say("Usage: npx -y github:MayankPunghal/Skills [install|update|setup|zips|list|uninstall] [--skills=all|a,b] [--agents=claude,codex,cursor,copilot] [--scope=global|project] [--dir=PATH] [--link] [--yes] [--no-setup] [--no-zips]");
+  say("Usage: npx -y github:MayankPunghal/Skills [install|update|setup|zips|list|uninstall] [--skills=all|a,b] [--agents=claude,codex,cursor,copilot] [--scope=global|project] [--dir=PATH] [--link] [--yes] [--no-setup] [--no-zips] [--no-update-check]");
   process.exit(run ? 0 : 1);
 }
 Promise.resolve(run(flags)).catch((e) => { say(red(`\n✖ ${e.message}`)); process.exit(1); });
