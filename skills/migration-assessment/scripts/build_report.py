@@ -83,9 +83,12 @@ def b_headline(c):
             ("Lines of code (C#, VB.NET, markup)", f"{loc:,}"),
             ("Recommended path (7R)", ", ".join(f"{k} {v}" for k, v in r7.most_common()) or "-"),
             ("Findings", ", ".join(f"{k} {sev[k]}" for k in SEVS if sev[k]) or "none"),
-            ("Effort" + (" (AI-assisted delivery)" if c.est.get("ai_assisted") else ""), f"{hd(t['total_days'], t.get('total_hours'))}, likely {t.get('likely_hours', '-')} h / {t['likely_days']} d" if t.get("total_days") else "not estimated"),
+            ("Effort" + (" (AI-assisted delivery)" if c.est.get("ai_assisted") else ""),
+             f"likely (P50) {t.get('likely_hours', '-')} h / {t['likely_days']} d; 80% range (P10–P90) {hd(t['total_days'], t.get('total_hours'))}"
+             + (f"; commitment (P80) {t['p80_hours']} h" if t.get("p80_hours") else "") if t.get("total_days") else "not estimated"),
             ("Manual-equivalent effort (for comparison)", hd(t["manual_equivalent_days"], t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "-"),
-            ("Indicative duration", f"~{t.get('duration_weeks')} weeks with {c.est.get('engineers')} engineers" if t.get("duration_weeks") else "-"),
+            ("Indicative duration", f"~{t.get('duration_weeks')} weeks at P50" + (f", ~{t['duration_weeks_p80']} weeks at P80" if t.get("duration_weeks_p80") else "")
+             + f" with {c.est.get('engineers')} engineers" + sprint_note(c.est.get("sprints") or {}) if t.get("duration_weeks") else "-"),
             ("Target platform", f"{pretty_tfm(c.cfg.get('target_dotnet', 'net10.0'))} (LTS, supported to 2028-11-14) on Linux, AWS")]
     return table(["Measure", "Value"], rows)
 
@@ -545,7 +548,7 @@ def b_database(c):
                 continue
             rows.append((label + (" — selected" if t == sel else ""), hd(o["days"], o.get("hours")), f"{o.get('likely_hours', '-')} h", ", ".join(o.get("redesign", [])) or "none",
                          ", ".join(o.get("rework", [])) or "-"))
-        out.append(table(["Scenario (code and SQL conversion only)", "Effort (AI-assisted)", "Likely", "No PostgreSQL equivalent (redesign)", "Needs rework"], rows))
+        out.append(table(["Scenario (code and SQL conversion only)", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "No PostgreSQL equivalent (redesign)", "Needs rework"], rows))
         out.append(f"\n{d['note']}\n")
     feats = [f for f in c.findings if f["category"] == "database"]
     if feats:
@@ -634,11 +637,11 @@ def b_scenarios(c):
     if not comp:
         return "_Scenarios not computed (rerun estimate_effort.py)._"
     out = ["**Code-side options** (database scenario: " + (c.est.get("scenario", {}).get("database_label") or "") + "; coding effort only)\n"]
-    out.append(table(["Option", "Effort (AI-assisted)", "Likely", "Manual likely", "Duration", "Notes"],
+    out.append(table(["Option", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual likely", "Duration", "Notes"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), hd(x["total_days"], x["total_hours"]), f"{x['likely_hours']} h / {x['likely_days']} d",
                        f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks", " ".join(x.get("notes", []))[:300]) for x in comp if x["kind"] == "hosting"]))
     out.append("\n**Database code options** (code scenario: " + (c.est.get("scenario", {}).get("hosting_label") or "") + ")\n")
-    out.append(table(["Option", "Database work", "Total effort (AI-assisted)", "Likely", "Manual likely", "Duration"],
+    out.append(table(["Option", "Database work (P10–P90)", "Total effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual likely", "Duration"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), rng(x.get("database_hours", [0, 0]), " h"), hd(x["total_days"], x["total_hours"]),
                        f"{x['likely_hours']} h / {x['likely_days']} d", f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks") for x in comp if x["kind"] == "database"]))
     return "\n".join(out)
@@ -703,7 +706,44 @@ def b_estimate(c):
     rows.append(("**Total (coding only)**", "", f"**{hd(t.get('total_days', [0, 0]), t.get('total_hours'))}**", f"**{t.get('likely_hours', '-')} h / {t.get('likely_days', '-')} d**",
                  hd(t.get("manual_equivalent_days"), t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "", "",
                  f"{t.get('kloc', '-')} KLOC, {t.get('likely_hours_per_kloc', '-')} likely h/KLOC"))
-    return table(["Work package", "7R / kind", "Effort (AI-assisted)", "Likely", "Manual equivalent", "Size", "Main drivers"], rows)
+    note = ""
+    if t.get("p80_hours"):
+        note = ("\n\nRanges are the 80% interval (P10–P90) of a Monte Carlo roll-up of every item's three-point estimate; **likely is P50** and the "
+                f"**commitment figure is P80: {t['p80_hours']} h ({t.get('p80_days')} d)**. Package ranges do not add up to the total range: independent "
+                "items partly cancel, which is why the total is narrower than the sum of its parts. Adding every item's low and every item's high gives "
+                f"{rng(t.get('bounds_hours', [0, 0]), ' h')}, extremes that need every item at the same end at once (not a planning range).")
+    return table(["Work package", "7R / kind", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual equivalent (P10–P90)", "Size", "Main drivers"], rows) + note
+
+
+def sprint_note(sp):
+    if not sp.get("plan"):
+        return ""
+    return (f"; {sp['sprints_p50']} sprint(s) of {sp['length_weeks']} weeks at P50 ({sp['sprints_p80']} at P80) from "
+            + (sp["start_date"] if sp.get("start_date") else "the day of codebase access"))
+
+
+def b_sprints(c):
+    """Coding sprint plan from the day of codebase access (estimate.json "sprints")."""
+    sp = c.est.get("sprints") or {}
+    if not sp.get("plan"):
+        return "_No sprint plan (rerun estimate_effort.py)._"
+    rows = []
+    for s in sp["plan"]:
+        when = f"{s['start']} to {s['end']}" if s.get("start") else f"weeks {s['weeks']}"
+        work = "<br>".join(f"{'DB' if r['lane'] == 'database' else 'App'}: {r['work']} — {r['hours']} h ({r['status']})" for r in s["items"])
+        if s.get("onboarding"):
+            work = f"Onboarding, {s['onboarding']}<br>" + work
+        rows.append((f"Sprint {s['sprint']}", when, f"{s['capacity_hours']} h", f"{s['planned_hours']} h", work))
+    head = (f"{sp['length_weeks']}-week sprints starting on the day the team gets codebase access"
+            + (f" ({sp['start_date']})" if sp.get("start_date") else " (no date given: pass --start-date or set scenario.start_date)")
+            + f". Team of {sp['engineers']} engineers"
+            + (f", {sp['db_engineers']} of them on the database lane (unused lane capacity flows to the other lane)" if sp.get("db_engineers") else "")
+            + f"; capacity {sp['capacity_per_sprint_hours']} h per sprint at the team efficiency. Work is planned at P50 in dependency order "
+            "(shared libraries, repository-wide items, application waves). "
+            + f"**{sp['sprints_p50']} sprint(s) at P50"
+            + (f", ending {sp['end_p50']}" if sp.get("end_p50") else "") + f"; {sp['sprints_p80']} at P80"
+            + (f", ending {sp['end_p80']}" if sp.get("end_p80") else "") + ".** Coding only: QA, release and data migration are planned separately.\n\n")
+    return head + table(["Sprint", "Dates", "Capacity", "Planned (P50)", "Work"], rows)
 
 
 def b_multipliers(c):
@@ -870,7 +910,7 @@ def b_appendix_projects(c):
 BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
           "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
-          "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "assumptions": b_assumptions,
+          "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
           "appendix-packages": b_appendix_packages, "appendix-winapi": b_appendix_winapi, "appendix-raw": b_appendix_raw,
           "appendix-sources": b_appendix_sources, "appendix-projects": b_appendix_projects}

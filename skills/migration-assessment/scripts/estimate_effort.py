@@ -30,6 +30,7 @@ import os
 from _common import OUT, data, load_config, mark_step, read_json, utf8_stdout, write_json
 import _dbinventory as DBI
 import _findings as F
+import _montecarlo as MC
 import _optional as O
 
 
@@ -97,32 +98,48 @@ def conversion_hours(p, fan_in, est, wire=None):
     return scale(base, cf), cf, why, code_k
 
 
-def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f=None):
-    """Manual-equivalent and AI-assisted hours to convert one database group (and its data-access code) to PostgreSQL."""
+def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f=None, collect=None, pkg=None, pos=0.4):
+    """Manual-equivalent and AI-assisted hours to convert one database group (and its data-access code) to PostgreSQL.
+    collect (a list) receives the three-point items for the Monte Carlo roll-up, under package id pkg."""
     pg = est["postgres"]
     red_f = red_f or db_f
     objs, cons, code, fnd, fnd_red = [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]
     redesign, rework = [], []
+    items = collect if collect is not None else []
+
+    def item(h, kind, n=1, k=1.0):
+        if h[1] > 0:
+            items.append({"pkg": pkg, "lo": h[0] * k, "hi": h[1] * k, "kind": kind, "pos": pos, "n": n})
+    groups = {}
     for o in dbi.get("objects", []):
         oh = pg["object_hours"].get(o["kind"], [0.25, 0.75])
+        band = None
         if isinstance(oh, dict):
-            oh = oh["small" if o["lines"] <= 50 else ("medium" if o["lines"] <= 200 else "large")]
+            band = "small" if o["lines"] <= 50 else ("medium" if o["lines"] <= 200 else "large")
+            oh = oh[band]
         objs = add(objs, oh)
+        g = groups.setdefault((o["kind"], band), [oh, 0])
+        g[1] += 1
+    for oh, n in groups.values():  # objects of one kind and size: independent items priced together
+        item(oh, "db", n)
     levels = {"auto": [0.0, 0.0], "rewrite": [0.0, 0.0], "redesign": [0.0, 0.0]}
     for k, n in (dbi.get("constructs") or {}).items():  # parsed construct census, priced by its PostgreSQL conversion level
         c = DBI.conversion(k)
         h = c.get("hours") or pg["construct_hours"].get(k, [0, 0])
         cons = add(cons, h, n)
         levels[c["level"]] = add(levels[c["level"]], h, n)
+        item(h, "red" if c["level"] == "redesign" else "db", k=n)  # one construct repeated: the same fix, fully correlated
     for k, n in (dbi.get("code_constructs") or {}).items():  # embedded SQL: statement rewrite is in code_hours; add what has no equivalent
         c = DBI.conversion(k)
         if c["level"] == "redesign":
             cons = add(cons, c["hours"], n)
             levels["redesign"] = add(levels["redesign"], c["hours"], n)
+            item(c["hours"], "red", k=n)
     facts = dict(dbi.get("code") or {})
     facts["edmx_function_imports"] = dbi.get("edmx_function_imports", 0)
     for k, n in facts.items():
         code = add(code, pg["code_hours"].get(k, [0, 0]), n)
+        item(pg["code_hours"].get(k, [0, 0]), "db", k=n)
     for f in findings:
         impact = (f.get("db") or {}).get("pg")
         if impact in ("redesign", "rework"):
@@ -131,9 +148,11 @@ def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f
                 continue
             fh = finding_hours(dict(f, baseline=False, severity="Medium"), est)
             fnd = add(fnd, fh, 1.0 if impact == "redesign" else 0.5)
+            item(fh, "red" if impact == "redesign" else "db", k=1.0 if impact == "redesign" else 0.5)
             if impact == "redesign":
                 fnd_red = add(fnd_red, fh)
     extra = [pg["dual"]["abstraction_per_app"][i] * max(n_apps_with_data, 1) for i in (0, 1)] if dual else [0.0, 0.0]
+    item(extra, "red")
     manual = add(add(add(objs, cons), add(code, fnd)), extra)
     red = add(add(levels["redesign"], fnd_red), extra)  # no mechanical path: the redesign AI factor applies
     mech = [max(manual[i] - red[i], 0.0) for i in (0, 1)]
@@ -143,7 +162,130 @@ def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f
             "hours": r1(hours), "redesign": sorted(set(redesign)), "rework": sorted(set(rework))}
 
 
-def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, explain=False):
+RANGE_LABEL = "P10-P90"
+
+
+def db_work_items(d):
+    """The selected database option split into plannable parts, in build order, sharing its P50 by manual-hours weight."""
+    o = d["options"][d["selected"]]
+    b = o.get("breakdown_manual_hours") or {}
+    inv = d.get("inventory") or {}
+    n_obj = sum((inv.get("kinds") or {}).values())
+    lv = b.get("construct_levels") or {}
+    parts = [("dual_extra", "provider-neutral data layer for the applications (dual database)"),
+             ("objects", f"convert {n_obj} database objects (tables, views, routines, triggers, types)" if n_obj else "convert database objects"),
+             ("constructs", "rewrite / redesign T-SQL constructs PostgreSQL cannot run as written"
+                            + (f" ({lk(lv.get('redesign', [0, 0]), 0.5):.0f} h of redesign at manual rates)" if lk(lv.get("redesign", [0, 0]), 0.5) else "")),
+             ("code", "data-access code: embedded SQL, stored-procedure calls and provider APIs in C#"),
+             ("findings", "database findings (redesign / rework)")]
+    weights = [(label, lk(b.get(k) or [0, 0], 0.5)) for k, label in parts]
+    tot = sum(w for _, w in weights)
+    if not tot:
+        return [(f"{d['repo']}: database code ({d['selected']})", o["likely_hours"])]
+    return [(f"{d['repo']}: {label}", o["likely_hours"] * w / tot) for label, w in weights if w > 0]
+
+
+def sprint_plan(app_queue, db_work, engineers, est, start_date=None, p80_ratio=1.0):
+    """Coding sprints from the day of codebase access. app_queue: [(name, P50 hours)] in dependency order; db_work: [(name, hours)]
+    run in its own lane (estimation.json sprints.db_engineers) when there are 2+ engineers, else after the application work.
+    Leftover capacity of a finished lane flows to the other one. Planned at P50; sprints_p80 says how many sprints P80 needs."""
+    sp, team, HPD = est.get("sprints") or {}, est["team"], est["hours_per_day"]
+    weeks = int(sp.get("length_weeks", 2))
+    per_eng = team["days_per_week"] * weeks * HPD * team["efficiency"]
+    db_eng = min(int(sp.get("db_engineers", 1)), max(engineers - 1, 0)) if db_work else 0
+    onboard_h = sp.get("onboarding_days", 0) * HPD * team["efficiency"]
+    apps = [[n, float(h)] for n, h in app_queue if h > 0]
+    dbs = [[n, float(h)] for n, h in db_work if h > 0]
+    if not db_eng:
+        apps, dbs = apps + dbs, []
+    totals = {n: h for n, h in apps + dbs}
+    done = {n: 0.0 for n in totals}
+    start = None
+    if start_date:
+        try:
+            start = datetime.date.fromisoformat(str(start_date))
+        except ValueError:
+            start = None
+    plan, k = [], 0
+    while (apps or dbs) and k < 200:
+        k += 1
+        cap_eng = per_eng - (onboard_h if k == 1 else 0.0)  # onboarding: clone, restore, baseline build, existing tests
+        cap_db = min(db_eng * cap_eng, sum(h for _, h in dbs)) if dbs else 0.0
+        cap_app = engineers * cap_eng - cap_db
+        rows = []
+
+        def take(queue, cap, lane):
+            while queue and cap > 1e-6:
+                n, h = queue[0]
+                use = min(h, cap)
+                cap -= use
+                queue[0][1] -= use
+                done[n] += use
+                rows.append({"lane": lane, "work": n, "hours": round(use), "status": "complete" if queue[0][1] <= 1e-6 else
+                             f"{int(100 * done[n] / totals[n])}% done"})
+                if queue[0][1] <= 1e-6:
+                    queue.pop(0)
+            return cap
+        left = take(apps, cap_app, "application")
+        left = take(dbs, left + cap_db, "database") if dbs else left
+        if left > 1e-6 and apps:
+            take(apps, left, "application")
+        s = {"sprint": k, "weeks": f"{(k - 1) * weeks + 1}-{k * weeks}", "capacity_hours": round(engineers * cap_eng),
+             "planned_hours": sum(r["hours"] for r in rows), "items": rows}
+        if k == 1 and onboard_h:
+            s["onboarding"] = f"{sp.get('onboarding_days')} day(s): codebase access, clone, restore, baseline build and existing tests on the current stack"
+        if start:
+            s["start"] = (start + datetime.timedelta(weeks=(k - 1) * weeks)).isoformat()
+            s["end"] = (start + datetime.timedelta(weeks=k * weeks, days=-1)).isoformat()
+        plan.append(s)
+    cap_all = engineers * per_eng
+    last = plan[-1] if plan else None
+    w50 = (len(plan) - 1) * weeks + max(1, math.ceil(weeks * last["planned_hours"] / max(last["capacity_hours"], 1))) if last else 0
+    w80 = max(w50, math.ceil(w50 * p80_ratio))  # the same plan with every package at its P80
+    n80 = max(len(plan), math.ceil(w80 / weeks))
+    out = {"length_weeks": weeks, "engineers": engineers, "db_engineers": db_eng, "capacity_per_sprint_hours": round(cap_all),
+           "onboarding_days": sp.get("onboarding_days", 0), "start_date": start.isoformat() if start else None, "planned_at": "P50",
+           "sprints_p50": len(plan), "sprints_p80": n80, "weeks_p50": w50, "weeks_p80": w80, "plan": plan}
+    if start:
+        out["end_p50"] = (start + datetime.timedelta(weeks=len(plan) * weeks, days=-1)).isoformat()
+        out["end_p80"] = (start + datetime.timedelta(weeks=n80 * weeks, days=-1)).isoformat()
+    return out
+
+
+def rollup(items, packages, db_packages, est, factors):
+    """Replace the sum-of-lows / sum-of-highs ranges with Monte Carlo percentiles (P10-P90 range, P50 likely, P80 commitment).
+    The sums stay as bounds_hours (extremes nobody should plan on). Returns (AI-assisted total, manual total, samples by package)."""
+    cfg = est.get("rollup") or {}
+    HPD = est["hours_per_day"]
+    one = [1.0, 1.0]
+    sim = MC.simulate(items, factors, cfg)
+    man = MC.simulate(items, {"code": one, "red": one, "db": one}, cfg)
+    empty = {"p10": 0.0, "p50": 0.0, "p80": 0.0, "p90": 0.0, "mean": 0.0}
+
+    def stats(samples, pkg):
+        return MC.summary(samples[pkg]) if pkg in samples else empty
+    for p in packages:
+        a, m = stats(sim, p["id"]), stats(man, p["id"])
+        p["bounds_hours"], p["manual_bounds_hours"] = p["total_hours"], p["manual_hours"]
+        p.update({"total_hours": [round(a["p10"]), round(a["p90"])], "likely_hours": round(a["p50"]), "p80_hours": round(a["p80"]),
+                  "manual_hours": [round(m["p10"]), round(m["p90"])], "manual_likely_hours": round(m["p50"]),
+                  "total_days": r1([a["p10"] / HPD, a["p90"] / HPD]), "likely_days": round(a["p50"] / HPD, 1),
+                  "manual_days": r1([m["p10"] / HPD, m["p90"] / HPD])})
+        p["complexity"] = next(b for b, lim in sorted(((k, v) for k, v in est["complexity_bands"].items() if k != "_doc"), key=lambda x: x[1])
+                               if a["p50"] / HPD <= lim)
+    for d in db_packages:
+        for o in d["options"].values():
+            a, m = stats(sim, o["pkg"]), stats(man, o["pkg"])
+            o["bounds_hours"], o["manual_bounds_hours"] = o["hours"], o["manual_hours"]
+            o.update({"hours": [round(a["p10"]), round(a["p90"])], "days": r1([a["p10"] / HPD, a["p90"] / HPD]), "likely_hours": round(a["p50"]),
+                      "likely": round(a["p50"] / HPD, 1), "p80_hours": round(a["p80"]), "manual_hours": [round(m["p10"]), round(m["p90"])],
+                      "manual_likely_hours": round(m["p50"])})
+    chosen = [p["id"] for p in packages] + [d["options"][d["selected"]]["pkg"] for d in db_packages if d["selected"] != "none"]
+    ai_s, man_s = MC.total(sim, chosen), MC.total(man, chosen)
+    return (MC.summary(ai_s) if ai_s else empty), (MC.summary(man_s) if man_s else empty), sim
+
+
+def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, explain=False, start_date=None):
     HPD = est["hours_per_day"]
     pos = est["likely_position"]
     ai = est["ai_assistance"]
@@ -158,6 +300,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
     packages, costed, db_packages, optional = [], set(), [], []
     converted = set()
     notes, explain_rows = [], []
+    items = []  # three-point items for the Monte Carlo roll-up (_montecarlo.py)
     for repo in F.repos(root):
         inv = F.load_inventory(root, repo)
         if not inv:
@@ -209,6 +352,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 h, cf, why, kloc = conversion_hours(p, fan_in.get(pp, 0), est, wiring.get(pp))
                 h = scale(h, rscale)
                 code_manual = add(code_manual, h)
+                items.append({"pkg": wp_id, "lo": h[0], "hi": h[1], "kind": "red" if p["type"] in red_types else "code", "pos": rpos})
                 if p["type"] in red_types:
                     red_manual = add(red_manual, h)
                 lines.append({"item": f"Port {p['name']} ({p['type']}, {p.get('loc_code', 0):,} lines) to {cfg.get('target_dotnet')}", "manual_hours": r1(h),
@@ -218,6 +362,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             if mode in ("retain", "retire", "repurchase", "rehost"):
                 key = {"retain": "retain_desktop" if desktop else "retain_server", "rehost": "retain_server", "retire": "retire", "repurchase": "repurchase"}[mode]
                 fixed_other = list(est["other_r_hours"][key])
+                items.append({"pkg": wp_id, "lo": fixed_other[0], "hi": fixed_other[1], "kind": "fixed", "pos": rpos})
                 lines.append({"item": {"retain_desktop": "Repoint service endpoints in the desktop client",
                                        "retain_server": "Repoint connection strings, endpoints and identity settings for the new network (code and configuration only)",
                                        "retire": "Remove the application (code, configuration, references)",
@@ -236,6 +381,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 is_red = f.get("effort_key") in red_keys or (f.get("db") or {}).get("pg") == "redesign"
                 if is_red:
                     red_manual = add(red_manual, h)
+                items.append({"pkg": wp_id, "lo": h[0], "hi": h[1], "kind": "red" if is_red else "code", "pos": rpos})
                 fl.append({"id": f["id"], "rule": f["rule"], "title": f["title"], "severity": f["severity"], "occurrences": f.get("occurrences", 1),
                            "manual_hours": r1(h), "hours": r1(mul(h, red_f if is_red else code_f)), "redesign": is_red})
             manual = add(code_manual, fixed_other)
@@ -283,9 +429,9 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         n_data_apps = sum(1 for x in repo_apps if x["r7"] != "Retire" and x["type"] not in rules["desktop_types"])
         opts = {}
         for target, dual in (("postgresql", False), ("dual", True)):
-            pgh = postgres_hours(dbi, dbf, n_data_apps, est, db_f, dual, red_f)
+            pgh = postgres_hours(dbi, dbf, n_data_apps, est, db_f, dual, red_f, items, f"db:{repo}:{target}", rpos)
             h = pgh["hours"]
-            opts[target] = {"hours": [round(v) for v in h], "days": r1([v / HPD for v in h]), "likely_hours": round(lk(h, rpos)), "likely": round(lk(h, rpos) / HPD, 1),
+            opts[target] = {"pkg": f"db:{repo}:{target}", "hours": [round(v) for v in h], "days": r1([v / HPD for v in h]), "likely_hours": round(lk(h, rpos)), "likely": round(lk(h, rpos) / HPD, 1),
                             "manual_likely_hours": round(lk(pgh["manual"], rpos)),
                             "manual_hours": [round(v) for v in pgh["manual"]], "redesign": pgh["redesign"], "rework": pgh["rework"], "breakdown_manual_hours": pgh}
         chosen = database if database in ("postgresql", "dual", "none") else "dual"
@@ -298,18 +444,18 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                                           "engine": dbi.get("engine"), "conversion": dbi.get("conversion", {}), "code_constructs": dbi.get("code_constructs", {}),
                                           "redesign_items": dbi.get("redesign_items", []), "parse_errors": dbi.get("parse_errors", []),
                                           "code_sql_stats": dbi.get("code_sql_stats", {}), "note": dbi.get("note")}})
+    ai_t, man_t, sim = rollup(items, packages, db_packages, est, {"code": code_f, "red": red_f, "db": db_f})
     team = est["team"]
-    tot_h = [sum(p["total_hours"][i] for p in packages) for i in (0, 1)]
-    man_h = [sum(p["manual_hours"][i] for p in packages) for i in (0, 1)]
+    tot_h = [sum(p["bounds_hours"][i] for p in packages) for i in (0, 1)]
+    man_h = [sum(p["manual_bounds_hours"][i] for p in packages) for i in (0, 1)]
 
     def sel(d, key, default):
         return d["options"][d["selected"]][key] if d["selected"] != "none" else default
-    db_h = [sum(sel(d, "hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
-    db_man = [sum(sel(d, "manual_hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
-    grand_h, grand_man = add(tot_h, db_h), add(man_h, db_man)
+    db_h = [sum(sel(d, "bounds_hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
+    db_man = [sum(sel(d, "manual_bounds_hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
+    grand_h, grand_man = add(tot_h, db_h), add(man_h, db_man)  # every low added / every high added: extremes, not a forecast
     db_likely = sum(sel(d, "likely_hours", 0) for d in db_packages)
-    likely_h = sum(p["likely_hours"] for p in packages) + db_likely
-    manual_likely = sum(p.get("manual_likely_hours", 0) for p in packages) + sum(sel(d, "manual_likely_hours", 0) for d in db_packages)
+    likely_h, manual_likely = ai_t["p50"], man_t["p50"]
     per_week_h = engineers * team["days_per_week"] * team["efficiency"] * HPD
     tl = est["timeline"]
     phases, week = [], 0
@@ -335,23 +481,37 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         sel_names = ", ".join(sorted({d["selected"] for d in db_packages if d["selected"] != "none"}))
         phases.append({"phase": f"Database code conversion ({sel_names})", "start": max(0, week - w), "weeks": w})
         week = max(week, max(0, week - w) + w)
+    repo_wide = [p for p in packages if p["kind"] == "repository"]
+    if repo_wide and sum(p["likely_hours"] for p in repo_wide):
+        phases.append({"phase": "Repository-wide items (configuration, build, cross-cutting findings)", "start": 0,
+                       "weeks": max(1, math.ceil(sum(p["likely_hours"] for p in repo_wide) / per_week_h))})
     if retired:
         phases.append({"phase": "Remove: " + ", ".join(p["name"] for p in retired) + " (after client confirmation)", "start": 0, "weeks": 1})
-    end = max([p["start"] + p["weeks"] for p in phases] or [0])
+    queue = [(p["name"], p["likely_hours"]) for p in shared + repo_wide + apps_wp + retired]
+    db_work = [w for d in db_packages if d["selected"] != "none" for w in db_work_items(d)]
+    sprints = sprint_plan(queue, db_work, engineers, est, start_date, ai_t["p80"] / likely_h if likely_h else 1.0)
+    end = sprints["weeks_p50"] if sprints["plan"] else max([p["start"] + p["weeks"] for p in phases] or [0])
     kloc_all = sum((p.get("loc_code") or 0) for r in F.repos(root) for p in (F.load_inventory(root, r) or {"projects": []})["projects"]) / 1000.0
     opt_rows = []
     for o in optional:
         manual, assisted = O.hours(o, code_f)
         opt_rows.append(dict(o, manual_hours=r1(manual), hours=r1(assisted), likely_hours=round(lk(assisted, pos), 1)))
     opt_tot = [round(sum(o["hours"][i] for o in opt_rows)) for i in (0, 1)]
-    totals = {"total_hours": [round(x) for x in grand_h], "likely_hours": round(likely_h), "total_days": [round(x / HPD, 1) for x in grand_h],
-              "likely_days": round(likely_h / HPD, 1), "manual_equivalent_hours": [round(x) for x in grand_man],
-              "manual_equivalent_days": [round(x / HPD, 1) for x in grand_man], "manual_likely_hours": round(manual_likely),
-              "applications_days": [round(x / HPD, 1) for x in tot_h], "databases_days": [round(x / HPD, 1) for x in db_h],
-              "duration_weeks": end, "person_months_likely": round(likely_h / HPD / 20.0, 1),
+    rng_h, rng_man = [ai_t["p10"], ai_t["p90"]], [man_t["p10"], man_t["p90"]]
+    app_t = MC.summary(MC.total(sim, [p["id"] for p in packages]) or [0.0])
+    db_t = MC.summary(MC.total(sim, [d["options"][d["selected"]]["pkg"] for d in db_packages if d["selected"] != "none"]) or [0.0])
+    totals = {"total_hours": [round(x) for x in rng_h], "likely_hours": round(likely_h), "total_days": [round(x / HPD, 1) for x in rng_h],
+              "likely_days": round(likely_h / HPD, 1), "p80_hours": round(ai_t["p80"]), "p80_days": round(ai_t["p80"] / HPD, 1),
+              "range_method": RANGE_LABEL, "bounds_hours": [round(x) for x in grand_h], "bounds_days": [round(x / HPD, 1) for x in grand_h],
+              "manual_equivalent_hours": [round(x) for x in rng_man], "manual_equivalent_days": [round(x / HPD, 1) for x in rng_man],
+              "manual_bounds_hours": [round(x) for x in grand_man], "manual_likely_hours": round(manual_likely),
+              "applications_days": [round(app_t["p10"] / HPD, 1), round(app_t["p90"] / HPD, 1)],
+              "databases_days": [round(db_t["p10"] / HPD, 1), round(db_t["p90"] / HPD, 1)],
+              "duration_weeks": end, "duration_weeks_p80": sprints.get("weeks_p80", end),
+              "person_months_likely": round(likely_h / HPD / 20.0, 1),
               "kloc": round(kloc_all, 1), "likely_hours_per_kloc": round(likely_h / kloc_all, 2) if kloc_all else 0,
               "optional_hours": opt_tot}
-    return {"packages": packages, "databases": db_packages, "totals": totals, "timeline": phases, "notes": notes, "optional": opt_rows,
+    return {"packages": packages, "databases": db_packages, "totals": totals, "timeline": phases, "sprints": sprints, "notes": notes, "optional": opt_rows,
             "factors": {"code": code_f, "db": db_f, "redesign": red_f}, "scale": scale_by_repo, "likely_position": pos_by_repo, "explain": explain_rows}
 
 
@@ -363,6 +523,7 @@ def main():
     ap.add_argument("--hosting", help="modernize | windows-rehost (default: assessment.json scenario.hosting)")
     ap.add_argument("--database", help="dual | postgresql | none (default: assessment.json scenario.database)")
     ap.add_argument("--explain", action="store_true", help="print the per-project arithmetic")
+    ap.add_argument("--start-date", help="day the team gets codebase access, YYYY-MM-DD (default: assessment.json scenario.start_date)")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
@@ -381,7 +542,8 @@ def main():
     ai_on = est["ai_assistance"].get("enabled", True) and not a.manual
     engineers = a.engineers or est["team"]["engineers"]
     HPD = est["hours_per_day"]
-    main_r = compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers)
+    start_date = a.start_date or sc.get("start_date")
+    main_r = compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, start_date=start_date)
     keys = ("total_hours", "likely_hours", "total_days", "likely_days", "manual_likely_hours", "duration_weeks")
     comparisons = []
     for h in [k for k in est["hosting_scenarios"] if not k.startswith("_")]:
@@ -396,7 +558,7 @@ def main():
     out = {"generated": datetime.datetime.now().isoformat(timespec="seconds"), "model_version": est.get("version"), "engineers": engineers,
            "ai_assisted": ai_on, "ai_code_factor": f["code"], "ai_factors": f, "hours_per_day": HPD, "scope": "coding only",
            "scenario": {"hosting": hosting, "hosting_label": est["hosting_scenarios"][hosting]["label"], "database": database, "database_label": est["database_scenarios"][database]},
-           "work_packages": main_r["packages"], "databases": main_r["databases"], "totals": main_r["totals"], "timeline": main_r["timeline"],
+           "work_packages": main_r["packages"], "databases": main_r["databases"], "totals": main_r["totals"], "timeline": main_r["timeline"], "sprints": main_r["sprints"],
            "scenario_notes": main_r["notes"], "comparisons": comparisons, "optional": main_r["optional"],
            "scale": main_r["scale"], "likely_position": main_r["likely_position"],
            "assumptions": [f"Scenario: {est['hosting_scenarios'][hosting]['label']}; database: {est['database_scenarios'][database]}.",
@@ -406,12 +568,21 @@ def main():
                             f"redesign work with no mechanical path (Web Forms UI, medium / large findings, constructs with no PostgreSQL equivalent, the dual-database abstraction) at {int(f['redesign'][0] * 100)}-{int(f['redesign'][1] * 100)}%. "
                             "The manual-equivalent figure is shown beside every total.") if ai_on else "Manual delivery (no AI assistance).",
                            "Project hours = (fixed + hand-written KLOC x rate for the project type) x a complexity factor from decision density, fan-in, file size and run-time indirection (calls bound by DI, overrides, messages, events or delegates, found by the C# resolver) x a size factor for large repositories (COCOMO II diseconomy of scale); generated code is excluded and a project shared by several applications is ported once.",
-                           f"Team of {engineers} engineers at {int(est['team']['efficiency'] * 100)}% efficiency; 1 day = {HPD} hours; 'likely' sits {int(est['likely_position'] * 100)}% of the way from low to high ({int(est.get('likely_position_large', est['likely_position']) * 100)}% for repositories of {(est.get('scale') or {}).get('large_kloc', '-')} KLOC or more).",
+                           f"Team of {engineers} engineers at {int(est['team']['efficiency'] * 100)}% efficiency; 1 day = {HPD} hours.",
+                           f"Ranges are {RANGE_LABEL} (80% confidence) from a Monte Carlo roll-up of every item's three-point estimate ({est['rollup']['iterations']} iterations, "
+                           f"correlation {est['rollup']['correlation']} between items, AI factors drawn once per iteration for all items); 'likely' is P50 and the commitment figure is P80. "
+                           f"Each item's mode sits {int(est['likely_position'] * 100)}% of the way from its low to its high ({int(est.get('likely_position_large', est['likely_position']) * 100)}% in repositories of "
+                           f"{(est.get('scale') or {}).get('large_kloc', '-')} KLOC or more). Adding every low and every high gives {main_r['totals']['bounds_hours'][0]}-{main_r['totals']['bounds_hours'][1]} h: "
+                           "extremes that need every item at the same end at once, not a planning range.",
+                           (f"Sprint plan: {est['sprints']['length_weeks']}-week sprints from the day of codebase access ({main_r['sprints']['start_date'] or 'Week 1'}); "
+                            f"{main_r['sprints']['sprints_p50']} sprint(s) at P50, {main_r['sprints']['sprints_p80']} at P80; the first {est['sprints']['onboarding_days']} day(s) "
+                            "go to access, clone, restore, baseline build and existing tests (calendar time, not in the estimate).") if main_r["sprints"]["plan"] else "No sprint plan (nothing to code).",
                            "Needs-verification findings are assumed real until reviewed. Optional modernizations are listed separately and are not in the total."] + main_r["notes"]}
     write_json(os.path.join(OUT, "estimate.json"), out)
     mark_step(root, "estimate")
     t = out["totals"]
-    print(f"estimate [{hosting} / {database}] ({'AI-assisted' if ai_on else 'manual'}, coding only): {t['total_hours'][0]}-{t['total_hours'][1]} h = {t['total_days'][0]}-{t['total_days'][1]} d "
+    print(f"estimate [{hosting} / {database}] ({'AI-assisted' if ai_on else 'manual'}, coding only): {RANGE_LABEL} {t['total_hours'][0]}-{t['total_hours'][1]} h = {t['total_days'][0]}-{t['total_days'][1]} d, "
+          f"P80 {t['p80_hours']} h, sum of extremes {t['bounds_hours'][0]}-{t['bounds_hours'][1]} h "
           f"(likely {t['likely_hours']} h / {t['likely_days']} d; manual likely {t['manual_likely_hours']} h); {t['kloc']} KLOC, {t['likely_hours_per_kloc']} likely h/KLOC; "
           f"~{t['duration_weeks']} weeks with {engineers} engineers; optional modernizations {t['optional_hours'][0]}-{t['optional_hours'][1]} h (not included)")
     for c in comparisons:

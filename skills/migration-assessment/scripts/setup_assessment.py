@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--target", help="target framework moniker (default net10.0)")
     ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost"], help="client hosting preference (default modernize)")
     ap.add_argument("--target-database", dest="scen_db", choices=["dual", "postgresql", "none"], help="database code scenario (default dual)")
+    ap.add_argument("--start-date", dest="scen_start", help="day the team gets codebase access, YYYY-MM-DD: sprint 1 of the coding plan starts then")
     ap.add_argument("--online", action="store_true", help="api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences (the default)")
     ap.add_argument("--offline", action="store_true", help="no api.nuget.org lookups (package ids, private ones too, stay on this machine)")
     a = ap.parse_args()
@@ -59,6 +60,8 @@ def main():
         cfg["scenario"]["hosting"] = a.scen_hosting
     if a.scen_db:
         cfg["scenario"]["database"] = a.scen_db
+    if a.scen_start:
+        cfg["scenario"]["start_date"] = a.scen_start
     for r in cfg["estate_roots"]:
         if os.path.abspath(r).startswith(root + os.sep) is False and os.path.abspath(root).startswith(os.path.abspath(r) + os.sep):
             print(f"WARN the workspace is inside the estate root {r}; keep assessment output outside client repositories")

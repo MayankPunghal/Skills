@@ -165,13 +165,17 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:timeline}}
 
-### 8.5 Licensing and cost implications
+### 8.5 Coding sprint plan
+
+{{block:sprints}}
+
+### 8.6 Licensing and cost implications
 
 {{block:cost}}
 
 {{narrative:cost}}
 
-### 8.6 Estimate assumptions
+### 8.7 Estimate assumptions
 
 {{block:assumptions}}
 

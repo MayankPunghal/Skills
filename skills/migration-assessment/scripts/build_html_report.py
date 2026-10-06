@@ -176,8 +176,8 @@ def collect(c, cfg):
     kpis = [("Applications", str(len(apps)), f"{len(c.repos)} repositories · {loc:,} lines"),
             ("Linux-ready now / after porting", f"{lvl['ready']} / {lvl['port']}", f"{lvl['blocked']} blocked · {lvl['windows']} desktop · {lvl['na']} retiring"),
             ("Findings", str(len(findings)), " · ".join(f"{k} {sev[k]}" for k in ("Blocker", "High") if sev[k]) or "no blockers"),
-            ("Effort", f"{t.get('likely_hours', '-')} h", f"≈ {t.get('likely_days', '-')} person-days likely · range {td[0]:g}–{td[1]:g} d"),
-            ("Duration", f"~{t.get('duration_weeks', '-')} weeks", f"team of {c.est.get('engineers', '-')} engineers"),
+            ("Effort", f"{t.get('likely_hours', '-')} h", f"≈ {t.get('likely_days', '-')} person-days likely (P50) · P10–P90 {td[0]:g}–{td[1]:g} d · P80 {t.get('p80_hours', '-')} h"),
+            ("Duration", f"~{t.get('duration_weeks', '-')} weeks", f"P50 · ~{t.get('duration_weeks_p80', '-')} weeks at P80 · team of {c.est.get('engineers', '-')} engineers"),
             ("Target", BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")), "Linux on AWS · LTS to Nov 2028")]
     segs = [{"id": s["id"], "title": s["title"], **{k: sum(1 for f in findings if f["seg"] == s["id"] and f["severity"] == k) for k in SEVS}} for s in cats.get("segments", [])]
     catrows = [{"title": x["title"], "scanned": x["scanned"], **{s: sum(1 for f in findings if f["category"] == x["title"] and f["severity"] == s) for s in SEVS}} for x in c.cats]
@@ -186,7 +186,8 @@ def collect(c, cfg):
               "mh": t.get("manual_equivalent_hours", [0, 0]), "md": t.get("manual_equivalent_days", [0, 0]), "weeks": t.get("duration_weeks", 0),
               "engineers": c.est.get("engineers"), "ai": c.est.get("ai_assisted", False), "ai_factor": c.est.get("ai_code_factor", [1, 1]),
               "split": {"code": [round(sum(w["code"][i] for w in wps)) for i in (0, 1)]},
-              "scenario": c.est.get("scenario", {}), "factors": c.est.get("ai_factors", {}), "mlh": t.get("manual_likely_hours", 0), "kloc": t.get("kloc", 0), "hpk": t.get("likely_hours_per_kloc", 0)}
+              "scenario": c.est.get("scenario", {}), "factors": c.est.get("ai_factors", {}), "mlh": t.get("manual_likely_hours", 0), "kloc": t.get("kloc", 0), "hpk": t.get("likely_hours_per_kloc", 0),
+              "p80": t.get("p80_hours", 0), "bounds": t.get("bounds_hours", [0, 0])}
     lbuild = []
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}

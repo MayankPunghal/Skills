@@ -1,15 +1,18 @@
-# Estimation model (v5: coding effort only)
+# Estimation model (v6: coding effort only)
 
 `estimate_effort.py` is parametric and transparent:
 - every number lives in `scripts/data/estimation.json` (`version`);
 - the working unit is **hours**, with person-days = hours ÷ 8;
-- ranges are low–high, and "likely" = low + 40 % of the range (effort is right-skewed), or 50 % in a repository of 100 KLOC or more;
+- every item is a three-point estimate: low, high, and a mode at low + 40 % of the range (effort is right-skewed), or 50 % in a repository of 100 KLOC or more;
+- totals are rolled up by Monte Carlo: the range is **P10–P90** (80 % confidence), "likely" is **P50** and the commitment figure is **P80** (see [Range roll-up](#range-roll-up));
 - **scope is developer hours for code and SQL only.** QA, DevOps, infrastructure, project management, parallel-development drift and contingency are not estimated.
 
 ## Contents
 
 - [Why the numbers are lower than before](#why-the-numbers-are-lower-than-before)
 - [Formula](#formula)
+- [Range roll-up](#range-roll-up)
+- [Sprint plan](#sprint-plan)
 - [Complexity factor](#complexity-factor)
 - [Reference points](#reference-points)
 - [Scenarios](#scenarios)
@@ -43,7 +46,32 @@ database    = mechanical part × db_factor (0.35–0.55) + redesign part × rede
 - **Retain, Retire, Repurchase and desktop clients** pay small fixed code costs (`other_r_hours`): repointing connection strings and endpoints, integration code.
 - **Redesign part** (no mechanical path, so AI tools help little): Web Forms projects, findings with effort `medium-change`, `large-change`, `db-object-large` or `package-blocker`, constructs and findings at the PostgreSQL `redesign` level, and the dual-database abstraction. Lists in `ai_assistance.redesign_*`.
 - **Manual equivalent:** every total also carries the hours without AI assistance, so the saving is explicit and auditable.
-- **Timeline:** coding only. Shared libraries first, then waves of 3 applications (low risk first) with 30 % overlap, database code in parallel with the last waves. Wave length = likely hours ÷ (engineers × 5 × 8 × efficiency).
+- **Timeline:** coding only. Shared libraries first, then waves of 3 applications (low risk first) with 30 % overlap, database code in parallel with the last waves. Wave length = likely hours ÷ (engineers × 5 × 8 × efficiency). The headline duration comes from the [sprint plan](#sprint-plan).
+
+## Range roll-up
+
+v5 added every item's low to get the minimum and every item's high to get the maximum, then applied the AI factor at its low and high ends. That assumes all items (often a hundred or more) land at the same extreme together. The range grew with every item, and on FulfillmentHub it came out at 167–669 h (4× from end to end) around a likely of 369 h. Industry practice does not add ranges that way:
+- **PERT / three-point estimating** sums the expectations and combines the spreads (σ = √Σσᵢ² for independent items), so the total range is narrower than the sum of its parts.
+- **AACE RP 41R-08 (estimate ranging)** and the **GAO Cost Estimating Guide (GAO-20-195G)** replace point values with three-point distributions, add correlation between items, and read percentiles off a Monte Carlo simulation. GAO cites the DoD / NASA *Joint Agency Cost and Schedule Risk Handbook* default correlation of **0.3** when no data exist.
+- **AACE 18R-97** expects a feasibility (Class 4) estimate within −15…−30 % / +20…+50 %, and a budget (Class 3) estimate within −10…−20 % / +10…+30 %, both at 80 % confidence. McConnell's cone of uncertainty gives 0.67×–1.5× once requirements are known. A code-level assessment sits around Class 3–4.
+
+`_montecarlo.py` (settings in `estimation.json` `rollup`):
+- Each item (project conversion, finding, database object group, construct, data-access fact, dual abstraction) is a triangular distribution between its low and high, with the mode at `likely_position`.
+- Items share one driver with correlation `correlation` (0.3), using a Gaussian copula. Database objects of one kind and size are priced together as n independent items (normal approximation of their sum).
+- The AI factors (code, redesign, database) are **systemic**: one draw per iteration for every item, triangular over their range with the mode at `factor_position`. This is where most of the remaining spread comes from.
+- `iterations` (4,000) with a fixed `seed`, so reruns give the same numbers.
+- Reported: P10–P90 range, P50 likely, P80 commitment, per work package and in total. `bounds_hours` keeps the old sum-of-lows / sum-of-highs as extremes, labelled as not a planning range.
+
+Package ranges do not add up to the total range (independent items partly cancel); the report says so under the estimate table.
+
+## Sprint plan
+
+`sprint_plan()` in `estimate_effort.py` (settings in `estimation.json` `sprints`):
+- Sprint 1 starts on the day the team gets codebase access (`--start-date` or `assessment.json` `scenario.start_date`, set by `setup_assessment.py --start-date`). Without a date the plan counts weeks.
+- Sprints are `length_weeks` long (2). Capacity per sprint = engineers × days per week × length × hours per day × team efficiency.
+- The first `onboarding_days` (2) of Sprint 1 go to access, clone, restore, the baseline build and the existing tests on the current stack. This is calendar time only, not in the estimate.
+- Work is planned at P50 in dependency order: shared libraries, repository-wide items, then applications in wave order. Database code runs in its own lane (`db_engineers`, 1) from Sprint 1 when the scenario changes database code and the team has 2+ engineers. It is split into the provider-neutral data layer (dual), object conversion, T-SQL construct rewrites, data-access code and database findings. Spare lane capacity flows to the other lane.
+- The output gives sprints at P50 and at P80 (the same plan with every package at its P80), with end dates when a start date is known. The report shows it in section 8.5 and on the HTML Effort tab.
 
 ## Complexity factor
 

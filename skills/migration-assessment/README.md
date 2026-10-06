@@ -87,7 +87,7 @@ All in `assessment/report/`:
   5. Findings by category (27 categories, each with evidence or "checked, none found")
   6. Database assessment (dual / PostgreSQL code conversion)
   7. Per-application plans (with the hybrid table)
-  8. Effort and phased timeline
+  8. Effort (P10–P90 Monte Carlo range, P50 likely, P80 commitment), phased timeline and a coding sprint plan from the day of codebase access
   9. Risks and open questions
   10. Testing, QA and merge strategy
   11. Appendices: packages, projects, every Windows-API occurrence, raw outputs, sources
