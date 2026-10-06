@@ -4,12 +4,13 @@ Material for MkDocs loads mermaid.min.js from unpkg.com when a page shows a diag
 shows the diagrams as plain text. A local copy listed under extra_javascript in mkdocs.yml is used instead (Material
 takes an already-defined `mermaid` global and fetches nothing).
 
+The copy is a prerequisite: install_prerequisites.py downloads it once (about 3 MB, MIT licence) into
+~/.cache/codebase-documenter/, and every build_site.py run copies it into docs/assets/javascripts/ and lists it in
+mkdocs.yml (reader_guide.py), so no workspace needs a download of its own.
+
     python offline_mermaid.py --status              # pages with diagrams, local copy present?, cached copy present?
     python offline_mermaid.py --from <file.js>      # use a mermaid.min.js you already have (node_modules/mermaid/dist/...)
-    python offline_mermaid.py --install             # copy from the cache, else DOWNLOAD (about 3 MB, MIT licence)
-
---install downloads only when no cached copy exists: ask the user first (the skill never downloads without approval).
-The copy is cached in ~/.cache/codebase-documenter/ so later workspaces need no download. Run from the workspace root.
+    python offline_mermaid.py --install             # copy from the cache, else download into the cache first
 """
 import argparse
 import glob
@@ -19,11 +20,23 @@ import shutil
 import sys
 import urllib.request
 
-from _common import load_config, utf8_stdout
-
 URL = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"  # the npm package, served by jsDelivr
 CACHE = os.path.join(os.path.expanduser("~"), ".cache", "codebase-documenter", "mermaid.min.js")
 REL = "assets/javascripts/mermaid.min.js"  # relative to docs_dir, as mkdocs.yml lists it
+
+
+def fetch_to_cache():
+    """Download mermaid.min.js into the cache. (ok, message); an error or captive-portal page is never cached, since every
+    later workspace would copy it."""
+    try:
+        data = urllib.request.urlopen(URL, timeout=60).read()
+    except OSError as e:
+        return False, f"download failed ({e}); copy a mermaid.min.js by hand and run offline_mermaid.py --from <file>"
+    if data.lstrip()[:1] == b"<" or b"mermaid" not in data[:20000] or len(data) < 500_000:
+        return False, "the download does not look like mermaid.min.js; nothing cached"
+    os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+    open(CACHE, "wb").write(data)
+    return True, f"cached {len(data) // 1024} KB at {CACHE}"
 
 
 def diagram_pages(docs):
@@ -35,14 +48,14 @@ def listed(yml_text):
     return bool(re.search(r"(?m)^\s*-\s*['\"]?" + re.escape(REL) + r"['\"]?\s*$", yml_text))
 
 
-def status(docs):
+def status(docs, yml="mkdocs.yml"):
     """(pages with diagrams, local copy listed and present)."""
-    yml = open("mkdocs.yml", encoding="utf-8").read() if os.path.exists("mkdocs.yml") else ""
-    return diagram_pages(docs), listed(yml) and os.path.exists(os.path.join(docs, REL))
+    text = open(yml, encoding="utf-8").read() if os.path.exists(yml) else ""
+    return diagram_pages(docs), listed(text) and os.path.exists(os.path.join(docs, REL))
 
 
-def add_to_mkdocs():
-    text = open("mkdocs.yml", encoding="utf-8").read()
+def add_to_mkdocs(yml="mkdocs.yml"):
+    text = open(yml, encoding="utf-8").read()
     if listed(text):
         return False
     m = re.search(r"(?m)^extra_javascript:[ \t]*\r?\n", text)
@@ -52,16 +65,31 @@ def add_to_mkdocs():
         nav = text.find("# >>> nav")
         block = f"extra_javascript:\n  - {REL}\n\n"
         text = text[:nav] + block + text[nav:] if nav >= 0 else text.rstrip("\n") + "\n\n" + block
-    open("mkdocs.yml", "w", encoding="utf-8", newline="\n").write(text)
+    open(yml, "w", encoding="utf-8", newline="\n").write(text)
+    return True
+
+
+def ensure(docs, yml="mkdocs.yml", src=None):
+    """Copy the cached (or given) mermaid.min.js into the docs and list it in mkdocs.yml. Called on every build; a
+    no-op returning False when there is no copy (verify_docs.py then notes that diagrams need internet)."""
+    src = src or CACHE
+    if not os.path.exists(src) or not os.path.exists(yml):
+        return False
+    dest = os.path.join(docs, REL)
+    if not os.path.exists(dest) or os.path.getsize(dest) != os.path.getsize(src):
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copy2(src, dest)
+    add_to_mkdocs(yml)
     return True
 
 
 def main():
+    from _common import load_config, utf8_stdout
     utf8_stdout()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--status", action="store_true")
-    g.add_argument("--install", action="store_true", help="copy from the cache, else download (ask the user first)")
+    g.add_argument("--install", action="store_true", help="copy from the cache, else download into the cache first")
     g.add_argument("--from", dest="src", help="path to an existing mermaid.min.js")
     a = ap.parse_args()
     root, cfg = load_config()
@@ -72,33 +100,21 @@ def main():
         print(f"pages with diagrams: {len(pages)} · local Mermaid: {'yes' if local else 'no'} · cached copy: "
               f"{'yes' if os.path.exists(CACHE) else 'no'} ({CACHE})")
         if pages and not local:
-            print("NEXT: the site needs internet for its diagrams; run --from <mermaid.min.js> or, after the user approves "
-                  "the ~3 MB download, --install")
+            print("NEXT: run install_prerequisites.py (caches Mermaid once), or offline_mermaid.py --from <mermaid.min.js>")
         return
-    dest = os.path.join(docs, REL)
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
     if a.src:
-        shutil.copy2(a.src, dest)
+        ok = ensure(docs, src=a.src)
         how = f"copied from {a.src}"
-    elif os.path.exists(CACHE):
-        shutil.copy2(CACHE, dest)
-        how = "copied from the cache"
     else:
-        print(f"downloading {URL} ...", flush=True)
-        try:
-            data = urllib.request.urlopen(URL, timeout=60).read()
-        except OSError as e:
-            sys.exit(f"download failed ({e}); copy a mermaid.min.js by hand and use --from")
-        # an error or captive-portal page must never reach the cache: every later workspace would copy it
-        if data.lstrip()[:1] == b"<" or b"mermaid" not in data[:20000] or len(data) < 500_000:
-            sys.exit("the download does not look like mermaid.min.js; nothing written")
-        os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-        open(CACHE, "wb").write(data)
-        shutil.copy2(CACHE, dest)
-        how = f"downloaded ({len(data) // 1024} KB, cached for later workspaces)"
-    changed = add_to_mkdocs()
-    print(f"offline Mermaid: {dest} {how}; mkdocs.yml extra_javascript {'updated' if changed else 'already lists it'}. "
-          "Rebuild the site (build_site.py).")
+        how = "copied from the cache"
+        if not os.path.exists(CACHE):
+            print(f"downloading {URL} ...", flush=True)
+            fetched, msg = fetch_to_cache()
+            if not fetched:
+                sys.exit(msg)
+            how = msg
+        ok = ensure(docs)
+    print(f"offline Mermaid: {'ready' if ok else 'not set up (no mkdocs.yml?)'} ({how}). Rebuild the site (build_site.py).")
 
 
 if __name__ == "__main__":

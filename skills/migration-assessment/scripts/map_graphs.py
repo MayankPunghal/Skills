@@ -120,6 +120,8 @@ def build(repo, src, force):
     code, txt = run(["graphify", "cluster-only", out, "--no-label", "--no-viz"], timeout=3600)
     if code:
         print(f"WARN {repo}: graphify cluster-only failed: {txt[-300:]}")
+    elif "NOT written" in txt or "Refusing to overwrite" in txt:  # graphify kept the old graph: communities missing or stale
+        print(f"WARN {repo}: graphify did not save the clustered graph (it merged nodes on reload and refused a smaller graph)")
     resolve(repo, src)
     sql_layer(repo, src)
     return (gj if os.path.exists(gj) else None), "built"

@@ -195,6 +195,9 @@ def build(cfg, a):
     t = time.time()
     code, out = gfy(["cluster-only", ".", "--no-label"] + (["--no-viz"] if a.no_viz else []))
     print(out[-800:], flush=True)
+    if "NOT written" in out or "Refusing to overwrite" in out:  # graphify kept the old graph: no communities this run
+        print("WARNING: graphify did not save the clustered graph (it merged nodes on reload and refused to write a smaller "
+              "graph), so communities are missing or stale. Log it in SKILL-ISSUES.md.", flush=True)
     step("5/6 C# call resolver and database layer (second pass) ...", t)
     t = time.time()
     resolve_calls()            # again after: graphify stores an undirected simple graph, so A->B merges into an existing B->A
