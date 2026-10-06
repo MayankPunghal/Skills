@@ -58,7 +58,7 @@ npx -y github:MayankPunghal/Skills update
 ## Good to know
 
 - **Your code is read-only.** The skills write only to their own output folders.
-- **No secrets in outputs.** Reports name configuration keys, never their values, and both report skills check for leaks before finishing.
+- **No secrets in outputs.** Reports name configuration keys, never their values. The assessment and documentation skills scan their outputs for leaked values before finishing.
 - **Nothing is installed or downloaded silently.** The skills ask first.
 
 ## If something goes wrong

@@ -258,7 +258,7 @@ function runSetup(names, installedPathFor, { quiet = false } = {}) {
   for (const name of names) {
     const script = path.join(installedPathFor(name) || skillDir(name), ...SETUP_SCRIPT);
     say(bold(`\n▸ Prerequisites for ${name}`) + dim(`  (${py.join(" ")} ${script})`));
-    const extra = quiet && fs.existsSync(script) && fs.readFileSync(script, "utf8").includes("--no-key-prompt") ? ["--no-key-prompt"] : [];
+    const extra = quiet && fs.existsSync(script) && /add_argument\(\s*["']--no-key-prompt["']/.test(fs.readFileSync(script, "utf8")) ? ["--no-key-prompt"] : [];
     const r = spawnSync(py[0], [...py.slice(1), script, ...extra], { stdio: "inherit" });
     if (r.status === 0) say(green(`✔ ${name} prerequisites ready`));
     else { ok = false; say(yellow(`! ${name} prerequisites reported a problem (exit ${r.status}). Fix it, then run: … setup`)); }
