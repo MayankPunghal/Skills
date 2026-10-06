@@ -51,6 +51,8 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
   - the inbound side (launchSettings, Kestrel, Docker / compose ports, WCF service addresses).
 
   WCF `<services>` addresses are inbound, `<client>` addresses outbound. A URL under a config key is reported once, with the key. `network_endpoints.py` handles all of these.
+- Legacy .NET hides servers outside `appSettings`: `system.net/mailSettings` `<network host>`, log4net `smtpHost value=`, NLog `smtpServer=`, `sessionState stateConnectionString="tcpip=…"`, and split `SftpHost` / `SftpPort` keys. Walk every element and attribute of an XML config, not only `<add key value>`. Drive letters other than `C:` are usually mapped network drives that do not exist on a new host.
+- Jobs are scattered: hosted services (interval from `PeriodicTimer` / `Task.Delay` / a config key), Hangfire / Quartz in code, SQL Server Agent in `.sql` scripts, `schtasks` in deployment scripts, and console projects started by a scheduler nobody committed. List all of them with how each is configured, and say the trigger is outside the repository when it is (`scheduled_jobs.py`).
 - A section whose only content is a diagram or code block is not empty (`verify_docs.py` page hygiene).
 - After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and migration-assessment's `map_graphs.py` does the same for the resolver and the database layer.
 

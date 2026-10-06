@@ -99,6 +99,8 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:network}}
 
+{{block:jobs}}
+
 ### 4.5 Project interdependencies
 
 {{block:project-deps}}
@@ -180,6 +182,10 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 ### 8.7 Estimate assumptions
 
 {{block:assumptions}}
+
+### 8.8 How the estimate was calculated
+
+{{block:methodology}}
 
 ## 9. Risks, assumptions and open questions
 

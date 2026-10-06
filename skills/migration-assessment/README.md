@@ -83,15 +83,15 @@ All in `assessment/report/`:
   1. Executive summary
   2. Scope and method
   3. Application inventory
-  4. Architecture and dependencies (Mermaid map, graphify insights, network allow-list, project interdependencies, workflow dependencies, database object dependencies)
+  4. Architecture and dependencies (Mermaid map, graphify insights, network allow-list with server roles such as SMTP, SFTP, file shares and report servers, scheduled and background jobs, project interdependencies, workflow dependencies, database object dependencies)
   5. Findings by category (27 categories, each with evidence or "checked, none found")
   6. Database assessment (dual / PostgreSQL code conversion)
   7. Per-application plans (with the hybrid table)
-  8. Effort (P10–P90 Monte Carlo range, P50 likely, P80 commitment), phased timeline and a coding sprint plan from the day of codebase access
+  8. Effort (P10–P90 Monte Carlo range, P50 likely, P80 commitment), phased timeline, a coding sprint plan from the day of codebase access, and a plain-language explanation of how the estimate was calculated (formulas with the run's numbers)
   9. Risks and open questions
   10. Testing, QA and merge strategy
   11. Appendices: packages, projects, every Windows-API occurrence, raw outputs, sources
-- **Exports:** `findings.csv/json`, `applications.csv`, `packages.csv`, `open-questions.csv` (with an empty answer column), `endpoints.csv` and `network-allowlist.csv` (outbound destinations with ports and inbound listeners, for the AWS VPC allow-lists).
+- **Exports:** `findings.csv/json`, `applications.csv`, `packages.csv`, `open-questions.csv` (with an empty answer column), `endpoints.csv`, `network-allowlist.csv` (outbound destinations with ports and roles, and inbound listeners, for the AWS VPC allow-lists) and `scheduled-jobs.csv` (every scheduled or background job with its schedule and AWS equivalent).
 
 ## Structure
 

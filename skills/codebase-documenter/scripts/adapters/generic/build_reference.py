@@ -16,7 +16,12 @@ import os
 import re
 from collections import defaultdict
 
+import sys
+
 from _scan import BACK, ROOT, esc, line_at, options, read, slug, walk, write_page
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import scheduled_jobs as SJ  # noqa: E402
 
 OPT = options("generic-build")
 MAXC = OPT.get("max_commands", 40)
@@ -197,15 +202,22 @@ def operations():
     rows = []
     for path, full in walk(exts={".cs", ".vb", ".java", ".kt", ".py", ".js", ".ts", ".go"}):
         t = read(full)
-        for rx, what in ((r"MapHealthChecks\(\s*\"([^\"]+)\"", "health check"), (r"(?:class\s+(\w+)[^{;]*?:\s*[^{;]*?\b(?:BackgroundService|IHostedService)\b)", "hosted / background service"),
-                         (r"RecurringJob\.AddOrUpdate[^(]*\(\s*\"?([^\",)]+)", "Hangfire recurring job"), (r"WithCronSchedule\(\s*\"([^\"]+)\"", "Quartz cron"),
-                         (r"@Scheduled\(([^)]*)\)", "Spring @Scheduled"), (r"\bcron\.schedule\(\s*['\"]([^'\"]+)", "node-cron"),
-                         (r"\[TimerTrigger\(\s*\"([^\"]+)\"", "Azure Functions timer")):
-            for m in re.finditer(rx, t):
-                rows.append((what, m.group(1).strip(), path, line_at(t, m.start())))
+        for m in re.finditer(r"MapHealthChecks\(\s*\"([^\"]+)\"", t):
+            rows.append(("health check", m.group(1).strip(), path, line_at(t, m.start())))
     if rows:
-        sections["operations"] += ["", "| What | Name / schedule | Source |", "| --- | --- | --- |"] + [
+        sections["operations"] += ["", "| What | Name | Source |", "| --- | --- | --- |"] + [
             f'| <a id="{slug("run", w, n)}"></a>{w} | `{esc(n)}` | `{p}:{ln}` |' for w, n, p, ln in sorted(rows)]
+    # scheduled and background jobs (scripts/scheduled_jobs.py, shared with migration-assessment): what runs when, configured how
+    jobs = SJ.scan(ROOT, OPT.get("exclude_dirs"))
+    if jobs:
+        sections["operations"] += ["", f"**Scheduled and background jobs** ({len(jobs)}; {sum(1 for j in jobs if j['windows_only'])} on a Windows-only "
+                                   "scheduler). Jobs triggered from outside the repository are invisible: confirm the full list with the operations team.",
+                                   "", "| Job | Scheduler | Schedule | Runs | Configured by | Windows-only | Source |", "| --- | --- | --- | --- | --- | --- | --- |"]
+        for j in jobs:
+            sections["operations"].append(
+                f'| <a id="{slug("run", "job", j["scheduler"], j["name"] or j["file"], j["line"])}"></a>{esc(j["name"] or "-")} | {esc(j["scheduler"])} | '
+                f'{esc(j["schedule"] or "-")} | {("`" + esc(j["target"]) + "`") if j["target"] else "-"} | {esc(j["configured_by"] or "-")} | '
+                f'{"yes" if j["windows_only"] else "no"} | `{j["file"]}:{j["line"]}` |')
 
 
 TITLES = [("toolchain", "Toolchain"), ("commands", "Build, test and run commands"), ("run locally", "Run locally (launch profiles)"),

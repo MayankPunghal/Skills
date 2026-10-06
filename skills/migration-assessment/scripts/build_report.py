@@ -449,16 +449,142 @@ def b_network(c):
     out = ["**Network allow-list: outbound (egress)**: every destination named in code or configuration (URL literals, host settings, "
            "connection strings, WCF client endpoints, UNC shares). Ports marked (default) are the protocol default, not read from the code. "
            "Destinations built at run time are not visible: confirm the list with the client's network team.\n",
-           table(["Destination", "Port", "Protocol", "Kind", "Applications", "Defined in", "Evidence", "Needed on AWS"],
-                 [(f"`{x['host']}`", x["port"], x["protocol"], {"internal": "On-prem / internal", "external": "External", "external-ip": "Public IP"}.get(x["kind"], x["kind"]),
+           table(["Role", "Destination", "Port", "Protocol", "Kind", "Applications", "Defined in (how it is configured)", "Evidence", "Needed on AWS"],
+                 [(x["role"], f"`{x['host']}`", x["port"], x["protocol"], {"internal": "On-prem / internal", "external": "External", "external-ip": "Public IP"}.get(x["kind"], x["kind"]),
                    x["applications"], x["defined"], x["evidence"], x["needs"]) for x in nw["outbound"]]) if nw["outbound"] else "_No outbound destination named in code or configuration._",
            "\n**Inbound listeners**: ports the applications open. launchSettings / IIS Express are local development ports; on AWS the ALB "
            "listens on 443 and forwards to the container port.\n",
            table(["Application / project", "Port", "Protocol", "Source", "Evidence"],
                  [(x["application"], x["port"], x["protocol"], x["source"], x["evidence"]) for x in nw["inbound"]]) if nw["inbound"] else "_No listener configuration found._"]
+    if nw["drives"]:
+        out.append("\n**Drive letters other than C:** (often mapped network drives, which do not exist in a container or on a new host): "
+                   + "; ".join(f"`{d['drive']}` " + (f"in `{d['key']}` " if d["key"] else "") + f"({d['file']}:{d['line']})" for d in nw["drives"][:20])
+                   + ". Ask what each maps to; replace with a share path from configuration (Amazon FSx) or object storage (S3).")
     if nw["clients"]:
         out.append(f"\n**Outbound call sites**: {len(nw['clients'])} ({', '.join(f'{t} {v}' for t, v in tech.most_common())}); "
                    f"{nw['runtime_clients']} get their destination at run time (no configuration key or literal next to the call): ask the client where those addresses come from.")
+    return "\n".join(out)
+
+
+def b_jobs(c):
+    """Scheduled and background jobs: what runs, when, how it is configured, and where it goes on AWS."""
+    jb = A.jobs(c)
+    if jb["missing"] and not jb["jobs"]:
+        return "_Scheduled jobs not analysed (codebase-documenter not found; set CODEBASE_DOCUMENTER_DIR and rerun scan_repo.py --force)._"
+    if not jb["jobs"]:
+        return ("**Scheduled and background jobs**: none found in the repository (no Task Scheduler, SQL Agent, Hangfire, Quartz, hosted "
+                "service, timer or CronJob). Ask the client whether anything runs on a schedule outside the code.")
+    win = sum(1 for j in jb["jobs"] if j["windows_only"])
+    return ("**Scheduled and background jobs**: what runs on a schedule or in the background, how often, and how it is configured. "
+            f"{len(jb['jobs'])} found, {win} on a Windows-only scheduler. Jobs triggered from outside the repository (Task Scheduler on a "
+            "server, Control-M, an operator) are invisible here: confirm the full list with the client.\n\n"
+            + table(["Job", "Scheduler", "Schedule", "Runs", "Configured by", "Application", "Windows-only", "On AWS", "Evidence"],
+                    [(j["name"] or "-", j["scheduler"], j["schedule"] or "-", f"`{j['target']}`" if j["target"] else "-", j["configured_by"] or "-",
+                      j["application"], "yes" if j["windows_only"] else "no", j["aws"], f"{j['file']}:{j['line']}") for j in jb["jobs"]]))
+
+
+def b_methodology(c):
+    """How the estimate was calculated: the steps, the formulas and this assessment's own numbers as a worked example."""
+    est, cfg = c.est, data("estimation.json")
+    t, sp = est.get("totals", {}), est.get("sprints") or {}
+    if not t.get("likely_hours"):
+        return "_Not estimated._"
+    f = est.get("ai_factors") or {}
+    pc = lambda r: f"{round(r[0] * 100)}–{round(r[1] * 100)} %"
+    wps = est.get("work_packages", [])
+    conv = [x for wp in wps for x in wp.get("conversion", [])]
+    fnd = [x for wp in wps for x in wp.get("findings", [])]
+    big = max(conv, key=lambda x: x["manual_hours"][1], default=None)
+    many = max((x for x in fnd if x.get("occurrences", 1) > 1), key=lambda x: x["manual_hours"][1], default=None)
+    rc = cfg.get("rollup", {})
+    team = cfg["team"]
+    hpd = est.get("hours_per_day", 8)
+    pos = sorted(set((est.get("likely_position") or {}).values())) or [cfg["likely_position"]]
+    p10, p90 = t["total_hours"]
+    p50, p80 = t["likely_hours"], t.get("p80_hours", t["likely_hours"])
+    lo_pct, hi_pct = round(100 * (p10 - p50) / p50), round(100 * (p90 - p50) / p50)
+    out = ["The estimate is built **bottom-up from the code**, not from a top-down guess. Every project, every finding and every database object "
+           "becomes a work item with a low and a high number of hours. AI-assisted delivery factors are applied, a simulation combines the "
+           "items into a range, and the sprint plan turns hours into calendar time. Every rate and factor sits in one file "
+           f"(`scripts/data/estimation.json`, version `{cfg.get('version', '-')}`), so a reviewer can trace each hour.\n",
+           "**Step 1: work items from the code.** The scanners count hand-written lines (generated, designer and vendored code excluded), "
+           "findings with their occurrences, and database objects and T-SQL constructs. "
+           f"This assessment: {len(conv)} project conversions and {len(fnd)} findings in application packages"
+           + (", plus the database inventory" if est.get("databases") else "") + ".\n",
+           "**Step 2: project conversion (manual hours).**\n",
+           "```text\nconversion hours = KLOC × rate per KLOC (by project type) × complexity factor × size factor  (+ fixed set-up hours)\n```\n",
+           "- *Rate per KLOC*: published productivity for that kind of port (for example ASP.NET Core retarget vs Web Forms rewrite).",
+           "- *Complexity factor*: decision density, fan-in, very large files and run-time-bound calls (section 8.3).",
+           "- *Size factor*: `max(1, (KLOC / 10) ^ 0.1)`, the COCOMO II diseconomy of scale: bigger code bases cost more per line."]
+    if big:
+        ptype = (re.search(r"\(([\w\-]+),", big["item"]) or [None, ""])[1]
+        rate = cfg["conversion_hours_per_kloc"].get(ptype)
+        fixed = cfg["conversion_fixed_hours"].get(ptype, cfg["conversion_fixed_hours"].get("default"))
+        markup = cfg["markup_hours_per_kloc"].get(ptype)
+        inputs = [f"{big['kloc']} KLOC"] + ([f"rate {rate[0]:g}–{rate[1]:g} h/KLOC ({ptype})"] if rate else []) + \
+                 ([f"markup {markup[0]:g}–{markup[1]:g} h/KLOC"] if markup else []) + ([f"set-up {fixed[0]:g}–{fixed[1]:g} h"] if fixed else []) + \
+                 [f"complexity {big.get('complexity_factor', 1)}× ({big.get('complexity_why', '-')})"]
+        out.append(f"- Example from this code base: *{big['item']}*: " + ", ".join(inputs)
+                   + f" → **{big['manual_hours'][0]:g}–{big['manual_hours'][1]:g} h manual**.")
+    fh = cfg["finding_hours"]
+    out += ["\n**Step 3: findings (manual hours).** Each finding is priced by its effort class, growing with occurrences up to a cap:\n",
+            "```text\nfinding hours = fixed + per-occurrence × (occurrences − 1), capped\n```\n",
+            table(["Effort class", "Fixed (low–high)", "Per extra occurrence", "Cap"],
+                  [(k, f"{v['fixed'][0]:g}–{v['fixed'][1]:g} h", f"{v['per'][0]:g}–{v['per'][1]:g} h", f"{v['cap'][0]:g}–{v['cap'][1]:g} h")
+                   for k, v in fh.items() if k in ("trivial", "small-change", "medium-change", "large-change")])]
+    if many:
+        out.append(f"\nExample: *{many['title']}* ({many['occurrences']} occurrences) → {many['manual_hours'][0]:g}–{many['manual_hours'][1]:g} h manual. "
+                   "Findings already covered by the conversion rate add nothing (no double counting).")
+    db = next((d["options"][d["selected"]] for d in est.get("databases", []) if d.get("selected") not in (None, "none")), None)
+    if db and db.get("breakdown_manual_hours"):
+        b = db["breakdown_manual_hours"]
+        rows = [(n, f"{b[k][0]:g}–{b[k][1]:g} h") for k, n in (("objects", "Convert database objects (tables, views, routines, triggers, types) by kind and size band"),
+                                                              ("constructs", "Rewrite / redesign T-SQL constructs PostgreSQL cannot run as written"),
+                                                              ("code", "Data-access code (embedded SQL, procedure calls, provider APIs)"),
+                                                              ("findings", "Database findings"), ("dual_extra", "Provider-neutral data layer (dual database)")) if b.get(k)]
+        out += ["\n**Step 4: database code (manual hours).** Each object is priced by kind and size band, each T-SQL construct by how it converts "
+                "(automatic, rewrite, redesign), and each data-access call site in C#. This assessment:\n",
+                table(["Part", "Manual hours (low–high)"], rows)]
+    out += ["\n**Step 5: AI-assisted delivery.** Coding agents and conversion tools do the mechanical part; engineers direct, review and fix:\n",
+            "```text\nAI-assisted hours = manual hours × factor\n```\n",
+            f"- Code: {pc(f.get('code', [1, 1]))} of manual effort; database conversion: {pc(f.get('db', [1, 1]))}; redesign work with no "
+            f"mechanical path (Web Forms UI, constructs with no PostgreSQL equivalent, the dual-database layer): {pc(f.get('redesign', [1, 1]))}.",
+            "- The factor is drawn **once per simulated project**, not per item: if the tools help less than hoped, they help less everywhere.",
+            "\n**Step 6: a three-point estimate per item.** Each item has a low, a high and a most likely value:\n",
+            "```text\nlikely = low + position × (high − low)        position = " + " / ".join(f"{p:g}" for p in pos) + "\n```\n",
+            "\n**Step 7: Monte Carlo roll-up into a range.** Adding every low and every high would assume every item lands at the same extreme "
+            f"together, which gave {t.get('bounds_hours', [0, 0])[0]}–{t.get('bounds_hours', [0, 0])[1]} h here. Instead the project is simulated "
+            f"{rc.get('iterations', 4000):,} times (fixed seed, so reruns give the same numbers):\n",
+            "```text\nper run:  z_shared ~ N(0,1)\n"
+            f"          per item: z = √{rc.get('correlation', 0.3)} · z_shared + √{round(1 - rc.get('correlation', 0.3), 2)} · z_own"
+            "      (items share risk: correlation " + f"{rc.get('correlation', 0.3)})\n"
+            "          u = Φ(z);  hours = triangular⁻¹(u; low, likely, high) × AI factor\n"
+            "          total = Σ items\n"
+            "result:   P10 / P50 / P80 / P90 of the totals\n```\n",
+            f"- **P50 (likely) = {p50} h**: half of the simulated projects finish below it.",
+            f"- **P10–P90 = {p10}–{p90} h**: the 80 % range ({lo_pct:+d} % / {hi_pct:+d} % around P50).",
+            f"- **P80 = {p80} h**: the commitment figure; four in five simulated projects finish within it.",
+            f"- The correlation of {rc.get('correlation', 0.3)} is the default the GAO Cost Estimating and Assessment Guide (GAO-20-195G) takes from the "
+            "DoD / NASA Joint Agency Cost and Schedule Risk Handbook when item correlations are unknown.",
+            "- " + ("This spread is within AACE 18R-97 **Class 3** accuracy (−10…−20 % / +10…+30 %)" if lo_pct >= -20 and hi_pct <= 30 else
+                    "This spread is within AACE 18R-97 **Class 4** accuracy (−15…−30 % / +20…+50 %)" if lo_pct >= -30 and hi_pct <= 50 else
+                    "This spread is wider than AACE 18R-97 Class 4: treat the estimate as Class 5 (order of magnitude) until the open questions are answered")
+            + ", the expected band for an estimate built from the code before detailed design.",
+            "\n**Step 8: hours to days and calendar time.**\n",
+            "```text\nperson-days = hours ÷ " + f"{hpd:g}" + "\ncapacity per sprint = engineers × days per week × sprint weeks × hours per day × efficiency\n```\n"]
+    if sp.get("plan"):
+        eng = sp["engineers"]
+        out += [f"- This assessment: {eng} × {team['days_per_week']} × {sp['length_weeks']} × {hpd:g} × {team['efficiency']} = "
+                f"**{sp['capacity_per_sprint_hours']} h per sprint**. Sprint 1 loses {sp.get('onboarding_days', 0)} onboarding day(s) "
+                f"(capacity {sp['plan'][0]['capacity_hours']} h).",
+                f"- P50 work of {p50} h, planned in dependency order → **{sp['sprints_p50']} sprint(s), about {sp['weeks_p50']} weeks**; at P80 "
+                f"({p80} h) → **{sp['sprints_p80']} sprint(s), about {sp['weeks_p80']} weeks**.",
+                f"- Person-days: {p50} h ÷ {hpd:g} = {t.get('likely_days')} days at P50; {p80} h ÷ {hpd:g} = {t.get('p80_days')} days at P80."]
+    out += ["\n**What the numbers do not include:** QA and test cycles, DevOps / infrastructure, project management, data migration and "
+            "contingency (section 8.7). Add them on top, using the organisation's own ratios.",
+            "\n**Sources:** AACE International Recommended Practices 18R-97 and 41R-08; GAO Cost Estimating and Assessment Guide (GAO-20-195G); "
+            "COCOMO II (scale and reuse); PERT / triangular three-point estimating; published AWS Transform for .NET and code-migration case "
+            "studies for the AI-assisted factors (references/estimation-validation.md)."]
     return "\n".join(out)
 
 
@@ -930,7 +1056,7 @@ def b_appendix_projects(c):
 
 
 BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
-          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network,
+          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network, "jobs": b_jobs, "methodology": b_methodology,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
@@ -994,6 +1120,12 @@ def exports(c, rdir):
             w.writerow(["outbound", x["repo"], x["host"], x["port"], x["protocol"], x["kind"], x["applications"], x["defined"].replace("`", ""), x["evidence"], x["needs"]])
         for x in nw["inbound"]:
             w.writerow(["inbound", x["repo"], x["application"], x["port"], x["protocol"], "listener", x["application"], x["source"], x["evidence"], ""])
+    with open(os.path.join(rdir, "scheduled-jobs.csv"), "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.writer(fh)
+        w.writerow(["repo", "job", "scheduler", "schedule", "runs", "configured_by", "application", "windows_only", "on_aws", "evidence"])
+        for j in A.jobs(c)["jobs"]:
+            w.writerow([j["repo"], j["name"], j["scheduler"], j["schedule"], j["target"], j["configured_by"].replace("`", ""), j["application"],
+                        "yes" if j["windows_only"] else "no", j["aws"], f"{j['file']}:{j['line']}"])
     with open(os.path.join(rdir, "endpoints.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["repo", "host", "kind", "schemes", "occurrences", "files"])
@@ -1037,7 +1169,7 @@ def main():
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)
     mark_step(root, "report")
-    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv")
+    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv, scheduled-jobs.csv")
 
 
 if __name__ == "__main__":
