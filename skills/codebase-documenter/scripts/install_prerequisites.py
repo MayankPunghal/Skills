@@ -20,6 +20,7 @@ Optional:  git (change detection, merge-risk analysis), Docker or WSL (assessmen
 import argparse
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -81,19 +82,19 @@ def pip_install(*pkgs):
     return code == 0
 
 
-def install_graphify():
+def install_graphify(pkg=GRAPHIFY_PKG):
     if not tool_exe("uv"):
         print("  installing uv (Python package manager used for graphify) ...")
         pip_install("uv")
     if tool_exe("uv") or run(PY + ["-m", "uv", "--version"])[0] == 0:
         uv = [tool_exe("uv")] if tool_exe("uv") else PY + ["-m", "uv"]
-        code, out = run(uv + ["tool", "install", "--force", GRAPHIFY_PKG], timeout=1800)
+        code, out = run(uv + ["tool", "install", "--force", pkg], timeout=1800)
         if code == 0:
             run(uv + ["tool", "update-shell"])  # adds the uv tool folder to PATH for future shells
             return True
         print(out[-1500:])
     print("  uv route failed; trying pip ...")
-    return pip_install(GRAPHIFY_PKG)
+    return pip_install(pkg)
 
 
 def install_dotnet():
@@ -218,12 +219,14 @@ def main():
         install_graphify()
     elif "graphify SQL" in missing:  # add the extra to the environment graphify already lives in
         print(f"  graphify SQL extra ({GRAPHIFY_PKG}) ...")
+        # pin the installed version (uv tool or pip, both answer --version): adding the extra must not upgrade graphify
+        # under an existing workspace, since a newer graphify can change how graph.json is merged and saved
+        m = re.search(r"\d+(?:\.\d+)+", run(["graphify", "--version"])[1])
+        pkg = GRAPHIFY_PKG + (f"=={m.group(0)}" if m else "")
         if has_module("graphify"):
-            # pin the installed version: adding the extra must not upgrade graphify under an existing workspace
-            code, ver = run(PY + ["-c", "import importlib.metadata as m; print(m.version('graphifyy'))"])
-            pip_install(GRAPHIFY_PKG + (f"=={ver.strip()}" if code == 0 and ver.strip() else ""))
+            pip_install(pkg)
         else:
-            install_graphify()
+            install_graphify(pkg)
     if "sqlglot" in missing:
         print("  sqlglot ...")
         pip_install(SQLGLOT_PKG)

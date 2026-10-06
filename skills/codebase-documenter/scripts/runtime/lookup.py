@@ -197,14 +197,19 @@ def block_end(src_lines, start, ext):
         return last
     if ext not in BRACES:
         return min(n - 1, start + 15)
-    depth, opened, block_c = 0, False, False
+    depth, opened, block_c, quote = 0, False, False, None
     for j in range(start, n):
-        s, k, quote = src_lines[j], 0, None
+        s, k = src_lines[j], 0
+        if quote in ('"', "'"):  # ordinary strings end with their line; verbatim, raw and template strings do not
+            quote = None
         while k < len(s):
             ch = s[k]
             if block_c:
                 if s.startswith("*/", k):
                     block_c, k = False, k + 1
+            elif quote and len(quote) >= 3:  # C# raw string literal: ends at the same run of quotes
+                if s.startswith(quote, k):
+                    quote, k = None, k + len(quote) - 1
             elif quote:
                 if ch == "\\" and quote != '@"':
                     k += 1
@@ -218,6 +223,9 @@ def block_end(src_lines, start, ext):
                 block_c, k = True, k + 1
             elif s.startswith('@"', k) or s.startswith('$@"', k) or s.startswith('@$"', k):
                 quote, k = '@"', k + (1 if s[k] == "@" and s[k + 1] == '"' else 2)
+            elif s.startswith('"""', k):
+                run_len = len(s[k:]) - len(s[k:].lstrip('"'))
+                quote, k = '"' * run_len, k + run_len - 1
             elif ch in "\"'`":
                 quote = ch
             elif ch == "{":
@@ -236,7 +244,8 @@ def snippet(src_lines, line, ext, max_lines):
     """(first, last, text) of the declaration at 1-based `line`, with the attributes / doc comments right above it."""
     start = max(0, min(line, len(src_lines)) - 1)
     first = start
-    while first > 0 and first > start - 8 and src_lines[first - 1].lstrip().startswith(("[", "///", "@", "<Attribute", "--")):
+    marks = ("[", "///", "@", "<Attribute") + (("--",) if ext == ".sql" else ())  # attributes, doc comments, decorators
+    while first > 0 and first > start - 8 and src_lines[first - 1].lstrip().startswith(marks):
         first -= 1
     last = block_end(src_lines, start, ext)
     shown = src_lines[first:min(last, first + max_lines - 1) + 1]
