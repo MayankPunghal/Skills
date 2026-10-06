@@ -335,18 +335,24 @@ def words(text):
 
 
 def search(query, limit):
-    """Cards ranked by BM25 over title (x3), identifier keys (x2) and text."""
+    """Cards ranked by BM25 over title (x3), identifier keys (x2) and text. Only cards whose text holds a query stem are
+    tokenized (a big repository has tens of thousands of cards); length is normalized by characters, so the cards skipped
+    still count in the average."""
     q = set(words(query))
     cs = list(cards().values())
     if not q or not cs:
         return []
-    docs = [Counter(words(c["title"]) * 3 + words(" ".join(c.get("keys") or [])) * 2 + words(c.get("text") or ""))
-            for c in cs]
-    avg = sum(sum(d.values()) for d in docs) / len(docs)
-    df = Counter(w for d in docs for w in q if w in d)
+    blobs = [(c["title"] + " " + " ".join(c.get("keys") or []) + " " + (c.get("text") or "")) for c in cs]
+    avg = sum(len(b) for b in blobs) / len(blobs)
+    docs = []
+    for c, b in zip(cs, blobs):
+        low = b.lower()
+        if any(w in low for w in q):
+            docs.append((c, len(b), Counter(words(c["title"]) * 3 + words(" ".join(c.get("keys") or [])) * 2
+                                            + words(c.get("text") or ""))))
+    df = Counter(w for _, _, d in docs for w in q if w in d)
     scored = []
-    for c, d in zip(cs, docs):
-        n = sum(d.values())
+    for c, n, d in docs:
         s = sum(math.log(1 + (len(cs) - df[w] + 0.5) / (df[w] + 0.5)) * d[w] * 2.2 / (d[w] + 1.2 * (0.25 + 0.75 * n / avg))
                 for w in q if w in d)
         if s:
@@ -415,11 +421,13 @@ def related(e, src_root):
             if len(rel_cards) > 10:
                 out.append(f"   ... {len(rel_cards) - 10} more")
     short = e["name"].split(".")[-1].split(" ")[0]
-    if len(short) >= 4 and e["kind"] not in ("finding", "page", "section"):
+    named = ("class", "controller", "method", "function", "action", "table", "routine", "db-access", "config-key", "enum",
+             "view", "module", "project", "package")  # identifier names; an endpoint's first word is its HTTP verb
+    if len(short) >= 4 and e["kind"] in named:
         rx = re.compile(r"(?<![\w.])" + re.escape(short) + r"(?!\w)", re.I)
         hits = [f for f in ENTS if f["kind"] == "finding" and rx.search(f["summary"])]
         if hits:
-            out.append("findings that name it:")
+            out.append(f"findings that mention '{short}' (a name match: check the finding is about this item before citing it):")
             for f in hits[:5]:
                 lines = read_lines(os.path.join(BASE, f["file"])) or []
                 at = anchor_line(f, lines)
@@ -465,9 +473,14 @@ def main():
     # an exact name answers the question: partial / summary matches ("ManageController" -> 10 others) only with --fuzzy
     hits = exact if exact and not a.fuzzy else exact + part + text
     src_root = find_source_root(a.src)
-    if not exact and " " in q.strip() and not a.fuzzy and not a.list and not a.kind:
-        # several words and no item of that name: a topic. Ranked cards answer it better than every page that contains
-        # the phrase (whole sections); --fuzzy or --list keeps the substring matches
+    topic = not exact and " " in q.strip() and not a.fuzzy and not a.list and not a.kind
+    if topic and part:
+        # several words that are part of item names ("POST /Orders"): those items; the pages that merely contain the
+        # phrase (whole sections) give way to a short keyword ranking after them
+        hits, text = part, []
+    elif topic:
+        # several words and no item name holds them: a topic. Ranked cards answer it better than every page that contains
+        # the phrase; --fuzzy or --list keeps the substring matches
         print(f"no item is named '{a.query}'; ranking by keywords (--fuzzy for substring matches):")
         print_search(a.query, a.limit, src_root)
         return
@@ -539,6 +552,9 @@ def main():
     others = len(part) + len(text)
     if exact and not a.fuzzy and others:
         print(f"({others} partial / summary match(es) not shown: add --fuzzy)")
+    if topic and part:
+        print("\nalso by keywords:")
+        print_search(a.query, 3, src_root)
 
 
 if __name__ == "__main__":
