@@ -186,6 +186,22 @@ class Scan:
             f["evidence"].append(ev)
         return f
 
+    def windows_hosting(self, rel_path):
+        """True when an artefact ties a modern .NET app to Windows: web.config (IIS module), an MSDeploy / IIS / win-x64
+        publish profile, or a Windows container image. appsettings.json and Linux Dockerfiles say nothing about Windows."""
+        name = os.path.basename(rel_path).lower()
+        if name == "web.config":
+            return True
+        if not (name.endswith(".pubxml") or name.startswith(("dockerfile", "docker-compose"))):
+            return False
+        try:
+            text = open(os.path.join(self.root, rel_path), encoding="utf-8", errors="ignore").read()
+        except OSError:
+            return False
+        if name.endswith(".pubxml"):
+            return bool(re.search(r"(?i)MSDeploy|\bIIS\b|<RuntimeIdentifier>\s*win-|<WebPublishMethod>\s*Package", text))
+        return bool(re.search(r"(?i)windowsservercore|nanoserver|servercore", text))
+
     def synthetic(self, rid, cat, title, sev, conf, why, fix, alt="", effort="small-change", refs=None, question=None, db=None, baseline=False,
                   db_only=False):
         return {"id": rid, "cat": cat, "title": title, "sev": sev, "conf": conf, "why": why, "fix": fix, "alt": alt, "effort": effort,
@@ -762,8 +778,9 @@ class Scan:
         for p in self.inv["projects"]:
             if "netcore" in p["framework_family"] and p["type"] in ("aspnet-core", "netcore-other", "netcore-console", "netcore-worker") and not any(t.endswith("-windows") for t in p["target_frameworks"]):
                 base = os.path.dirname(p["path"])
+                # only files that point at Windows hosting count: appsettings.json and a Linux Dockerfile are cross-platform
                 win_hosting = [a for a in (self.inv["artefacts"].get("publish_profile", []) + self.inv["artefacts"].get("config", []) + self.inv["artefacts"].get("docker", []))
-                               if a.startswith(base + "/") or a == base]
+                               if (a.startswith(base + "/") or a == base) and self.windows_hosting(a)]
                 if win_hosting:
                     r = self.synthetic("MOD-ON-WINDOWS", "modern-on-windows", "Modern .NET app with Windows/IIS hosting artefacts", "Medium", "Needs verification",
                                        "The app already runs on cross-platform .NET; if it is hosted on Windows/IIS today there may be no technical reason to keep paying for Windows.",
