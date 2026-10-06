@@ -52,6 +52,7 @@ Scanners find patterns; the reviewer decides what they mean. Review is required 
 | Hard-coded secret literal | Confirm it is a real credential (not a test value) and recommend rotation. **Never copy the value** |
 | Placeholder secret (`__from_key_vault__`, `#{Password}#`, `${DB_PASS}`) | A placeholder is not a credential, even when nothing in the repository replaces it: then the application simply fails to log in. Never confirm it as a leaked secret; the question is how the real value is supplied (token replacement, environment variable, secret store) |
 | A rule hit inside a message, test title or comment | The API is not used there: dismiss the occurrence, and cite the line that really uses it |
+| `TEST-LOW-COVERAGE` (High, Likely) | The count is exact, the conclusion is not: look for verification the scanner does not count (in-app self-checks, scenario runners, scripts, a QA suite) and say what exists in the note |
 | A technology named in a rule title (EDMX, WCF, Hangfire) | Check the evidence really shows it (an `.edmx` file, a service contract), not a neighbouring API |
 | WCF bindings | Read the binding configuration (security mode, transport). CoreWCF supports BasicHttp, NetTcp and WSHttp with limits |
 | Integration direction | Who calls whom. Inbound endpoints vs outbound calls vs polling jobs. Record as a manual finding if it changes the plan |

@@ -406,7 +406,9 @@ class Scan:
         for i, line in enumerate(text.splitlines(), 1):
             if cl and cl.match(line):
                 continue
-            if "://" in line and not (ftype == "script" and SCRIPT_MESSAGE.match(line)):
+            if ftype == "script" and SCRIPT_MESSAGE.match(line):
+                continue  # a printed message: links and addresses in it are help text
+            if "://" in line:
                 for m in URL_RX.finditer(line):
                     scheme, host = m.group(1).lower(), m.group(2)
                     if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS:
