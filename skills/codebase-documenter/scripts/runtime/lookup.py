@@ -6,6 +6,9 @@ Usage (run from the folder Claude Code / your editor is opened in, so printed pa
                                                                  #   class, method, project, package, endpoint, ui-trigger, entry-point, db-access, error, runbook, view, enum, seed, claim, role, script, report, page, section)
   python docs/_tools/lookup.py "send to billing" --list          # list matches only, no bodies
   python docs/_tools/lookup.py BillingService --find invoice_id        # lines in the source file matching text
+  python docs/_tools/lookup.py Order --fuzzy                     # an exact name shows only itself; --fuzzy adds partial
+                                                                 #   and summary matches
+  python docs/_tools/lookup.py SEC-02                            # finding ids (SEC-, DEF-, TD-) and narrative rows
 
 Each match prints:
   doc:  <path>:<line>     where it is documented
@@ -91,6 +94,8 @@ def find_source_root(explicit):
 
 def anchor_line(ent, lines):
     """0-based line of the entry in its doc file, or None."""
+    if ent.get("line") is not None and ent["line"] < len(lines):  # table rows (findings, narrative rows) carry their line
+        return ent["line"]
     if ent["anchor"]:
         tag = f'<a id="{ent["anchor"]}"></a>'
         for i, l in enumerate(lines):
@@ -178,6 +183,7 @@ def main():
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--find", help="print lines of each match's source file containing this text (case-insensitive)")
     ap.add_argument("--src", help="source root (the folder containing the code; see source_markers in codebase-docs.json)")
+    ap.add_argument("--fuzzy", action="store_true", help="also show partial and summary matches when an exact name matches")
     a = ap.parse_args()
     import sys
     sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
@@ -188,7 +194,8 @@ def main():
     exact = [e for e in ents if e["name"].lower() == q]
     part = [e for e in ents if q in e["name"].lower() and e not in exact]
     text = [e for e in ents if q in e["summary"].lower() and e not in exact and e not in part]
-    hits = exact + part + text
+    # an exact name answers the question: partial / summary matches ("ManageController" -> 10 others) only with --fuzzy
+    hits = exact if exact and not a.fuzzy else exact + part + text
     if not hits:
         print("no match"); return
     src_root = find_source_root(a.src)
@@ -216,10 +223,17 @@ def main():
                         print(f"        (no line contains '{a.find}')")
             else:
                 print(f"   src: {sp}  (file not found under the source root)")
+                if a.find:
+                    print("        (source not available: --find skipped)")
+        elif a.find:
+            print("        (no source file for this entry: --find skipped)")
         if not a.list:
             print(b); print()
     if len(hits) > a.limit:
         print(f"... {len(hits) - a.limit} more (use --limit or --kind)")
+    others = len(part) + len(text)
+    if exact and not a.fuzzy and others:
+        print(f"({others} partial / summary match(es) not shown: add --fuzzy)")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 | Rules for agents | `AGENTS.md` |
 | Page map (one line per page) | `{{docs_dir}}/llms.txt` |
 | Entity index `{kind, name, file, anchor, summary}` | `{{docs_dir}}/agent/entities.jsonl` |
-| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--find TEXT] [--src PATH]` |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding) |
 | Narrative pages | `{{docs_dir}}/<section>/*.md` (getting-started, architecture, modules, workflows, integrations, data, shared, operations, security, appendices) |
 | Reference pages (every item, anchored) | `{{docs_dir}}/reference/*.md` |
 | Research notes (dense, verified) | `{{docs_dir}}/_notes/*.md` |

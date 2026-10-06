@@ -14,7 +14,7 @@ This repository (or workspace) contains {{product}} ({{code_name}}) and its comp
 | --- | --- | --- |
 | Page map | `{{docs_dir}}/llms.txt` | One line per page with its purpose: read first |
 | Entity index | `{{docs_dir}}/agent/entities.jsonl` | Every documented item: `kind`, `name`, `file`, `anchor`, `summary` |
-| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--find TEXT] [--src PATH]` | Prints `doc: path:line` and `src: path:line` per match, then the entry; `--find` lists matching source lines |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--fuzzy] [--find TEXT] [--src PATH]` | Prints `doc: path:line` and `src: path:line` per match, then the entry; an exact name shows only itself (`--fuzzy` adds partial matches); finding ids (`SEC-02`) and narrative table rows are indexed too; `--find` lists matching source lines |
 | Narrative docs | `{{docs_dir}}/<section>/` | Behaviour, rules, flows, integrations, security |
 | Reference | `{{docs_dir}}/reference/` | Exhaustive generated catalogues with anchors |
 | Research notes | `{{docs_dir}}/_notes/` | Dense verified findings per area |

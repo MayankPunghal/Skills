@@ -2,7 +2,8 @@
 
 Writes:
   docs/agent/entities.jsonl  one JSON object per documented thing (table, procedure, controller, action, class,
-                             view, enum, seed script, claim, role, script, report, narrative section):
+                             view, enum, seed script, claim, role, script, report, narrative section, finding row
+                             with a SEC- / DEF- / TD- id, narrative table row that links a method / class / endpoint):
                              {"kind", "name", "file", "anchor", "summary"}
   docs/llms.txt              llms.txt-style map of the narrative pages (title + one-line description each)
 
@@ -100,12 +101,30 @@ def narrative_entities():
             if not f.endswith(".md"):
                 continue
             p = os.path.join(d, f).replace("\\", "/")
-            text = re.sub(FRONT, "", open(p, encoding="utf-8").read())  # front matter
+            raw = open(p, encoding="utf-8").read()
+            fm = FRONT.match(raw)
+            off = fm.group(0).count("\n") if fm else 0  # rows carry their real 0-based line in the file
+            text = re.sub(FRONT, "", raw)  # front matter
             lines = text.splitlines()
+            heading = ""
             for i, line in enumerate(lines):
+                if line.startswith("|") and not line.startswith("| ---"):
+                    # table rows of narrative pages: finding ids (SEC-nn, DEF-nn, TD-nn) and rows that link a method,
+                    # class, endpoint or controller, so "claims editor without role check -> SEC-02" is found without grep
+                    row = plain(line)
+                    ids = re.findall(r"\b(?:SEC|DEF|TD)-\d+\b", row)
+                    if ids:
+                        yield {"kind": "finding", "name": (row if row.startswith(ids[0]) else f"{ids[0]} {row}")[:120], "file": p, "anchor": "", "line": off + i,
+                               "summary": (f"{heading}: " if heading else "") + row[:400]}
+                    elif re.search(r"reference/[\w-]+\.md#(?:mth|cls|ep|act|ctl)-", line):
+                        first = plain(line.strip("|").split("|")[0])
+                        yield {"kind": "narrative-row", "name": first[:120], "file": p, "anchor": "", "line": off + i,
+                               "summary": (f"{heading}: " if heading else "") + row[:400]}
+                    continue
                 m = re.match(r"(#{1,3})\s+(.+)", line)
                 if not m:
                     continue
+                heading = plain(m.group(2))
                 para = next((plain(l) for l in lines[i + 1:i + 8] if l.strip() and not l.startswith(("#", "<a", "```", "|"))), "")
                 yield {"kind": "page" if m.group(1) == "#" else "section", "name": plain(m.group(2)), "file": p,
                        "anchor": "" if m.group(1) == "#" else slugify(plain(m.group(2))), "summary": para[:400]}
