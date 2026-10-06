@@ -21,6 +21,7 @@ from collections import Counter, defaultdict
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import network_endpoints as NE  # noqa: E402
 from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, options, project_of, read, slug, write_page  # noqa: E402
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-endpoints")
 KIND = {"internal": "Internal / on-premises", "external": "External service", "external-ip": "Public IP"}
@@ -115,6 +116,7 @@ def main():
            "inbound": net["inbound"], "clients": net["clients"], "drives": net.get("drives", [])}
     open(os.path.join(DOCS, "agent", "network.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(doc, ensure_ascii=False, indent=1, default=list))
     kinds = Counter(g["kind"] for g in dests)
+    stat("network", outbound=len(dests), inbound=len(net["inbound"]), call_sites=len(net["clients"]))
     print(f"network-endpoints: {len(dests)} outbound destinations ({', '.join(f'{k} {v}' for k, v in kinds.most_common()) or 'none'}), "
           f"{len(net['inbound'])} inbound listeners, {len(net['clients'])} outbound call sites in {net['files_scanned']} files")
 

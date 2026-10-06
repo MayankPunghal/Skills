@@ -20,6 +20,7 @@ import re
 from collections import defaultdict
 
 from graph_reference import CFG, DOCS, GRAPH, OPT, OUT, SKIP_PATH, esc, line_of, norm, slug
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 SRC_ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
 SPLIT = OPT.get("methods_split", 2000)
@@ -84,6 +85,20 @@ def match_paren(s, i):
             if depth == 0:
                 return k
     return -1
+
+
+MODS = r"(?:public|private|protected|internal|static|async|override|virtual|sealed|new|abstract|extern|unsafe|partial|final|synchronized|Public|Private|Protected|Friend|Shared|Overrides|Overridable|Overloads|Async|MustOverride|NotOverridable)"
+
+
+def overload_lines(path, name):
+    """Lines of every declaration of `name` in the file (C# / VB / Java). The code graph keeps one node per name, so overloads
+    share one entry: its calls, callers and reach are the union of all of them, which the pages must say."""
+    if os.path.splitext(path)[1].lower() not in (".cs", ".vb", ".java"):
+        return []
+    short = name.split(".")[-1]
+    rx = re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:" + MODS + r"\s+)+(?:[\w<>\[\],.?() ]*?\s+)?(?:Sub\s+|Function\s+)?"
+                    + re.escape(short) + r"\s*(?:<[^>()]*>|\(Of[^)]*\))?\s*\(")
+    return [k for k, ln in enumerate(source_lines(path) or [], 1) if short in ln and rx.search(ln)]
 
 
 def parse_decl(n, name):
@@ -231,6 +246,9 @@ def main():
         decl, params, returns = parsed if parsed else (first_line(n), None, "")
         info[i] = {"name": (cls_name(i) + "." if cls_name(i) else "") + name, "file": norm(n["source_file"]),
                    "line": line_of(n), "decl": decl, "params": params, "returns": returns}
+        ov = overload_lines(n["source_file"], name)
+        if len(ov) > 1:
+            info[i]["overloads"] = ov
 
     def link(j, here, inferred=False, how=""):
         target = "" if page[j] == here else page[j]
@@ -245,7 +263,8 @@ def main():
     legend = ("Declarations are read from the source line graphify reports. *Italic* calls were resolved by name "
               "(INFERRED edges): check them in the code. A call followed by (di registration), (override), (message), "
               "(event) … is bound at run time: that is the method that actually runs, found by the C# resolver "
-              "(see dependency-injection.md). Overloads share a name; the file:line tells them apart.")
+              "(see dependency-injection.md). Overloads of one method share one entry (the graph keys methods by name), so their "
+              "calls and callers are merged; the declaration column lists the overloads' lines.")
     pages = defaultdict(list)
     for gname in sorted(groups):
         here = page_of_group[gname]
@@ -264,7 +283,9 @@ def main():
                     calls = (calls if calls != "—" else "") + ("; " if calls != "—" else "") + "creates " + ", ".join(
                         f"`{esc(clean(nodes[t].get('label')))}`" for t in sorted(ctor_calls[i])[:6])
                 body.append(f'| <a id="{aid[i]}"></a>**{esc(x["name"])}** (`{esc(f)}:{x["line"] or "?"}`) | '
-                            f'`{esc(x["decl"])}` | {calls} | '
+                            f'`{esc(x["decl"])}`'
+                            + (f' · {len(x["overloads"])} overloads (lines {", ".join(map(str, x["overloads"]))}) share this entry: '
+                               f'calls and callers are merged' if x.get("overloads") else "") + f' | {calls} | '
                             f'{links(in_e[i], here)} |')
             body.append("")
         pages[here] += body
@@ -294,6 +315,7 @@ def main():
     open(os.path.join(agent, "methods.json"), "w", encoding="utf-8", newline="\n").write(
         json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     parsed = sum(1 for x in info.values() if x["params"] is not None)
+    stat("methods", methods=len(methods), calls=total_calls)
     print(f"methods: {len(methods)} in {len(groups)} projects, {parsed} declarations parsed, {total_calls} calls"
           + (f", split into {len(pages)} pages" if split else ""))
 

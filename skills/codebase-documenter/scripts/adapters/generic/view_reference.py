@@ -15,6 +15,7 @@ import re
 from collections import Counter, defaultdict
 
 from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, project_of, read, slug, walk, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 M = Methods()
 UI_EXT = {".cshtml", ".vbhtml", ".razor", ".aspx", ".ascx", ".master", ".asmx", ".ashx", ".xaml"}
@@ -374,6 +375,8 @@ def main():
     os.makedirs(agent, exist_ok=True)
     open(os.path.join(agent, "views.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(
         {"totals": dict(kinds), "screens": screens, "items": items, "areas": areas}, ensure_ascii=False, separators=(",", ":")))
+    stat("views", ui_files=len(items), screens=screens, areas=len(areas),  # plus one count per kind: mvc_view, web_forms_page ...
+         **{slug(k).replace("-", "_"): n for k, n in kinds.items()})
     print(f"views-and-pages: {len(items)} UI files, {screens} screens, {len(areas)} MVC areas ("
           + ", ".join(f"{k} {n}" for k, n in kinds.most_common()) + ")")
 

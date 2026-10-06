@@ -21,6 +21,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 try:
     import tomllib
@@ -491,6 +492,7 @@ def main():
             "cycles": [[label[k] for k in c] for c in cycles],
             "package_info": {n: {v: i for v, i in vs.items() if i} for n, vs in meta.items() if any(vs.values())}}
     open(os.path.join(agent, "dependencies.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(data, ensure_ascii=False, indent=1))
+    stat("dependencies", projects=len(projects), packages=len(pkgs), project_references=sum(len(v) for v in deps.values()), version_drift=drift, cycles=len(cycles))
     print(f"dependencies: {len(projects)} projects, {sum(len(v) for v in deps.values())} project references, "
           f"{len(pkgs)} packages ({drift} with version drift), {len(cycles)} cycles"
           + (f"; local NuGet info for {sum(1 for vs in meta.values() if any(vs.values()))}/{len(meta)} .NET packages, {len(winonly)} Windows-only" if meta else ""))

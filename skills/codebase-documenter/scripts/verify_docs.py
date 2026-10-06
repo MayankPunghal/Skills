@@ -141,6 +141,22 @@ def main():
             issues.append(f"{r}: raw 'Community N' label")
     results.append(("page hygiene", not issues, "; ".join(issues[:8]) + (f" (+{len(issues) - 8})" if len(issues) > 8 else "") or "ok"))
 
+    # typed counts that equal a generated headline number go stale on the next build: suggest the [[n:...]] tag
+    sp = os.path.join(docs, "agent", "stats.json")
+    stats = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
+    flat = [(f"{a}.{k}", v) for a, ks in stats.items() for k, v in ks.items() if isinstance(v, int) and v >= 5]
+    typed = []
+    for p in glob.glob(os.path.join(docs, "_src", "**", "*.md"), recursive=True):
+        body = re.sub(r"```.*?```", "", open(p, encoding="utf-8").read(), flags=re.S)
+        r = os.path.relpath(p, os.path.join(docs, "_src")).replace("\\", "/")
+        for m in re.finditer(r"(?<![\w.:\[-])(\d[\d,]*)\s+([a-z][a-z-]+)", body):
+            n, noun = int(m.group(1).replace(",", "")), m.group(2).rstrip("s")[:5]
+            cands = [k for k, v in flat if v == n and noun in k.replace("-", "").replace("_", "")]
+            if cands:
+                typed.append(f"{r}: '{m.group(0)}' -> [[n:{cands[0]}]]")
+    if typed:
+        print(f"NOTE  typed counts that match a generated number ({len(typed)}; use the tag so they stay current): " + "; ".join(typed[:8]))
+
     w = max(len(n) for n, _, _ in results)
     for name, ok, detail in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name:<{w}}  {detail}")

@@ -13,6 +13,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 DOCS = CFG.get("docs_dir", "docs")
@@ -177,7 +178,8 @@ def main():
             comm[c].append(i)
     out = ["# Code communities", "", "Clusters of tightly connected code found by graphify (community detection). Useful to see which "
            "classes form one feature or subsystem. Names and summaries come from community_names.py (heuristic, or an LLM "
-           "when one was used).", "", '<a id="index"></a>', "", "| Community | Members | Summary | Main folders |", "| --- | ---: | --- | --- |"]
+           "when one was used). The Types column counts classes, records, interfaces and free functions; the summary's member count also includes "
+           "methods and files.", "", '<a id="index"></a>', "", "| Community | Types | Summary | Main folders |", "| --- | ---: | --- | --- |"]
     ordered = sorted(comm.items(), key=lambda kv: -len(kv[1]))
     for c, ids in ordered:
         name = labels.get(str(c)) or nodes[ids[0]].get("community_name") or f"Community {c}"
@@ -188,11 +190,12 @@ def main():
         name = labels.get(str(c)) or nodes[ids[0]].get("community_name") or f"Community {c}"
         hubs = sorted(ids, key=lambda i: -(len(calls_in[i]) + len(calls_out[i])))[:25]
         s = sums.get(str(c)) or {}
-        out += ["", f'<a id="{slug("com", c)}"></a>', "", f"## {name}", "", f"Community id {c} · {len(ids)} members · {BACK}", ""]
+        out += ["", f'<a id="{slug("com", c)}"></a>', "", f"## {name}", "", f"Community id {c} · {len(ids)} types · {BACK}", ""]
         if s.get("summary"):
             out += [s["summary"] + (f" Distinguishing terms: {', '.join(s.get('terms', [])[:6])}." if s.get("terms") else ""), ""]
         out += ["Main members (most connected first): " + ", ".join(link(i) for i in hubs)]
     open(os.path.join(OUT, "communities.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    stat("graph", classes=len(classes), functions=len(funcs), files=len(files), communities=len(comm))
     print(f"graph-reference: {len(classes)} classes, {len(funcs)} functions, {len(files)} files, {len(comm)} communities")
 
 

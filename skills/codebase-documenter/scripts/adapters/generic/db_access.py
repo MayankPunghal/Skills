@@ -13,12 +13,14 @@ ToTable / [Table], NHibernate ClassMap), so a class or a word that happens to sh
 Static analysis: SQL built at run time, stored in config or reached through generic repositories may be missed.
 Options (adapter_options.generic-dbaccess): skip_regex, max_sites (default 80 per object).
 """
+import bisect
 import json
 import os
 import re
 from collections import Counter, defaultdict
 
 from _scan import BACK, DOCS, Methods, esc, line_at, options, read, slug, walk, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-dbaccess")
 MAX_SITES = OPT.get("max_sites", 80)
@@ -90,6 +92,8 @@ def main():
         return a, "\n".join(lines[max(0, line - 9):line + 8]), ""
 
     def record(obj, path, line, text, op, via="", tech=None):
+        if any(x["file"] == path and x["line"] == line and x["op"] == op for x in sites[obj]):
+            return  # one row per object, line and operation (an attribute can match two patterns)
         a, near, whole = method_window(path, line, text)
         ext = os.path.splitext(path)[1].lower()
         t = tech or classify(near, ext, text)
@@ -140,7 +144,8 @@ def main():
             head = text[text.rfind("\n", 0, s.start()) + 1:s.start()]
             c = CONST.search(head)
             if c:
-                constants[c.group(1)] = (obj, path, line)
+                owner = re.findall(r"\b(?:class|struct|record|interface|Module|Class|Structure|object)\s+(\w+)", text[:s.start()])
+                constants[c.group(1)] = (obj, path, line, owner[-1] if owner else "")
                 record(obj, path, line, text, op, tech="name constant")
                 continue
             record(obj, path, line, text, op)
@@ -151,14 +156,21 @@ def main():
                 if obj in objs:
                     record(obj, path, line_at(text, m.start()), text, "call", tech="EF mapping")
 
-    # follow name constants (ProcNames.PlaceOrder = "dbo.usp_PlaceOrder") to where they are used
+    # follow name constants (ProcNames.PlaceOrder = "dbo.usp_PlaceOrder") to where they are used: qualified by the declaring
+    # class anywhere, bare only in the declaring file or a file that imports the class statically; a type, method or property
+    # that merely shares the constant's name (record WarehouseDashboard) is not a use
     if constants:
-        crx = re.compile(r"\b(?:\w+\.)?(" + "|".join(re.escape(c) for c in constants) + r")\b")
+        crx = re.compile(r"(?<![\w.])(?:(?:\w+\s*\.\s*)*?(\w+)\s*\.\s*)?(" + "|".join(re.escape(c) for c in constants) + r")\b(?![ \t]*[(<{]|[ \t]+(?!(?:Then|And|Or|AndAlso|OrElse|Is|is|as|As)\b)\w)")
         for path, text in texts.items():
             for m in crx.finditer(text):
-                obj, dpath, dline = constants[m.group(1)]
+                obj, dpath, dline, owner = constants[m.group(2)]
                 line = line_at(text, m.start())
                 if path == dpath and line == dline:
+                    continue
+                qual = m.group(1)
+                if qual and owner and qual != owner:
+                    continue
+                if not qual and path != dpath and not (owner and re.search(r"\busing\s+static\s+[\w.]*\b" + re.escape(owner) + r"\s*;|\bImports\s+[\w.]*\b" + re.escape(owner) + r"\b", text)):
                     continue
                 o = objs[obj]
                 record(obj, path, line, text, "exec" if o["type"] == "procedure" else "call" if o["type"] == "function" else "read",
@@ -193,7 +205,12 @@ def main():
         for path, text in texts.items():
             if not path.endswith((".cs", ".vb")):
                 continue
+            strs = [(s.start(), s.end()) for s in STRING.finditer(text)]
+            starts = [a for a, _ in strs]
             for m in prx.finditer(text):
+                i = bisect.bisect_left(starts, m.start()) - 1
+                if i >= 0 and strs[i][0] < m.start() < strs[i][1]:
+                    continue  # inside SQL text ("FROM dbo.Customers"), not a DbSet access
                 prop = m.group(2)
                 obj = table_for(sets[prop], prop)
                 if not obj:
@@ -249,6 +266,7 @@ def main():
     data = {objs[k]["name"]: [dict(s, method=(M.data.get(s["method"]) or {}).get("name"), anchor=s["method"]) for s in sites[k]] for k in order}
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
     open(os.path.join(DOCS, "agent", "db-access.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(data, ensure_ascii=False, indent=1))
+    stat("db-access", sites=sum(len(v) for v in sites.values()), objects=len(objs), objects_reached=len(sites), objects_called=len(used))
     print(f"db-access: {sum(len(v) for v in sites.values())} call sites on {len(sites)}/{len(objs)} objects ({len(used)} with real calls); "
           + ", ".join(f"{k} {v}" for k, v in techs.most_common(6)))
 

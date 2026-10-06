@@ -5,8 +5,10 @@ Writes docs/reference/platform-portability.md (anchors port-…) and docs/agent/
   rules       every rule that matched: severity, why it breaks on Linux / modern .NET, the suggested fix
   sites       per rule, every file:line (with the enclosing method when the method map knows it)
   packages    the Windows-only packages found by generic-deps (docs/agent/dependencies.json)
-Only the portability categories run (default: linux-readiness, api-portability, file-handling, time-culture; option
-"categories"), not the rest of the assessment. Findings are flags and suggestions, never enforced.
+Only the portability categories run (default: linux-readiness, web-platform, wcf-desktop, hosting, api-portability,
+file-handling, time-culture; option "categories"), not the rest of the assessment. System.Web / Web Forms, WCF / WPF /
+WinForms and IIS-bound hosting are the largest Windows-only items in most legacy apps, so a page that left them out would
+read as "nothing Windows-only here" for exactly the apps that have the most. Findings are flags and suggestions, never enforced.
 Rule file lookup: env DOCS_ASSESSMENT_RULES, option "rules", the sibling skill folder
 (<skills>/migration-assessment/scripts/data/rules.json), then ~/.claude/skills/…; skipped when none is found.
 Matching follows the assessment scanner: a rule applies to its file types; "requires" must match somewhere in the
@@ -15,14 +17,22 @@ file, "not" excludes a line; comment lines and block comments are ignored.
 import json
 import os
 import re
+import sys
 from collections import Counter, defaultdict
 
 from _scan import BACK, DOCS, Methods, esc, options, project_of, read, slug, walk, write_page
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from code_text import code_match  # noqa: E402  (same string-literal rule as migration-assessment's scan)
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
+
 OPT = options("generic-portability")
-CATEGORIES = OPT.get("categories", ["linux-readiness", "api-portability", "file-handling", "time-culture"])
-CAT_LABEL = {"linux-readiness": "Windows-only API or hosting", "api-portability": "API removed from modern .NET",
-             "file-handling": "Paths and files", "time-culture": "Time zones and culture"}
+CATEGORIES = OPT.get("categories", ["linux-readiness", "web-platform", "wcf-desktop", "hosting", "api-portability",
+                                    "file-handling", "time-culture"])
+CAT_LABEL = {"linux-readiness": "Windows-only API", "web-platform": "ASP.NET on System.Web (Web Forms, MVC 5, Web API 2)",
+             "wcf-desktop": "WCF / ASMX services, WPF, Windows Forms", "hosting": "IIS-bound hosting and Windows containers",
+             "api-portability": "API removed from modern .NET", "file-handling": "Paths and files",
+             "time-culture": "Time zones and culture"}
 MAX_SITES = OPT.get("max_sites_per_rule", 300)
 MAX_BYTES = 2_500_000
 # same file types as the assessment scanner (scan_repo.py TYPE_BY_EXT)
@@ -121,6 +131,8 @@ def main():
                 if cl and cl.match(line):
                     continue
                 if r["_any"].search(line) and not (r["_not"] and r["_not"].search(line)):
+                    if ftype in ("cs", "vb") and not r.get("in_strings") and not code_match(r["_any"], line, ftype == "vb"):
+                        continue  # only inside a string literal (a message or a test title): not a use of the API
                     hits[r["id"]].append({"file": rp, "line": i, "project": project_of(rp), "text": snippet(line),
                                           "method": M.enclosing(rp, i)})
     by_id = {r["id"]: r for r in rules}
@@ -137,8 +149,8 @@ def main():
         sev[by_id[k]["sev"]] += len(hits[k])
     out = ["# Platform portability (Windows to Linux)", "",
            "Code that works on Windows / .NET Framework but breaks, or behaves differently, on Linux or modern .NET: "
-           "Windows-only APIs and hosting, APIs removed from .NET, Windows paths and files, Windows time-zone IDs and culture "
-           "assumptions. Each row is a flag with a suggested fix, not a verdict: check the code before changing it (a branch "
+           "Windows-only APIs, System.Web / Web Forms, WCF and desktop UI, IIS-bound hosting, APIs removed from .NET, Windows "
+           "paths and files, Windows time-zone IDs and culture assumptions. Each row is a flag with a suggested fix, not a verdict: check the code before changing it (a branch "
            "on `OperatingSystem.IsWindows()` or a Windows-only deployment may make a site harmless).", "",
            f"Checks: {len(rules)} rules in {len(CATEGORIES)} categories, taken from the migration-assessment rule set "
            f"(`rules.json`, portability categories only). Comment lines and commented-out blocks are ignored.", "",
@@ -209,6 +221,7 @@ def main():
             "windows_only_packages": [{"name": n, "version": v} for n, v in win_pkgs]}
     open(os.path.join(agent, "portability.json"), "w", encoding="utf-8", newline="\n").write(
         json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    stat("portability", occurrences=total, rules_matched=len(matched), rules=len(rules))
     print(f"platform-portability: {total} occurrences of {len(matched)}/{len(rules)} rules "
           f"({', '.join(f'{s} {n}' for s, n in sorted(sev.items(), key=lambda x: SEV_ORDER.get(x[0], 9)))}), "
           f"{len(win_pkgs)} Windows-only package versions")

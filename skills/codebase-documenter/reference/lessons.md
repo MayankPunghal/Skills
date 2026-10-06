@@ -56,6 +56,17 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
 - A URL printed by a script (`Write-Host`, `echo`, `throw`) is a help or download link, not a connection.
 - Jobs are scattered: hosted services (interval from `PeriodicTimer` / `Task.Delay` / a config key), Hangfire / Quartz in code, SQL Server Agent in `.sql` scripts, `schtasks` in deployment scripts, and console projects started by a scheduler nobody committed. List all of them with how each is configured, and say the trigger is outside the repository when it is (`scheduled_jobs.py`).
 - A section whose only content is a diagram or code block is not empty (`verify_docs.py` page hygiene).
+- Trust audit (FulfillmentHub), false statements the generated pages made with full confidence:
+  - SQL text is not code. `FROM dbo.Customers` inside a string matched the DbSet pattern (`dbo` looks like a context name) and produced 53 "EF Core LINQ" rows; `db_access.py` now skips matches inside string literals.
+  - A name constant is followed only where it is really used: qualified by its declaring class, or bare in the declaring file / a `using static` file. A record type with the same name (`WarehouseDashboard`) is not an `exec` of the procedure.
+  - Overloads share one graph node (graphify keys methods by name). Parameters are read from each signature (`POST Create(CouponForm form)` was shown with the GET overload's empty list), and the method map / entry points say when calls and reach are merged across overloads.
+  - A config key is "read by" a file only when the file names the whole key, the connection-string name, or the section plus the key. Matching the last word made `Logging:LogLevel:Default` "read by" `_Layout.cshtml` and `Microsoft.AspNetCore` "read by" every controller (`using Microsoft.AspNetCore…`). Framework keys (`Logging`, `AllowedHosts`), compose settings and `.env` variables used by scripts are labelled, not left as "not referenced".
+  - "Mostly controllers" for 1 controller out of 2 types is false: a community role needs at least 2 types and a majority.
+  - A Windows-to-Linux page that leaves out System.Web / Web Forms, WCF / WPF / WinForms and IIS hosting says "0 Windows-only" for the apps that have the most. `generic-portability` checks those categories by default.
+  - Count test cases by attribute (`[Fact]`, `[Test]`, `@Test`, `test_`), not every method in a test file: a fixture helper is not a test.
+  - Error messages: read the whole literal (strings nested in `$"{string.Join(", ", e)}"` holes) and follow `"a" + name + "b"` concatenation instead of cutting at the first quote.
+  - Hand-written pages that copy generated counts drift silently; use `[[n:...]]` tags.
+  - String-literal matching is one shared module (`scripts/code_text.py`) for the assessment scan and the portability page, so both outputs agree. `nameof(...)` in a reflection call is compile-time, not run-time binding.
 - After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and migration-assessment's `map_graphs.py` does the same for the resolver and the database layer.
 
 ## Site and links

@@ -20,6 +20,7 @@ import re
 from collections import defaultdict, deque
 
 from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, read, slug, walk, write_page
+from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-trace")
 DEPTH = OPT.get("max_depth", 8)
@@ -400,7 +401,9 @@ def main():
         src = f"[{esc_text(e['label'])}]({e['link']})" if e["link"] else esc_text(e["label"])
         errs_s = ", ".join(f"[{esc_text(x['message'][:40])}](errors.md#{x['anchor']})" for x in e["errors"][:4]) + (f" +{len(e['errors']) - 4}" if len(e["errors"]) > 4 else "")
         fl = ", ".join(f"[{esc_text(flows[f])}](../workflows/flows/{f}.md)" for f in e["flows"]) or "—"
-        out.append(f'| <a id="{e["id"]}"></a>{e["kind"]}: {src} | {M.link(e["handler"])} | {len(e["reach"])} methods | {dbs(e["db"])} | {errs_s or "—"} | {fl} |')
+        ov = (M.data.get(e["handler"]) or {}).get("overloads") or []
+        ovs = f" (all {len(ov)} overloads of the handler, merged in the graph)" if len(ov) > 1 else ""
+        out.append(f'| <a id="{e["id"]}"></a>{e["kind"]}: {src} | {M.link(e["handler"])} | {len(e["reach"])} methods{ovs} | {dbs(e["db"])} | {errs_s or "—"} | {fl} |')
     out += ["", '<a id="by-method"></a>', "", "## Method → entry points", "", BACK, "",
             "Every method reached from at least one entry point: the entry points and UI triggers that run it, and the flows it belongs to.", "",
             "| Method | Started by | UI triggers | Flows |", "| --- | --- | --- | --- |"]
@@ -436,6 +439,7 @@ def main():
         x["entry_points"] = [e["label"] for e in method_entries.get(a, [])][:10]
         x["flows"] = sorted(flow_of.get(a, set()) | {f for e in method_entries.get(a, []) for f in e["flows"]})
     open(os.path.join(agent, "methods.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(M.data, ensure_ascii=False, separators=(",", ":")))
+    stat("trace", ui_triggers=len(ui), entry_points=len(entries), methods_reachable=len(method_entries))
     print(f"trace: {len(ui)} UI triggers ({resolved} to a handler), {len(entries)} entry points, "
           f"{len(method_entries)} methods reachable, {len(table_writers)} objects with writers")
 
