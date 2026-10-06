@@ -154,11 +154,26 @@ def vendored():
     """Relative paths of copied third-party files (scripts/vendor_files.py: configured graph.vendor_dirs, detected library
     folders, banners). URLs, environment reads and calls inside them belong to the library, not to the application."""
     if not _VENDORED:
+        # each adapter is its own process: share one scan per build through docs/agent/vendored.json, reused while it is
+        # newer than codebase-docs.json and less than an hour old (a build runs all adapters within minutes)
         import sys
+        import time
+        cache = os.path.join(DOCS, "agent", "vendored.json")
+        try:
+            age = time.time() - os.path.getmtime(cache)
+            if age < 3600 and os.path.getmtime(cache) > os.path.getmtime("codebase-docs.json"):
+                c = json.load(open(cache, encoding="utf-8"))
+                if c.get("root") == os.path.abspath(ROOT):
+                    _VENDORED.append(set(c["files"]))
+                    return _VENDORED[0]
+        except (OSError, ValueError, KeyError):
+            pass
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
         try:
             import vendor_files
             _VENDORED.append(set(vendor_files.scan(ROOT)))
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            json.dump({"root": os.path.abspath(ROOT), "files": sorted(_VENDORED[0])}, open(cache, "w", encoding="utf-8"))
         except Exception as e:  # never fail an adapter over this: say so and treat nothing as vendored
             print(f"note: vendor file detection unavailable ({e}); third-party files are scanned too")
             _VENDORED.append(set())

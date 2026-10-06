@@ -89,7 +89,8 @@ def main():
             data = urllib.request.urlopen(URL, timeout=60).read()
         except OSError as e:
             sys.exit(f"download failed ({e}); copy a mermaid.min.js by hand and use --from")
-        if b"mermaid" not in data[:5000] and len(data) < 500_000:
+        # an error or captive-portal page must never reach the cache: every later workspace would copy it
+        if data.lstrip()[:1] == b"<" or b"mermaid" not in data[:20000] or len(data) < 500_000:
             sys.exit("the download does not look like mermaid.min.js; nothing written")
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
         open(CACHE, "wb").write(data)
