@@ -43,6 +43,7 @@ import shutil
 import sys
 
 from _common import ADAPTERS, SKILL_DIR, load_config, run, tick, utf8_stdout
+from reader_guide import site_assets, write_guide
 
 ADAPTER_SCRIPTS = {
     "generic-graph": ["generic/graph_reference.py", "generic/method_reference.py"],
@@ -124,6 +125,8 @@ def main():
                 if code or a.verbose:
                     print(out[-3000:])
                 failed |= code != 0
+    site_assets(docs)  # sticky table headers, offline fonts
+    write_guide(docs, cfg)  # getting-started/how-to-use.md from the pages that exist
     code, out = run([sys.executable, os.path.join(tools, "build_docs.py")])
     print("build_docs:", " · ".join(l for l in out.strip().splitlines() if not l.startswith("    "))[:600])
     unresolved = re.findall(r"UNRESOLVED (\w+): (\d+)", out)
