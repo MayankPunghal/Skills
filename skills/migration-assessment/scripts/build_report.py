@@ -72,6 +72,7 @@ class Ctx:
             f["ref"] = f"F-{i:03d}"
         VALUES.clear()  # {{v:path}} tags: numbers in narratives come from the data, so a rescan cannot leave them stale
         VALUES.update({"estimate": self.est, "classification": self.cls, "inventory": self.inv, "scan": self.scan,
+                       "graph": {r: g or {} for r, g in self.graph.items()},
                        "findings": {"total": len(self.findings), **{s.lower(): n for s, n in Counter(f["severity"] for f in self.findings).items()}}})
         FINDING_REFS.clear()  # rule -> findings, for {{f:RULE}} tags in narratives (F-numbers change whenever findings change)
         for f in self.findings:
@@ -296,7 +297,8 @@ def b_db_coupling(c):
         def apps(projects):
             names = sorted({x for p in projects for x in (app_of.get(pname_path.get(p, ""), []) or [p])})
             return ", ".join(names) or "-"
-        out.append(f"**{r}** — {g['objects']} database objects; **{g['shared_count']} shared by more than one project**, "
+        out.append(f"**{r}** — {g['objects']} database objects; **{g['shared_count']} shared by more than one project**"
+                   + (f" (test projects such as {', '.join(g['test_projects'][:2])} are listed but not counted)" if g.get("test_projects") else "") + ", "
                    f"{len(g.get('multi_writer', []))} written by more than one (finding DB-MULTI-WRITER), "
                    f"{g.get('unused_count', 0)} with no caller found in code or SQL.\n")
         if g.get("shared"):
@@ -1089,16 +1091,36 @@ FTAG = re.compile(r"\{\{f:([\w.:\-]+)(?:@([^}]+))?\}\}")
 VTAG = re.compile(r"\{\{v:([^}|]+)(?:\|(\w+))?\}\}")
 
 
+SELECT_KEYS = ("name", "id", "rule", "repo", "kind")
+
+
 def value_tag(m):
-    """{{v:estimate.totals.likely_hours}} -> 370; {{v:path|len}} counts a list or dict; numbers keep a thousands separator."""
+    """{{v:estimate.totals.likely_hours}} -> 370; {{v:path|len}} counts a list or dict; numbers keep a thousands separator.
+    A list item is picked by its name rather than its position, which changes when items are added:
+    {{v:inventory.clientapp.applications[FulfillmentHub.Web].loc}} (matches name, id, rule, repo or kind). On a dict, [key]
+    reads a key that contains dots or slashes: {{v:graph.clientapp.database.objects_per_project[FulfillmentHub.Data]}}."""
     cur = VALUES
-    for part in m.group(1).strip().split("."):
-        if isinstance(cur, dict) and part in cur:
-            cur = cur[part]
-        elif isinstance(cur, list) and part.lstrip("-").isdigit() and -len(cur) <= int(part) < len(cur):
-            cur = cur[int(part)]
-        else:
-            return f"**[value {m.group(1)} not found]**"
+    path, part_re = m.group(1).strip(), r"[^.\[\]]+(?:\[[^\]]+\])*"
+    if not re.fullmatch(rf"{part_re}(?:\.{part_re})*", path):  # stray dots or brackets: fail rather than guess
+        return f"**[value {m.group(1)} not found]**"
+    for part in re.findall(part_re, path):
+        key = part.split("[", 1)[0]
+        for step in [key] + [("sel", s) for s in re.findall(r"\[([^\]]+)\]", part)]:
+            if isinstance(step, tuple) and isinstance(cur, dict):  # a key with dots or slashes: objects_per_project[FulfillmentHub.Data]
+                if step[1] not in cur:
+                    return f"**[value {m.group(1)} not found]**"
+                cur = cur[step[1]]
+            elif isinstance(step, tuple):
+                hit = [x for x in cur if isinstance(x, dict) and any(str(x.get(k)) == step[1] for k in SELECT_KEYS)] if isinstance(cur, list) else []
+                if len(hit) != 1:
+                    return f"**[value {m.group(1)} not found]**"
+                cur = hit[0]
+            elif isinstance(cur, dict) and step in cur:
+                cur = cur[step]
+            elif isinstance(cur, list) and step.lstrip("-").isdigit() and -len(cur) <= int(step) < len(cur):
+                cur = cur[int(step)]
+            else:
+                return f"**[value {m.group(1)} not found]**"
     if m.group(2) == "len":
         cur = len(cur) if isinstance(cur, (list, dict)) else cur
     if isinstance(cur, bool) or cur is None or isinstance(cur, (dict, list)):

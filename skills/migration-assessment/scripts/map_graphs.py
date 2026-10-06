@@ -226,9 +226,10 @@ def analyse(repo, gj, inv):
     def project_path(sf):
         return next((pp for d, pp in ppaths if d and sf.startswith(d + "/")), None)
     wire, wfind = wiring(repo, gj, edges, norm, project_path)
-    dbc = db_coupling(nodes, edges, file_of, project)
+    tests = {p["name"] for p in inv["projects"] if p.get("type") == "test"}
+    dbc = db_coupling(nodes, edges, file_of, project, tests)
     for row in dbc.get("shared", []):
-        if len(row["writers"]) < 2:
+        if len(row["app_writers"]) < 2:
             continue
         key = ("DB-MULTI-WRITER", "(repository)")
         f = next((x for x in wfind if (x["rule"], x["project"]) == key), None)
@@ -246,10 +247,12 @@ def analyse(repo, gj, inv):
                  "refs": ["S15"]}
             wfind.append(f)
         f["occurrences"] += 1
-        text = f"{row['name']} ({row['kind']}) written by {', '.join(row['writers'])}; read by {', '.join(row['readers']) or '-'}"
+        test_w = [p for p in row["writers"] if p in tests]
+        text = (f"{row['name']} ({row['kind']}) written by {', '.join(row['app_writers'])}"
+                + (f" (and tests: {', '.join(test_w)})" if test_w else "") + f"; read by {', '.join(row['readers']) or '-'}")
         # the DDL file when the table has one, otherwise one write site per writing project (EF / code-only schemas)
         sites = [{"file": row["file"], "line": row.get("line") or 1}] if row.get("file") else \
-            [next(w for w in row.get("write_sites", []) if w["project"] == pr) for pr in row["writers"]
+            [next(w for w in row.get("write_sites", []) if w["project"] == pr) for pr in row["app_writers"]
              if any(w["project"] == pr for w in row.get("write_sites", []))]
         for site in sites:
             if site["file"] not in f["files"]:
@@ -262,10 +265,11 @@ def analyse(repo, gj, inv):
             "file_impact": dict(sorted(impact.items(), key=lambda x: -x[1])[:2000]), "wiring": wire, "database": dbc}, wfind
 
 
-def db_coupling(nodes, edges, file_of, project):
+def db_coupling(nodes, edges, file_of, project, tests=frozenset()):
     """Who uses each database object (sql_graph.py edges): reading / writing projects, calling routines, code methods.
     Objects used by several projects couple them: they have to move to PostgreSQL (or stay dual) together, and a table
-    written by more than one project needs one owner for its conversion and its data rules."""
+    written by more than one project needs one owner for its conversion and its data rules. Test projects are listed but not
+    counted: an integration test that writes a table does not have to be cut over with the applications."""
     db = {i: n for i, n in nodes.items() if n.get("_db_object")}
     if not db:
         return {}
@@ -304,13 +308,15 @@ def db_coupling(nodes, edges, file_of, project):
                      "file": db[i].get("source_file"), "line": int(loc[1:]) if loc[1:].isdigit() else 0, "projects": projs, "writers": sorted(u["written_by"] - {"(other)"}),
                      "readers": sorted(u["read_by"] - {"(other)"}), "callers": sorted(u["called_by"] - {"(other)"}),
                      "routines": sorted(x for x in u["routines"] if x), "code_sites": u["methods"], "write_sites": u["write_sites"]})
-    shared = sorted((r for r in rows if len(r["projects"]) > 1), key=lambda r: (-len(r["writers"]), -len(r["projects"]), r["name"]))
+        rows[-1]["app_projects"] = [p for p in projs if p not in tests]
+        rows[-1]["app_writers"] = [p for p in rows[-1]["writers"] if p not in tests]
+    shared = sorted((r for r in rows if len(r["app_projects"]) > 1), key=lambda r: (-len(r["app_writers"]), -len(r["app_projects"]), r["name"]))
     referenced = {nodes[e["target"]].get("label") for e in edges if e.get("_origin") == "sql-parse" and e.get("target") in db}
     unused = sorted(r["name"] for r in rows if not r["projects"] and not r["routines"] and not r["external"]
                     and r["kind"] not in ("TRIGGER", "SECURITY POLICY") and r["name"] not in referenced)  # run on table events
     by_project = Counter(p for r in rows for p in r["projects"])
     return {"objects": len(rows), "shared": shared[:200], "shared_count": len(shared),
-            "multi_writer": [r["name"] for r in shared if len(r["writers"]) > 1],
+            "multi_writer": [r["name"] for r in shared if len(r["app_writers"]) > 1], "test_projects": sorted({p for r in rows for p in r["projects"] if p in tests}),
             "unused_in_code": unused[:300], "unused_count": len(unused), "objects_per_project": dict(by_project.most_common()),
             "usage": sorted(rows, key=lambda r: (-len(r["projects"]), -r["code_sites"]))[:500]}
 

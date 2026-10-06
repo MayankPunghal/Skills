@@ -59,8 +59,14 @@ Prompt: "Any licensing surprises in our NuGet packages?"
 Should trigger: yes
 Done looks like: with `scan_repo.py --online`, any package whose licence became more restrictive (open-source SPDX id to a custom licence file, vendor licence page, copyleft or source-available licence) is a licence finding: Medium when the version in use is already under the new licence, Low when only an upgrade crosses it, naming the last version under the old licence. Nothing is keyed on package names (tested: AutoMapper, MediatR, MassTransit, FluentAssertions, SixLabors.ImageSharp found from metadata alone).
 
+### Report statements stay true
+Prompt: "Rescan and rebuild the report; can I trust every number in it?"
+Should trigger: yes
+Done looks like: every number and finding reference in the narratives is a `{{v:}}` / `{{f:}}` tag (list items picked by name, e.g. `applications[FulfillmentHub.Web]`), so `verify_report.py` passes "finding references and values current" after a rescan; test projects are listed in the shared-object section but not counted as coupling or as a second writer; `MOD-ON-WINDOWS` is raised only for web.config, an MSDeploy / IIS / win-x64 publish profile or a Windows container image, never for `appsettings.json` or a Linux Dockerfile.
+
 ## Baseline log
 
 | Date | Model | With skill? | Result |
 | --- | --- | --- | --- |
 | 2026-10-05 | Sonnet 5.5 | yes | Pipeline run on the FulfillmentHub testbed: all 8 gates PASS, 203 h likely (was 849 h before v4) |
+| 2026-10-06 | Opus 5.5 | yes | FulfillmentHub trust audit: narratives rewritten with tags, 10/10 gates PASS, 387 h likely; test-project coupling and MOD-ON-WINDOWS false positives removed |
