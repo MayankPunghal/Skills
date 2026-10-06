@@ -31,7 +31,7 @@ The debugging questions ("what does this button call?", "what starts this method
 - `trace_flow.py <Class.Method> --entry` prints every entry point that reaches a method, one call path each, and the buttons / links / scripts that call those endpoints: the fastest answer to "how does a user get here?".
 - `methods.json` gains `entry_points` and `flows` per method; `entry-points.json` holds the entries and UI triggers for tools.
 - Tags: `[[ui:...]]` is rarely needed in prose; link a screen's actions from its module page with `[[page:reference/ui-map.md|UI map]]` and name endpoints with `[[ep:POST /orders/ship]]`.
-- Static analysis: dependency injection, reflection, message buses and URLs built at run time are not followed. "No entry point found" means "not shown by the code" (dead code, or dispatch the scanner cannot see): check before calling it dead.
+- Static analysis: for C#, `generic-di` adds dependency injection, overrides, message buses, events, stored delegates, jobs and filters to the graph; reflection and URLs built at run time are still not followed (sites listed under "Limits" in the dependency-injection reference). "No entry point found" means "not shown by the code" (dead code, or dispatch the scanner cannot see): check before calling it dead.
 
 ## Dependencies (generic-deps)
 

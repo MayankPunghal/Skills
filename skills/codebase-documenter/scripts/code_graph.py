@@ -2,13 +2,17 @@
 
     python <skill>/scripts/code_graph.py check                    # is graphify installed? which LLM keys are available?
     python <skill>/scripts/code_graph.py build [--semantic] [--deep] [--postgres DSN] [--force]
-    python <skill>/scripts/code_graph.py label [--model M] [--rounds 5]   # optional: needs an LLM API key
+                                                                  # extract -> C# call resolver -> cluster -> resolver -> names
+    python <skill>/scripts/code_graph.py label [--model M] [--engine auto|llm|heuristic|graphify] [--only-missing]
+                                                                  # build already names communities heuristically (free);
+                                                                  # label upgrades them with an LLM when a key exists
     python <skill>/scripts/code_graph.py labels-review            # placeholders / weak / duplicate community names
     python <skill>/scripts/code_graph.py rename <community-id> "<Name>"   # hand-name one community
     python <skill>/scripts/code_graph.py export [--obsidian] [--graphml] [--svg]
     python <skill>/scripts/code_graph.py summary                  # writes docs/_notes/01-graph.md + docs/_notes/areas.json
     python <skill>/scripts/code_graph.py ask "<topic>" [--budget 800] [--affected]   # query + top-node explain in one call
     python <skill>/scripts/code_graph.py hook                     # git hooks: keep the graph current after commits
+    python <skill>/scripts/code_graph.py resolve                  # re-add C# DI / dispatch / message / event edges (after graphify update)
     python <skill>/scripts/code_graph.py all [--label]            # build → (label) → export → summary
 
 Never pass API keys on the command line; they are read from environment variables (process or, on Windows,
@@ -111,28 +115,90 @@ def cmd_build(cfg, a):
         args.append("--force")
     if a.postgres:
         args += ["--postgres", a.postgres]
+    from vendor_files import graphify_excludes  # copied-in jQuery / Bootstrap / WebForms scripts are not the project's code
+    excl = graphify_excludes(src)
+    for x in excl:
+        args += ["--exclude", x]
+    if excl:
+        print(f"excluding {len(excl)} vendored front-end library pattern(s) (vendor_files.py)")
     env = None
     if a.semantic:
         env, backend, name = label_env(cfg)
         if not env:
             sys.exit("--semantic needs an LLM key (see `code_graph.py check`); run without it for AST-only extraction")
         args += ["--backend", backend]
-    print("$ graphify " + " ".join(args))
+    shown, skip = [], False
+    for x in args:  # the --exclude list can be long: count it instead of printing every pattern
+        if skip:
+            skip = False
+            continue
+        if x == "--exclude":
+            skip = True
+            continue
+        shown.append(x)
+    print("$ graphify " + " ".join(shown) + (f" (+{len(excl)} --exclude patterns)" if excl else ""))
     code, out = gfy(args, env=env)
     print(out[-1500:])
     if code:
         sys.exit(code)
+    resolve_calls(quiet=True)  # before clustering: DI / dispatch edges help communities group interfaces with implementations
+    sql_layer(quiet=True)      # database objects + SQL edges, so tables cluster with the code that uses them
     code, out = gfy(["cluster-only", ".", "--no-label"] + (["--no-viz"] if a.no_viz else []))
     print(out[-800:])
+    resolve_calls()            # again after: graphify stores an undirected simple graph, so A->B merges into an existing B->A
+    sql_layer()
+    name_communities([])       # heuristic names straight away (free, unique); `label` upgrades them with an LLM
     if code == 0:
         tick(cfg, "graphify installed, graph built")
 
 
+def name_communities(extra):
+    code, out = run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "community_names.py")] + extra)
+    print(out.strip()[-2500:])
+    return code
+
+
+def resolve_calls(quiet=False):
+    """C# calls graphify cannot see (DI, overrides, messages, events, jobs ...): scripts/csharp_resolve.py, idempotent."""
+    code, out = run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "csharp_resolve.py")]
+                    + (["--quiet"] if quiet else []))
+    if not quiet or code:
+        print(out.strip()[-1500:])
+
+
+def sql_layer(quiet=False):
+    """Database objects and SQL edges graphify cannot see: scripts/sql_graph.py (T-SQL parser), idempotent."""
+    code, out = run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql_graph.py")]
+                    + (["--quiet"] if quiet else []))
+    if not quiet or code:
+        print(out.strip()[-1500:])
+
+
+def cmd_resolve(cfg, a):
+    resolve_calls()
+    sql_layer()
+
+
 def cmd_label(cfg, a):
+    """LLM community names with a rich per-community profile (community_names.py --llm); heuristic names stay as the
+    fallback for any community the model does not name. --engine heuristic: no LLM; --engine graphify: graphify's own labeller."""
+    if a.engine in ("auto", "llm", "heuristic"):
+        env, _, _ = label_env(cfg, a.model)
+        if a.engine == "heuristic" or not env:
+            if not env and a.engine != "heuristic":
+                print(SUGGEST)
+                print("No LLM key: heuristic names kept (unique, built from member names, namespaces, folders and roles).")
+            name_communities([])
+            return
+        extra = ["--llm"] + (["--model", a.model] if a.model else []) + (["--only-missing"] if a.only_missing else [])
+        if name_communities(extra) == 0:
+            tick(cfg, "communities named")
+        review(cfg)
+        return
     env, backend, name = label_env(cfg, a.model)
     if not env:
         print(SUGGEST)
-        print("SKIPPED: no LLM API key found; communities keep 'Community N' names (optional step).")
+        print("SKIPPED: no LLM API key found; communities keep their heuristic names (optional step).")
         return
     model = env.get("OPENAI_MODEL") or a.model or cfg["graph"].get("model")
     for rnd in range(1, a.rounds + 1):
@@ -178,6 +244,12 @@ def cmd_rename(cfg, a):
     labels = json.load(open(p, encoding="utf-8"))
     labels[str(a.id)] = a.name
     write(p, json.dumps(labels, indent=2, ensure_ascii=False))
+    sp = os.path.join(cfg["graph_dir"], "community-summaries.json")
+    if os.path.exists(sp):  # keep the hand-given name when names are regenerated
+        s = json.load(open(sp, encoding="utf-8"))
+        if str(a.id) in s:
+            s[str(a.id)].update(name=a.name, source="manual")
+            write(sp, json.dumps(s, indent=1, ensure_ascii=False))
     print(f"community {a.id} -> {a.name}  (run `code_graph.py export` to refresh wiki/report)")
 
 
@@ -239,14 +311,28 @@ def cmd_summary(cfg, a):
            f"- Confidence: " + ", ".join(f"{k} {v:,}" for k, v in conf.most_common()),
            f"- Node files by extension: " + ", ".join(f"{k or '(none)'} {v:,}" for k, v in exts.most_common(12)), "",
            "## God nodes (most connected — architectural hubs)", "", "```", gods.strip()[:4000], "```", "",
-           "## Largest communities", "", "| Id | Name | Nodes | Top folders |", "| ---: | --- | ---: | --- |"]
+           "## Largest communities", "", "| Id | Name | Nodes | Summary | Top folders |", "| ---: | --- | ---: | --- | --- |"]
+    sp = os.path.join(cfg["graph_dir"], "community-summaries.json")
+    sums = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
     areas = []
     for cid, ns in sorted(comm_nodes.items(), key=lambda kv: -len(kv[1]))[:60]:
         dirs = Counter(os.path.dirname(n.get("source_file") or "") for n in ns if n.get("source_file"))
         top = [d for d, _ in dirs.most_common(3)]
         name = labels.get(str(cid)) or ns[0].get("community_name") or f"Community {cid}"
-        out.append(f"| {cid} | {name} | {len(ns):,} | {', '.join('`' + d + '`' for d in top)} |")
-        areas.append({"community": cid, "name": name, "size": len(ns), "folders": top})
+        summ = (sums.get(str(cid)) or {}).get("summary", "")
+        out.append(f"| {cid} | {name} | {len(ns):,} | {summ.replace('|', '/')} | {', '.join('`' + d + '`' for d in top)} |")
+        areas.append({"community": cid, "name": name, "size": len(ns), "folders": top, "summary": summ})
+    rp = os.path.join(cfg["graph_dir"], "csharp-resolve.json")
+    if os.path.exists(rp):
+        r = json.load(open(rp, encoding="utf-8"))
+        out += ["", "## Calls resolved beyond graphify (csharp_resolve.py)", "",
+                f"- Registrations: {len(r.get('registrations', []))} in hosts "
+                + ", ".join(sorted({h for x in r.get('registrations', []) for h in x.get('hosts', [])})),
+                "- Containers: " + (", ".join(f"{k} {v}" for k, v in r.get("containers", {}).items()) or "none"),
+                "- Edges added: " + (", ".join(f"{k} {v}" for k, v in sorted(r.get("edges_added", {}).items(), key=lambda kv: -kv[1])) or "none"),
+                f"- Messages: {len(r.get('messages', {}))} · pipeline items: {len(r.get('pipeline', []))} · jobs: {len(r.get('jobs', []))} · "
+                f"events: {len(r.get('events', []))} · stored delegates: {len(r.get('stored_delegates', []))} · reflection sites: {len(r.get('reflection', []))}",
+                f"- Wiring findings: {len(r.get('findings', []))} (see docs/reference/dependency-injection.md after build_site)"]
     out += ["", "## Token economy (graphify benchmark)", "", "```", bench.strip()[-1500:], "```", "",
             "## Multigraph diagnosis", "", "```", diag.strip()[-1200:], "```", "",
             "## Views", "", f"- Wiki: `{cfg['graph_dir']}/wiki/index.md` · HTML: `graph.html`, `CALLFLOW.html`, `GRAPH_TREE.html` · report: `GRAPH_REPORT.md`"]
@@ -301,9 +387,13 @@ def main():
             b.add_argument("--label", action="store_true")
             b.add_argument("--model")
             b.add_argument("--rounds", type=int, default=5)
+            b.add_argument("--engine", default="auto")
+            b.add_argument("--only-missing", action="store_true")
     l = sp.add_parser("label")
     l.add_argument("--model")
     l.add_argument("--rounds", type=int, default=5)
+    l.add_argument("--engine", choices=["auto", "llm", "heuristic", "graphify"], default="auto")
+    l.add_argument("--only-missing", action="store_true", help="LLM only for communities still named by the heuristic")
     sp.add_parser("labels-review")
     r = sp.add_parser("rename")
     r.add_argument("id")
@@ -318,11 +408,12 @@ def main():
     q.add_argument("--budget", type=int, default=800)
     q.add_argument("--affected", action="store_true")
     sp.add_parser("hook")
+    sp.add_parser("resolve")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
     {"check": cmd_check, "build": cmd_build, "label": cmd_label, "labels-review": lambda c, x: review(c), "rename": cmd_rename,
-     "export": cmd_export, "summary": cmd_summary, "ask": cmd_ask, "hook": cmd_hook, "all": cmd_all}[a.cmd](cfg, a)
+     "export": cmd_export, "summary": cmd_summary, "ask": cmd_ask, "hook": cmd_hook, "all": cmd_all, "resolve": cmd_resolve}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

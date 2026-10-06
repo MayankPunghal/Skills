@@ -67,7 +67,8 @@ def main():
         p = os.path.join(REF, page)
         if not os.path.exists(p):
             continue
-        for a, name in re.findall(r'<a id="((?:sp|tbl)-[^"]+)"></a>(?:\s*\n\s*##\s*(?:\w+\.)?|\*\*)(\w+)', open(p, encoding="utf-8").read()):
+        # "## dbo.Name" headings or "**dbo.Name**" table rows: drop the schema (plain or [bracketed])
+        for a, name in re.findall(r'<a id="((?:sp|tbl)-[^"]+)"></a>(?:\s*\n\s*##\s*|\*\*)(?:\[?\w+\]?\.)?\[?(\w+)', open(p, encoding="utf-8").read()):
             toks = [t for t in re.split(r"_|(?<=[a-z])(?=[A-Z])", name) if t]
             while len(toks) > 1 and toks[0].lower() in STOP:
                 toks = toks[1:]

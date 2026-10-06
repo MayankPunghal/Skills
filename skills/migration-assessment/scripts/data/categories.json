@@ -58,6 +58,13 @@
    "segment": "modernization"
   },
   {
+   "id": "di-wiring",
+   "title": "Dependency injection and run-time wiring",
+   "brief": "5.2 Application architecture (composition root, DI container, indirect calls)",
+   "scanned": "DI registrations (Microsoft DI, Autofac, Unity, Ninject, Simple Injector, StructureMap, Windsor, Scrutor) and their lifetimes per host, constructor dependencies with no registration, singletons holding scoped services, service-locator calls, reflection-based activation (codebase-documenter csharp_resolve.py over the graphify graph)",
+   "segment": "modernization"
+  },
+  {
    "id": "packages",
    "title": "NuGet packages and third-party libraries",
    "brief": "5.2 NuGet packages; 5.1-2",

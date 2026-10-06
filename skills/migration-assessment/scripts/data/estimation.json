@@ -1,83 +1,437 @@
 {
  "_doc": "Coding-effort engine (v4). Hours are developer hours for CODE and SQL work only: porting projects, fixing findings, converting database code and data access. QA, DevOps / infrastructure, project management, parallel-development drift and contingency are deliberately NOT estimated. Every number is a [low, high] range of manual-equivalent hours; 'likely' = low + likely_position x (high - low). Calibration anchor: AWS reported 143,000 lines of .NET Framework ported with about 270 developer hours saved (about 1.9 manual hours per KLOC for a clean mechanical port, AWS Transform for .NET case study, Caribbean Examinations Council); human-designed work (UI rewrite, auth, interop) is far slower, hence the higher rates for those project types. Recalibrate from your own actuals here, never in code. See references/estimation-model.md.",
- "version": "2026-10-v4-coding-only",
+ "version": "2026-10-v5-scale-redesign",
  "hours_per_day": 8,
  "likely_position": 0.4,
+ "likely_position_large": 0.5,
+ "scale": {
+  "_doc": "Diseconomy of scale (COCOMO II: effort grows as size^B with B about 1.10). Project conversion hours in a repository are multiplied by max(1, (repository hand-written KLOC / reference_kloc) ^ exponent): a 360 KLOC repository pays about 1.4x per KLOC what a 10 KLOC one pays. Repositories of at least large_kloc also put 'likely' at likely_position_large instead of likely_position. Evidence: references/estimation-validation.md (the Smartstore port).",
+  "reference_kloc": 10,
+  "exponent": 0.1,
+  "large_kloc": 100
+ },
  "ai_assistance": {
   "_doc": "Share of manual-equivalent effort that remains when coding agents / AWS Transform for .NET / GitHub Copilot app modernization do the mechanical part and engineers direct, review and fix. AWS cites up to 4x faster on mechanical porting (factor 0.25) and about 47% overall productivity gain; the range below sits between the two because findings and rewrites stay human. db: AWS DMS Schema Conversion (generative AI) converts most T-SQL, the rest is review. Set enabled=false for a manual-only estimate.",
   "enabled": true,
-  "code_factor": [0.3, 0.5],
-  "db_factor": [0.35, 0.55]
+  "code_factor": [
+   0.3,
+   0.5
+  ],
+  "db_factor": [
+   0.35,
+   0.55
+  ],
+  "redesign_factor": [
+   0.7,
+   1.0
+  ],
+  "redesign_effort_keys": [
+   "medium-change",
+   "large-change",
+   "db-object-large",
+   "package-blocker"
+  ],
+  "redesign_project_types": [
+   "aspnet-webforms"
+  ],
+  "_doc_redesign": "redesign_factor applies instead of code_factor / db_factor to work with no mechanical path: Web Forms projects (UI rewrite), findings whose effort key is in redesign_effort_keys, database constructs and findings at the 'redesign' level, and the dual-database abstraction. Published AI gains (AWS Transform 47-70 %, Google >= 50 %) are for mechanical transformation; the METR 2025 trial found experienced developers 19 % slower on open-ended work (references/estimation-validation.md)."
  },
  "conversion_hours_per_kloc": {
   "_doc": "Manual-equivalent hours per 1,000 hand-written C# / VB lines to port a project to SDK-style and the target .NET (generated code excluded). Markup has its own rate.",
-  "class-library": [1, 3],
-  "console": [1.5, 4],
-  "test": [0.5, 1.5],
-  "aspnet-mvc": [3, 7],
-  "aspnet-webapi": [2.5, 6],
-  "aspnet-webforms": [14, 28],
-  "wcf-service": [4, 9],
-  "windows-service": [2, 5],
-  "winforms": [2, 5],
-  "wpf": [2, 5],
-  "aspnet-core": [0.3, 1.2],
-  "netcore-other": [0.3, 1],
-  "database": [0, 0],
-  "unknown": [3, 7]
+  "class-library": [
+   1,
+   3
+  ],
+  "web-library": [
+   3,
+   7
+  ],
+  "console": [
+   1.5,
+   4
+  ],
+  "test": [
+   0.5,
+   1.5
+  ],
+  "aspnet-mvc": [
+   3,
+   7
+  ],
+  "aspnet-webapi": [
+   2.5,
+   6
+  ],
+  "aspnet-webforms": [
+   14,
+   28
+  ],
+  "wcf-service": [
+   4,
+   9
+  ],
+  "windows-service": [
+   2,
+   5
+  ],
+  "winforms": [
+   2,
+   5
+  ],
+  "wpf": [
+   2,
+   5
+  ],
+  "aspnet-core": [
+   0.3,
+   1.2
+  ],
+  "netcore-other": [
+   0.3,
+   1
+  ],
+  "database": [
+   0,
+   0
+  ],
+  "unknown": [
+   3,
+   7
+  ]
  },
  "conversion_fixed_hours": {
   "_doc": "Manual-equivalent hours per project that do not scale with lines: project file, package set, build break-fix.",
-  "default": [1, 3],
-  "aspnet-mvc": [4, 8],
-  "aspnet-webapi": [3, 6],
-  "aspnet-webforms": [8, 16],
-  "wcf-service": [4, 8],
-  "aspnet-core": [1, 3],
-  "test": [0.5, 1.5],
-  "database": [0, 0]
+  "default": [
+   1,
+   3
+  ],
+  "aspnet-mvc": [
+   4,
+   8
+  ],
+  "aspnet-webapi": [
+   3,
+   6
+  ],
+  "aspnet-webforms": [
+   8,
+   16
+  ],
+  "wcf-service": [
+   4,
+   8
+  ],
+  "aspnet-core": [
+   1,
+   3
+  ],
+  "test": [
+   0.5,
+   1.5
+  ],
+  "database": [
+   0,
+   0
+  ],
+  "web-library": [
+   2,
+   4
+  ]
  },
  "markup_hours_per_kloc": {
   "_doc": "Views and pages (cshtml, aspx, ascx, master, xaml): far less change than C# when the UI stack stays; Web Forms markup is rewritten.",
-  "default": [0.8, 2.5],
-  "aspnet-webforms": [6, 12],
-  "website": [6, 12]
+  "default": [
+   0.8,
+   2.5
+  ],
+  "aspnet-webforms": [
+   6,
+   12
+  ],
+  "website": [
+   6,
+   12
+  ]
  },
  "complexity": {
-  "_doc": "Multiplier on a project's conversion hours (not on finding hours, which already count the hard parts). Decision density = decision points per KLOC of hand-written code (_complexity.py). Band limits are upper bounds. Projects under min_kloc are not scaled, because density of a handful of lines is noise. Fan-in: a project many others depend on needs more care. Big files: files over 800 lines are slower to read and port. Result is clamped to [min, max].",
-  "decisions_per_kloc_bands": [[40, 0.85], [90, 1.0], [150, 1.2], [1000000000, 1.4]],
+  "_doc": "Multiplier on a project's conversion hours (not on finding hours, which already count the hard parts). Decision density = decision points per KLOC of hand-written code (_complexity.py). Band limits are upper bounds. Projects under min_kloc are not scaled, because density of a handful of lines is noise. Fan-in: a project many others depend on needs more care. Big files: files over 800 lines are slower to read and port. Result is clamped to [min, max]. Run-time indirection (map_graphs.py wiring, from the codebase-documenter C# resolver): calls bound at run time per KLOC (DI dispatch to an implementation, decorators, overrides, keyed services, MediatR / bus messages, events, method groups, stored delegates, background jobs, redirects, filters, service-locator calls). These are the calls an engineer cannot follow by reading the code, so porting and testing them is slower; the extra is added before the clamp. Reflection sites add a small extra each (capped). The registrations themselves are costed as di-wiring findings, not here.",
+  "decisions_per_kloc_bands": [
+   [
+    40,
+    0.85
+   ],
+   [
+    90,
+    1.0
+   ],
+   [
+    150,
+    1.2
+   ],
+   [
+    1000000000,
+    1.4
+   ]
+  ],
   "min_kloc": 0.3,
   "fan_in_threshold": 3,
   "fan_in_extra": 0.1,
   "big_file_extra": 0.05,
   "big_file_cap": 0.2,
   "min": 0.8,
-  "max": 1.6
+  "max": 1.6,
+  "indirection_per_kloc_bands": [
+   [
+    5,
+    0.0
+   ],
+   [
+    15,
+    0.05
+   ],
+   [
+    40,
+    0.1
+   ],
+   [
+    1000000000,
+    0.15
+   ]
+  ],
+  "reflection_extra": 0.02,
+  "reflection_cap": 0.1
  },
  "finding_hours": {
   "_doc": "Manual-equivalent remediation hours per finding: fixed + per extra occurrence, capped. Findings marked baseline are already inside the conversion rate and add nothing. Database effort keys (db-object-*) are only charged in a database scenario.",
-  "trivial": {"fixed": [0.25, 0.75], "per": [0, 0.05], "cap": [1, 2]},
-  "small-change": {"fixed": [1.5, 4], "per": [0.2, 0.6], "cap": [10, 20]},
-  "medium-change": {"fixed": [5, 10], "per": [0.4, 1.2], "cap": [24, 48]},
-  "large-change": {"fixed": [14, 36], "per": [1.5, 4], "cap": [72, 144]},
-  "per-occurrence-small": {"fixed": [0.5, 1.5], "per": [0.15, 0.3], "cap": [10, 20]},
-  "per-file-web": {"fixed": [0, 0], "per": [0, 0], "cap": [0, 0]},
-  "per-file-webforms": {"fixed": [0, 0], "per": [0, 0], "cap": [0, 0]},
-  "per-file-wcf": {"fixed": [0, 0], "per": [0, 0], "cap": [0, 0]},
-  "per-file-desktop": {"fixed": [0, 0], "per": [0, 0], "cap": [0, 0]},
-  "per-report": {"fixed": [5, 10], "per": [2, 4], "cap": [96, 192]},
-  "db-object-small": {"fixed": [1, 2.5], "per": [0.2, 0.4], "cap": [6, 12]},
-  "db-object-medium": {"fixed": [3, 6], "per": [0.75, 2], "cap": [24, 48]},
-  "db-object-large": {"fixed": [10, 20], "per": [1.5, 4], "cap": [48, 96]},
-  "package-replace": {"fixed": [1, 3], "per": [0, 0], "cap": [3, 6]},
-  "package-blocker": {"fixed": [6, 16], "per": [0, 0], "cap": [16, 32]}
+  "trivial": {
+   "fixed": [
+    0.25,
+    0.75
+   ],
+   "per": [
+    0,
+    0.05
+   ],
+   "cap": [
+    1,
+    2
+   ]
+  },
+  "small-change": {
+   "fixed": [
+    1.5,
+    4
+   ],
+   "per": [
+    0.2,
+    0.6
+   ],
+   "cap": [
+    10,
+    20
+   ]
+  },
+  "medium-change": {
+   "fixed": [
+    5,
+    10
+   ],
+   "per": [
+    0.4,
+    1.2
+   ],
+   "cap": [
+    24,
+    48
+   ]
+  },
+  "large-change": {
+   "fixed": [
+    14,
+    36
+   ],
+   "per": [
+    1.5,
+    4
+   ],
+   "cap": [
+    72,
+    144
+   ]
+  },
+  "per-occurrence-small": {
+   "fixed": [
+    0.5,
+    1.5
+   ],
+   "per": [
+    0.15,
+    0.3
+   ],
+   "cap": [
+    10,
+    20
+   ]
+  },
+  "per-file-web": {
+   "fixed": [
+    0,
+    0
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    0,
+    0
+   ]
+  },
+  "per-file-webforms": {
+   "fixed": [
+    0,
+    0
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    0,
+    0
+   ]
+  },
+  "per-file-wcf": {
+   "fixed": [
+    0,
+    0
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    0,
+    0
+   ]
+  },
+  "per-file-desktop": {
+   "fixed": [
+    0,
+    0
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    0,
+    0
+   ]
+  },
+  "per-report": {
+   "fixed": [
+    5,
+    10
+   ],
+   "per": [
+    2,
+    4
+   ],
+   "cap": [
+    96,
+    192
+   ]
+  },
+  "db-object-small": {
+   "fixed": [
+    1,
+    2.5
+   ],
+   "per": [
+    0.2,
+    0.4
+   ],
+   "cap": [
+    6,
+    12
+   ]
+  },
+  "db-object-medium": {
+   "fixed": [
+    3,
+    6
+   ],
+   "per": [
+    0.75,
+    2
+   ],
+   "cap": [
+    24,
+    48
+   ]
+  },
+  "db-object-large": {
+   "fixed": [
+    10,
+    20
+   ],
+   "per": [
+    1.5,
+    4
+   ],
+   "cap": [
+    48,
+    96
+   ]
+  },
+  "package-replace": {
+   "fixed": [
+    1,
+    3
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    3,
+    6
+   ]
+  },
+  "package-blocker": {
+   "fixed": [
+    6,
+    16
+   ],
+   "per": [
+    0,
+    0
+   ],
+   "cap": [
+    16,
+    32
+   ]
+  }
  },
  "other_r_hours": {
   "_doc": "Code and configuration work for applications that are not ported: retire, repurchase (integration code only), retain on Windows (repoint connection strings and endpoints), desktop client (repoint service endpoints).",
-  "retire": [1, 4],
-  "repurchase": [24, 80],
-  "retain_server": [2, 6],
-  "retain_desktop": [2, 4]
+  "retire": [
+   1,
+   4
+  ],
+  "repurchase": [
+   24,
+   80
+  ],
+  "retain_server": [
+   2,
+   6
+  ],
+  "retain_desktop": [
+   2,
+   4
+  ]
  },
  "hosting_scenarios": {
   "_doc": "Code-side scenario. modernize: port to .NET 10 for Linux (per-application 7R decisions, Windows-bound parts replaced). windows-rehost: lift-and-shift the existing Windows app to EC2 Windows, only code / configuration that must change for the new network and identity (keep_categories). skip_categories: findings not needed in a scenario.",
@@ -89,7 +443,14 @@
   "windows-rehost": {
    "label": "Lift-and-shift Windows applications from on-premises to Windows EC2 (no code port)",
    "mode": "rehost",
-   "keep_categories": ["connectivity", "configuration-secrets", "dependencies", "integrations", "security", "hypervisor"]
+   "keep_categories": [
+    "connectivity",
+    "configuration-secrets",
+    "dependencies",
+    "integrations",
+    "security",
+    "hypervisor"
+   ]
   }
  },
  "database_scenarios": {
@@ -101,46 +462,179 @@
  "postgres": {
   "_doc": "Manual-equivalent hours to convert SQL Server objects and data-access code to PostgreSQL (before db_factor). Routine size: small <= 50 lines, medium <= 200, large above. AWS DMS Schema Conversion automates most table and simple routine conversion, so table and view hours are low; the hours are the review and the hand-rewrite of complex routines.",
   "object_hours": {
-   "TABLE": [0.15, 0.4],
-   "VIEW": [0.4, 1.2],
-   "TYPE": [0.3, 1],
-   "SEQUENCE": [0.1, 0.25],
-   "SYNONYM": [0.1, 0.25],
-   "TRIGGER": [1, 3],
-   "PROCEDURE": {"small": [0.75, 1.5], "medium": [2, 4.5], "large": [5, 12]},
-   "FUNCTION": {"small": [0.6, 1.2], "medium": [1.5, 3.5], "large": [4, 10]}
+   "TABLE": [
+    0.15,
+    0.4
+   ],
+   "VIEW": [
+    0.4,
+    1.2
+   ],
+   "TYPE": [
+    0.3,
+    1
+   ],
+   "SEQUENCE": [
+    0.1,
+    0.25
+   ],
+   "SYNONYM": [
+    0.1,
+    0.25
+   ],
+   "TRIGGER": [
+    1,
+    3
+   ],
+   "PROCEDURE": {
+    "small": [
+     0.75,
+     1.5
+    ],
+    "medium": [
+     2,
+     4.5
+    ],
+    "large": [
+     5,
+     12
+    ]
+   },
+   "FUNCTION": {
+    "small": [
+     0.6,
+     1.2
+    ],
+    "medium": [
+     1.5,
+     3.5
+    ],
+    "large": [
+     4,
+     10
+    ]
+   },
+   "INDEX": [
+    0.05,
+    0.15
+   ],
+   "SECURITY POLICY": [
+    1,
+    3
+   ],
+   "AGGREGATE": [
+    2,
+    6
+   ]
   },
   "construct_hours": {
-   "cursor": [1, 2.5],
-   "dynamic SQL": [1, 3],
-   "MERGE": [0.5, 1.5],
-   "XML": [0.5, 1.5],
-   "PIVOT": [0.5, 1],
-   "OUTPUT clause": [0.25, 0.5],
-   "APPLY": [0.25, 0.5],
-   "TRY/CATCH": [0.1, 0.25],
-   "temp table": [0.05, 0.15],
-   "table variable": [0.05, 0.15],
-   "identity functions": [0.1, 0.25],
-   "RAISERROR/THROW": [0.05, 0.15],
-   "transactions": [0.05, 0.15],
-   "TOP": [0.03, 0.06],
-   "table hints": [0.03, 0.06],
-   "string/date functions": [0.01, 0.03]
+   "cursor": [
+    1,
+    2.5
+   ],
+   "dynamic SQL": [
+    1,
+    3
+   ],
+   "MERGE": [
+    0.5,
+    1.5
+   ],
+   "XML": [
+    0.5,
+    1.5
+   ],
+   "PIVOT": [
+    0.5,
+    1
+   ],
+   "OUTPUT clause": [
+    0.25,
+    0.5
+   ],
+   "APPLY": [
+    0.25,
+    0.5
+   ],
+   "TRY/CATCH": [
+    0.1,
+    0.25
+   ],
+   "temp table": [
+    0.05,
+    0.15
+   ],
+   "table variable": [
+    0.05,
+    0.15
+   ],
+   "identity functions": [
+    0.1,
+    0.25
+   ],
+   "RAISERROR/THROW": [
+    0.05,
+    0.15
+   ],
+   "transactions": [
+    0.05,
+    0.15
+   ],
+   "TOP": [
+    0.03,
+    0.06
+   ],
+   "table hints": [
+    0.03,
+    0.06
+   ],
+   "string/date functions": [
+    0.01,
+    0.03
+   ]
   },
   "code_hours": {
-   "stored_procedure_calls": [0.2, 0.5],
-   "inline_sql_strings": [0.25, 0.75],
-   "tsql_in_strings": [0.25, 0.5],
-   "sqlclient_usage": [0.05, 0.15],
-   "dapper_calls": [0.05, 0.15],
-   "edmx_function_imports": [0.2, 0.4],
-   "ef6_contexts": [6, 12]
+   "stored_procedure_calls": [
+    0.2,
+    0.5
+   ],
+   "inline_sql_strings": [
+    0.25,
+    0.75
+   ],
+   "tsql_in_strings": [
+    0.25,
+    0.5
+   ],
+   "sqlclient_usage": [
+    0.05,
+    0.15
+   ],
+   "dapper_calls": [
+    0.05,
+    0.15
+   ],
+   "edmx_function_imports": [
+    0.2,
+    0.4
+   ],
+   "ef6_contexts": [
+    6,
+    12
+   ],
+   "dynamic_sql_in_code": [
+    0.25,
+    0.75
+   ]
   },
   "dual": {
-   "abstraction_per_app": [16, 40],
+   "abstraction_per_app": [
+    16,
+    40
+   ],
    "note": "Both providers must stay in sync: provider-neutral data access (EF Core with provider-specific migrations, no T-SQL in application code), every procedure maintained for both engines or moved into the application."
-  }
+  },
+  "_doc_code_hours": "inline_sql_strings = parsed SQL statements embedded in C#; tsql_in_strings = those using constructs that need a rewrite or redesign; dynamic_sql_in_code = statements built at run time (holes / concatenated expressions / sp_executesql), reviewed by hand."
  },
  "team": {
   "_doc": "Default team for the coding timeline.",

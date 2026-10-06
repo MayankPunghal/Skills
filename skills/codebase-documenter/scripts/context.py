@@ -21,6 +21,14 @@ def missing_tools():
         miss.append("mkdocs-material")
     if run(["graphify", "--help"])[0]:
         miss.append("graphify")
+    try:
+        import sql_parse
+        if not sql_parse.has_sqlglot():
+            miss.append("sqlglot")
+        if sql_parse.dotnet_major() < sql_parse.MIN_DOTNET:
+            miss.append(".NET SDK 8+ (T-SQL parser)")
+    except ImportError:
+        miss.append("sql_parse.py")
     return miss
 
 

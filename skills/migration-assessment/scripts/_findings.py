@@ -1,4 +1,8 @@
-"""Load findings for downstream steps: scanner output + reviewer verdicts + manual findings, mapped to applications.
+"""Load findings for downstream steps: scanner output + wiring findings + reviewer verdicts + manual findings, mapped to applications.
+
+assessment/findings/<repo>.json        scan_repo.py
+assessment/graphs/<repo>/wiring-findings.json   map_graphs.py (category di-wiring: legacy DI container, captive dependency,
+                                         missing registration, service locator, reflection)
 
 assessment/reviews/<repo>.json         {"<finding id>": {"verdict": "confirmed|dismissed|adjusted", "severity": "...",
                                          "confidence": "...", "note": "...", "reviewer": "...", "app": "<app id, optional>"}}
@@ -25,6 +29,7 @@ def load_inventory(root, repo):
 
 def load(root, repo, include_dismissed=False):
     raw = read_json(os.path.join(root, OUT, "findings", f"{repo}.json"), []) or []
+    raw = raw + (read_json(os.path.join(root, OUT, "graphs", repo, "wiring-findings.json"), []) or [])  # map_graphs.py: DI / wiring
     reviews = read_json(os.path.join(root, OUT, "reviews", f"{repo}.json"), {}) or {}
     manual = read_json(os.path.join(root, OUT, "reviews", f"{repo}.manual.json"), []) or []
     out = []

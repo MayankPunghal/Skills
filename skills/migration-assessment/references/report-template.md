@@ -85,6 +85,10 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:graph-insights}}
 
+#### Run-time wiring (dependency injection and indirect calls)
+
+{{block:wiring}}
+
 ### 4.3 Third-party services, on-premises systems and SDKs
 
 {{block:third-party}}
@@ -104,6 +108,10 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 ### 4.7 Database object dependencies
 
 {{block:db-dependents}}
+
+### 4.8 Shared database objects (coupling between applications)
+
+{{block:db-coupling}}
 
 {{narrative:dependencies}}
 

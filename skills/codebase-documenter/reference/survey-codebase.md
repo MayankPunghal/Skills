@@ -3,6 +3,9 @@
 ## Steps
 
 1. `python <skill>/scripts/survey_codebase.py` → `docs/_notes/00-survey.md`: stacks detected (with evidence files), files and code lines by type, folders, the 30 largest code files, configuration files, suggested adapters. Creates `docs/_notes/areas.json` (candidate research areas from code volume, enriched with graph communities).
+   - Code lines include markup and scripts that carry behaviour (Razor, Web Forms `.aspx/.ascx/.master`, `.asmx/.ashx/.svc`, XAML, T4, PowerShell / batch / shell, `.config`, YAML pipelines, Terraform / Bicep, SSRS / SSIS) as well as source files, and files directly in the source root become a "Root Files" area (build and deployment scripts).
+   - Not counted: generated files (`.designer.cs`, `.g.cs`, `*.min.js`) and third-party front-end libraries copied into the repository (vendor folders, files named after a declared client-side package such as `jquery-3.4.1.js`, IntelliSense copies, files with a library or NuGet licence banner). Their total is printed so nothing disappears silently.
+   - An area under a generic folder (`src`, `app` …) is named after its parent (`eShopLegacyMVCSolution src`).
 2. Read `00-survey.md` and `01-graph.md` together (≈2 minutes). Then **edit `areas.json`** so each area is one coherent business or technical topic:
    - merge folders that form one feature (UI + service + data for "Orders");
    - split giant areas (a 100k-line web project = several business modules);

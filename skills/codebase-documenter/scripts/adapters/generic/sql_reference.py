@@ -1,20 +1,36 @@
-"""Generic SQL reference adapter: tables (columns, keys, FKs, referenced-by) and routines (procedures, functions,
-views, triggers: parameters, tables touched, SQL callers, application callers) from `.sql` DDL files.
+"""Generic SQL reference adapter: every database object, PARSED (Microsoft's T-SQL parser via scripts/sql_parse.py; sqlglot
+fallback), never pattern-matched.
 
-Works for SQL Server / SSDT projects and plain migration or schema folders. Options (codebase-docs.json):
+Pages (per database):
+  db-tables.md     every table: columns (type, nullability, identity, default, computed, collation, PK / unique / FK,
+                   rowversion), keys, foreign keys both ways, indexes (inline and CREATE INDEX), checks, temporal /
+                   memory-optimized / graph flags, the routines that read and write it, and PostgreSQL type notes
+  db-routines.md   every procedure, function, view and trigger: parameters (direction, default, READONLY), what it returns
+                   (scalar / table / OUTPUT parameters / RETURN value / result sets), tables read and written (with the
+                   operation), procedures and functions called, called by (SQL), used by (application), temp tables,
+                   dynamic SQL, and the PostgreSQL conversion levels of its constructs; plus types, sequences, synonyms,
+                   security policies and aggregates
+  db-postgres.md   PostgreSQL conversion map (option postgres_notes, default on): construct levels per object, everything
+                   that has no PostgreSQL equivalent with the replacement approach, data types to map, SQL embedded in code
+Options (codebase-docs.json):
   "adapter_options": {"generic-sql": {"databases": [
       {"name": "Main", "path": "db/schema", "tables_page": "db-tables.md", "routines_page": "db-routines.md"},
       {"name": "Reporting", "path": "reporting", "tables_page": "reportdb-tables.md", "routines_page": "reportdb-routines.md"}],
     "edmx": ["Web/Models/Model.edmx"],             # optional ORM alias maps (EF function imports)
+    "postgres_notes": true,                        # db-postgres.md and PostgreSQL columns
     "code_ext": [".cs", ".py", ".ts", ".js", ".java", ".cshtml"]}}
-Without "databases", every folder under the source root that contains CREATE TABLE statements is one database
-(the first found writes db-tables.md / db-routines.md, others <folder>-tables.md / -routines.md).
-Run by build_site.py (cwd = workspace root).
+Without "databases", every folder holding a .sqlproj is one database, else the shallowest folders whose scripts define
+tables (the first found writes db-tables.md / db-routines.md, others <folder>-tables.md / -routines.md).
+Writes docs/agent/db.json (machine-readable copy for generic-dbaccess, tracing, RAG cards). Run by build_site.py.
 """
 import json
 import os
 import re
-from collections import defaultdict
+import sys
+from collections import Counter, defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import sql_parse  # noqa: E402
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
@@ -23,8 +39,41 @@ OPT = CFG.get("adapter_options", {}).get("generic-sql", {})
 SKIP_DIRS = {"bin", "obj", "packages", ".vs", "node_modules", ".git", "dist", "build", "vendor", "graphify-out"}
 CODE_EXT = tuple(OPT.get("code_ext", [".cs", ".vb", ".cshtml", ".razor", ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt",
                                        ".go", ".rb", ".php", ".scala", ".rs"]))
+PG_NOTES = OPT.get("postgres_notes", True)
 BACK = "[↑ Back to index](#index)"
+ROUTINE_KINDS = ("PROCEDURE", "FUNCTION", "VIEW", "TRIGGER")
+OTHER_KINDS = ("TYPE", "SEQUENCE", "SYNONYM", "SECURITY POLICY", "AGGREGATE")
+DB_EXPORT = {"routines": [], "tables": [], "objects": [], "engine": None}
 _CODE_CACHE = None
+_PG = None
+
+
+def pg_table():
+    global _PG
+    if _PG is None:
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "pg_conversion.json")
+        _PG = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    return _PG
+
+
+def conversion(label):
+    pg = pg_table()
+    if not pg:
+        return {"level": "rewrite", "pg": ""}
+    if label in pg["constructs"]:
+        return pg["constructs"][label]
+    for prefix, table in (("fn: ", "functions"), ("global: ", "globals"), ("data type: ", "data_types")):
+        if label.startswith(prefix):
+            k = label[len(prefix):]
+            return pg[table].get(k) or pg[table].get(k.upper()) or pg["prefix_defaults"].get(prefix) or pg["default"]
+    return pg["default"]
+
+
+def type_conversion(sql_type):
+    base = (sql_type or "").split("(")[0].strip().lower()
+    if "(max)" in (sql_type or "").lower():
+        base = base or "(max)"
+    return (pg_table().get("data_types") or {}).get(base)
 
 
 def code_files():
@@ -32,30 +81,12 @@ def code_files():
     global _CODE_CACHE
     if _CODE_CACHE is None:
         _CODE_CACHE = []
-        for p in walk(ROOT, CODE_EXT):
+        for p in sql_parse.walk(ROOT, CODE_EXT, SKIP_DIRS):
             r = rel(p)
             if re.search(r"\.(designer|generated|g)\.\w+$|\.min\.js$|/(Web|Service) References/|/migrations?/", r, re.I):
                 continue
-            _CODE_CACHE.append((r, read(p)))
+            _CODE_CACHE.append((r, sql_parse.read_text(p)))
     return _CODE_CACHE
-
-
-def walk(base, exts):
-    for d, dirs, files in os.walk(base):
-        dirs[:] = [x for x in dirs if x not in SKIP_DIRS and not x.startswith('.')]
-        for f in files:
-            if f.lower().endswith(exts):
-                yield os.path.join(d, f)
-
-
-def read(path):
-    with open(path, "rb") as fh:
-        raw = fh.read()
-    if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
-        return raw.decode("utf-16")
-    if len(raw) > 3 and raw[1:2] == b"\x00" and raw[3:4] == b"\x00":
-        return raw.decode("utf-16-le")
-    return raw.decode("utf-8-sig", errors="replace")
 
 
 def rel(path):
@@ -76,269 +107,72 @@ def anchor(aid):
     return f'<a id="{aid}"></a>'
 
 
-def md_escape(s):
-    return s.replace("|", "\\|").strip()
+def md(s):
+    return str(s if s is not None else "").replace("|", "\\|").replace("\n", " ").strip()
 
 
-def split_columns(body):
-    depth, cur, parts = 0, "", []
-    for ch in body:
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        if ch == "," and depth == 0:
-            parts.append(cur)
-            cur = ""
-        else:
-            cur += ch
-    parts.append(cur)
-    return [p.strip() for p in parts if p.strip()]
+def short(name):
+    return name.split(".")[-1]
 
 
-def iter_create_tables(text):
-    """Every CREATE TABLE in a script (several per file allowed): (schema, name, column-list body)."""
-    rx = re.compile(r"CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-                    r"(?:[\[\"`]?(\w+)[\]\"`]?\.)?[\[\"`]?([\w ]+?)[\]\"`]?\s*\(", re.I)
-    for m in rx.finditer(text):
-        depth, i = 1, m.end()
-        while i < len(text) and depth:
-            depth += {"(": 1, ")": -1}.get(text[i], 0)
-            i += 1
-        yield (m.group(1) or "dbo"), m.group(2).strip(), text[m.end():i - 1]
+class Db:
+    """One database: the parsed objects of its scripts, merged (ALTER TABLE ADD folds into its table)."""
 
-
-def gen_tables(dbroot, title, fname, prefix="tbl"):
-    tables = []
-    for path in sorted(walk(dbroot, (".sql",))):
-        text = re.sub(r"--[^\n]*", "", read(path))
-        for schema, name, body in iter_create_tables(text):
-            cols, fks = [], []
-            for part in split_columns(body):
-                up = part.upper()
-                if up.startswith("CONSTRAINT") or up.startswith("PRIMARY KEY") or up.startswith("FOREIGN KEY") or up.startswith("UNIQUE") or up.startswith("INDEX"):
-                    fk = re.search(r"FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+(?:\[?\w+\]?\.)?\[?(\w+)\]?\s*\(([^)]*)\)", part, re.I)
-                    if fk:
-                        fks.append((fk.group(1).replace("[", "").replace("]", "").strip(), fk.group(2), fk.group(3).replace("[", "").replace("]", "").strip()))
+    def __init__(self, name, path, results):
+        self.name, self.path = name, path
+        self.objects = []
+        for r in results:
+            for o in r.get("objects", []):
+                if not o.get("name") or short(o["name"]).startswith(("#", "@")):
                     continue
-                cm = re.match(r"\[?([\w ]+?)\]?\s+(.*)", part, re.S)
-                if not cm:
-                    continue
-                cname, rest = cm.group(1), re.sub(r"\s+", " ", cm.group(2))
-                tm = re.match(r"(\[?\w+\]?\s*(?:\([^)]*\))?)", rest)
-                ctype = tm.group(1).replace("[", "").replace("]", "") if tm else rest
-                if rest.upper().startswith("AS "):
-                    ctype = "computed: " + rest[3:]
-                nullable = "NOT NULL" not in rest.upper() and "PRIMARY KEY" not in rest.upper()
-                ident = "IDENTITY" in rest.upper()
-                dflt = re.search(r"DEFAULT\s*(\(.*?\)\)?|'[^']*'|\S+)", rest, re.I)
-                notes = []
-                if ident:
-                    notes.append("identity")
-                if "PRIMARY KEY" in rest.upper():
-                    notes.append("PK")
-                if dflt:
-                    notes.append("default " + dflt.group(1))
-                inline = re.search(r"REFERENCES\s+(?:[\[\"`]?\w+[\]\"`]?\.)?[\[\"`]?(\w+)[\]\"`]?\s*\(([^)]*)\)", rest, re.I)
-                if inline:  # column-level FK (PostgreSQL / MySQL / SQLite style)
-                    fks.append((cname, inline.group(1), inline.group(2).strip(" []\"`")))
-                    notes.append("FK")
-                cols.append((cname, ctype, "yes" if nullable else "no", ", ".join(notes)))
-            for fk in re.finditer(r"FOREIGN\s+KEY\s*\(([^)]*)\)\s*REFERENCES\s+(?:\[?\w+\]?\.)?\[?(\w+)\]?\s*\(([^)]*)\)", body, re.I):
-                t = (fk.group(1).replace("[", "").replace("]", "").strip(), fk.group(2), fk.group(3).replace("[", "").replace("]", "").strip())
-                if t not in fks:
-                    fks.append(t)
-            tables.append((schema, name.strip(), rel(path), cols, fks))
-            DB_EXPORT["tables"].append({"name": name.strip(), "schema": schema, "columns": [f"{c[0]} {c[1]}" for c in cols],
-                                        "file": rel(path), "page": fname, "anchor": slug(prefix, name.strip())})
-    names = {t[1].strip().lower() for t in tables}
-    referenced_by = defaultdict(set)
-    for schema, name, p, cols, fks in tables:
-        for col, tgt, tcol in fks:
-            referenced_by[tgt.lower()].add((name.strip(), col))
-    out = [f"# {title}", "", "Every table defined in the database project, extracted from its `CREATE TABLE` script. "
-           "Click a table name to jump to its column breakdown; foreign keys link to the referenced table.",
-           "", f"Total tables: {len(tables)}.", "", anchor("index"), "", "| Table | Columns | File |", "| --- | --- | --- |"]
-    for schema, name, p, cols, _ in sorted(tables, key=lambda t: t[1].lower()):
-        out.append(f"| [{schema}.{name.strip()}](#{slug(prefix, name.strip())}) | {len(cols)} | `{p}` |")
-    for schema, name, p, cols, fks in sorted(tables, key=lambda t: t[1].lower()):
-        name = name.strip()
-        out += ["", anchor(slug(prefix, name)), "", f"## {schema}.{name}", "", f"Source: `{p}` · {BACK}", "",
-                "| Column | Type | Nullable | Notes |", "| --- | --- | --- | --- |"]
-        for c in cols:
-            out.append("| " + " | ".join(md_escape(x) for x in c) + " |")
-        refs = referenced_by.get(name.lower())
-        if fks:
-            out += ["", "**Foreign keys (this table → referenced table):**", ""]
-            for col, tgt, tcol in fks:
-                tl = f"[`{tgt}`](#{slug(prefix, tgt)})" if tgt.lower() in names else f"`{tgt}`"
-                out.append(f"- `{col}` → {tl} `.{tcol}`")
-        if refs:
-            out += ["", "**Referenced by:** " + ", ".join(f"[`{t}`](#{slug(prefix, t)}).`{c}`" for t, c in sorted(refs))]
-    write(fname, "\n".join(out) + "\n")
-    return len(tables)
+                self.objects.append(dict(o, file=r["id"]))
+        self.errors = [(r["id"], e) for r in results for e in r.get("errors", [])]
+        tables = {}
+        for o in self.objects:
+            if o["kind"] == "TABLE" and str(o.get("verb", "")).startswith("create"):
+                tables.setdefault(o["name"].lower(), o)
+        merged = []
+        for o in self.objects:
+            t = tables.get(o["name"].lower())
+            if o["kind"] == "TABLE" and o.get("verb") == "alter" and t is not None and t is not o:
+                t["foreign_keys"] = (t.get("foreign_keys") or []) + (o.get("foreign_keys") or [])
+                t["columns"] = (t.get("columns") or []) + (o.get("columns") or [])
+                t["checks"] = (t.get("checks") or []) + (o.get("checks") or [])
+                if o.get("primary_key") and not t.get("primary_key"):
+                    t["primary_key"] = o["primary_key"]
+                continue
+            merged.append(o)
+        self.objects = merged
+        self.indexes = defaultdict(list)
+        for o in self.objects:
+            if o["kind"] == "INDEX":
+                self.indexes[o["name"].lower()].append(o)
+        counts = Counter(short(o["name"]).lower() for o in self.objects if o["kind"] != "INDEX")
+        self.anchor_name = {o["name"].lower(): (short(o["name"]) if counts[short(o["name"]).lower()] == 1 else o["name"])
+                            for o in self.objects if o["kind"] != "INDEX"}
+        self.by_name = {o["name"].lower(): o for o in self.objects if o["kind"] != "INDEX"}
+        self.by_short = defaultdict(list)
+        for o in self.objects:
+            if o["kind"] != "INDEX":
+                self.by_short[short(o["name"]).lower()].append(o)
+
+    def resolve(self, name):
+        n = name.lower()
+        if n in self.by_name:
+            return self.by_name[n]
+        if len(n.split(".")) >= 3:
+            return None
+        if "dbo." + n in self.by_name:
+            return self.by_name["dbo." + n]
+        c = self.by_short.get(n.split(".")[-1], [])
+        return c[0] if len(c) == 1 else None
+
+    def of(self, *kinds):
+        return sorted((o for o in self.objects if o["kind"] in kinds), key=lambda o: short(o["name"]).lower())
 
 
-def known_objects(dbroot):
-    names = set()
-    for path in walk(dbroot, (".sql",)):
-        for m in re.finditer(r"CREATE\s+(?:TABLE|VIEW|FUNCTION|SYNONYM)\s+(?:\[?\w+\]?\.)?\[?(\w+)\]?", read(path), re.I):
-            names.add(m.group(1).lower())
-    return names
-
-
-def parse_params(sig):
-    """Full parameter list as written: '@OrderId int OUTPUT', '@Lines dbo.OrderLineType READONLY', 'OUT total numeric'."""
-    s = re.sub(r"\s+", " ", sig).strip()
-    if s.startswith("(") and s.endswith(")"):
-        s = s[1:-1]
-    parts = [p.strip() for p in split_columns(s) if p.strip()]
-    if any(p.startswith("@") for p in parts):
-        parts = [p for p in parts if p.startswith("@")]
-    return [p for p in parts if re.match(r"(?i)(@|(?:IN|OUT|INOUT|VARIADIC)\s+)?\w", p)]
-
-
-def select_columns(sql):
-    """Column names of the first SELECT list (aliases preferred), at most 10."""
-    m = re.search(r"\bSELECT\s+(?:DISTINCT\s+|TOP\s*\(?\s*\d+\s*\)?\s+)?(.*?)\bFROM\b", sql, re.S | re.I)
-    if not m:
-        return []
-    cols = []
-    for c in split_columns(m.group(1)):
-        c = re.sub(r"\s+", " ", c).strip()
-        alias = re.search(r"(?i)\bAS\s+\[?\"?(\w+)", c) or re.match(r"\[?(\w+)\]?\s*=", c) or re.search(r"[\[.\s\"]?(\w+)\]?\"?$", c)
-        cols.append(alias.group(1) if alias else c[:30])
-    return cols[:10] + (["…"] if len(cols) > 10 else [])
-
-
-def returns_of(kind, sig_tail, head, body, params):
-    """What a routine gives back: function return type, procedure OUTPUT params / RETURN codes / result sets, view columns."""
-    if kind == "FUNCTION":
-        m = re.match(r"\s*RETURNS\s+(@\w+\s+)?TABLE\s*\((.*?)\)\s*(?:AS|WITH|BEGIN)", sig_tail, re.S | re.I)
-        if m:
-            cols = [re.match(r"\s*\[?(\w+)", c).group(1) for c in split_columns(m.group(2)) if re.match(r"\s*\[?\w+", c) and not re.match(r"(?i)\s*(PRIMARY|UNIQUE|INDEX|CHECK|CONSTRAINT)\b", c)]
-            return f"table ({', '.join(cols[:10])})"
-        if re.match(r"\s*RETURNS\s+TABLE\b(?!\s*\()", sig_tail, re.I):
-            cols = select_columns(body)
-            return "table (inline" + (f": {', '.join(cols)}" if cols else "") + ")"
-        m = re.match(r"\s*RETURNS\s+(SETOF\s+[\w.]+|TABLE\s*\([^)]*\)|[\w.\[\]]+(?:\s*\([^)]*\))?)", sig_tail, re.I)
-        return re.sub(r"\s+", " ", m.group(1)).replace("[", "").replace("]", "") if m else ""
-    if kind == "PROCEDURE":
-        out = [p.split()[0] for p in params if re.search(r"(?i)\b(OUTPUT|OUT)\b|^(OUT|INOUT)\s", p)]
-        codes = sorted(set(re.findall(r"(?i)\bRETURN\s+(-?\d+|@\w+)", body)), key=str)
-        sets = [s for s in re.finditer(r"(?im)^\s*SELECT\s+(?!@\w+\s*=)", body)  # not INSERT … SELECT, subqueries, EXISTS
-                if not re.search(r"(?is)(INSERT\s+(INTO\s+)?[^;]*|\(\s*|EXISTS\s*\(\s*|UNION(\s+ALL)?\s*|=\s*)$", body[max(0, s.start() - 300):s.start()])]
-        bits = []
-        if out:
-            bits.append("OUTPUT " + ", ".join(out))
-        if codes:
-            bits.append("RETURN " + ", ".join(codes[:6]))
-        if sets:
-            cols = select_columns(body[sets[0].start():])
-            bits.append(f"result sets ~{len(sets)}" + (f" (first: {', '.join(cols)})" if cols else ""))
-        return "; ".join(bits)
-    if kind == "VIEW":
-        cols = select_columns(body)
-        return f"rows ({', '.join(cols)})" if cols else ""
-    if kind == "TRIGGER":
-        m = re.search(r"\bON\s+([\w.\[\]]+)\s+(AFTER|FOR|INSTEAD\s+OF|BEFORE)\s+([\w ,]+)", head, re.I)
-        return f"{m.group(2).upper()} {re.sub(r'[ ]+', ' ', m.group(3)).strip().upper()} on {m.group(1).replace('[', '').replace(']', '')}" if m else ""
-    return ""
-
-
-DB_EXPORT = {"routines": [], "tables": []}
-
-
-def gen_routines(dbroot, title, fname, prefix="sp", table_page="db-tables.md", table_prefix="tbl"):
-    known = known_objects(dbroot)
-    rt_re = re.compile(r"CREATE\s+(?:OR\s+(?:ALTER|REPLACE)\s+)?(PROCEDURE|PROC|FUNCTION|VIEW|TRIGGER)\s+(?:\[?(\w+)\]?\.)?\[?([\w\-]+)\]?(.*?)(?:\bAS\b|\bRETURNS\b|\bWITH\b)", re.S | re.I)
-    items = []
-    for path in sorted(walk(dbroot, (".sql",))):
-        raw = read(path)
-        text = re.sub(r"--[^\n]*", "", raw)
-        ms = list(rt_re.finditer(text))  # several routines per script are allowed (migrations)
-        for k, m in enumerate(ms):
-            kind = {"PROC": "PROCEDURE"}.get(m.group(1).upper(), m.group(1).upper())
-            full = parse_params(m.group(4)) if kind in ("PROCEDURE", "FUNCTION") else []
-            params = [(p.split(" ", 1) + [""])[:2] for p in full]
-            body = text[m.end():ms[k + 1].start() if k + 1 < len(ms) else len(text)]
-            tables = sorted(set(t for t in re.findall(r"(?:FROM|JOIN|INTO|UPDATE|MERGE)\s+(?:\[?dbo\]?\.)?\[?([A-Za-z_]\w+)\]?", body, re.I)
-                                if t.lower() in known))
-            rets = returns_of(kind, text[m.end(4):m.end(4) + 1500], m.group(4), body, full)
-            items.append((kind, m.group(3), rel(path), params, tables, rets))
-            DB_EXPORT["routines"].append({"name": m.group(3), "schema": m.group(2) or "", "kind": kind.lower(), "params": full,
-                                          "returns": rets, "touches": tables, "file": rel(path),
-                                          "line": text.count("\n", 0, m.start()) + 1, "page": fname, "anchor": slug(prefix, m.group(3))})
-    table_names = set()
-    for path in walk(dbroot, (".sql",)):
-        for _, tname, _ in iter_create_tables(read(path)):
-            table_names.add(tname.lower())
-    routine_names = {i[1].lower() for i in items}
-    used_by = defaultdict(set)
-    word = re.compile(r"[A-Za-z_]\w+")
-    # EF function imports can have a different C# name than the stored procedure (e.g. X_Func -> X)
-    alias = {}
-    for edmx in (os.path.join(ROOT, p) for p in OPT.get("edmx", [])) if OPT.get("edmx") else walk(ROOT, (".edmx",)):
-        for imp, fn in re.findall(r'FunctionImportName="(\w+)"\s+FunctionName="[\w.]*?\.(\w+)"', read(edmx)):
-            if fn.lower() in routine_names:
-                alias[imp.lower()] = fn.lower()
-    for fp, txt in code_files():
-        for w in set(word.findall(txt)):
-            lw = w.lower()
-            target = lw if lw in routine_names else alias.get(lw)
-            if target:
-                used_by[target].add(fp)
-    callers_sql = defaultdict(set)
-    for kind, name, p, params, tables, _ in items:
-        for t in tables:
-            if t.lower() in routine_names and t.lower() != name.lower():
-                callers_sql[t.lower()].add(name)
-    for path in walk(dbroot, (".sql",)):
-        txt = re.sub(r"--[^\n]*", "", read(path))
-        m = rt_re.search(txt)
-        if not m:
-            continue
-        for ex in re.findall(r"\bEXEC(?:UTE)?\s+(?:@\w+\s*=\s*)?(?:\[?dbo\]?\.)?\[?(\w+)\]?", txt, re.I):
-            if ex.lower() in routine_names and ex.lower() != m.group(3).lower():
-                callers_sql[ex.lower()].add(m.group(3))
-
-    def link_obj(t):
-        if t.lower() in routine_names:
-            return f"[{t}](#{slug(prefix, t)})"
-        if t.lower() in table_names:
-            return f"[{t}]({table_page}#{slug(table_prefix, t)})"
-        return t
-
-    out = [f"# {title}", "", "Every stored procedure, function, view and trigger in the database project, extracted from source.",
-           "",
-           "- **Touches**: tables, views and functions this routine reads or writes (FROM / JOIN / INTO / UPDATE / MERGE). Each links to its definition.",
-           "- **Called by (SQL)**: other routines that EXEC it or select from it.",
-           "- **Returns**: function return type (scalar or table columns); for procedures OUTPUT parameters, RETURN codes and result sets (estimated from top-level SELECTs); view columns; trigger events.",
-           "- **Used by (application)**: code files that mention the routine by name; the call-site link (when `generic-dbaccess` runs) shows each calling method, the access technology (ADO.NET, Dapper, EF, …) and the operation.",
-           "", anchor("index"), ""]
-    for kind in ("PROCEDURE", "FUNCTION", "VIEW", "TRIGGER"):
-        group = sorted([i for i in items if i[0] == kind], key=lambda i: i[1].lower())
-        if group:
-            out.append(f"- [{kind.title()}s ({len(group)})](#{slug('kind', kind)})")
-    for kind in ("PROCEDURE", "FUNCTION", "VIEW", "TRIGGER"):
-        group = sorted([i for i in items if i[0] == kind], key=lambda i: i[1].lower())
-        if not group:
-            continue
-        out += ["", anchor(slug("kind", kind)), "", f"## {kind.title()}s ({len(group)})", "", BACK, "",
-                "| Name | Parameters | Returns | Touches | Called by (SQL) | Used by (application) | File |", "| --- | --- | --- | --- | --- | --- | --- |"]
-        for _, name, p, params, tables, rets in group:
-            ps = ", ".join(f"{a} {b}".strip() for a, b in params)
-            touches = ", ".join(link_obj(t) for t in tables[:30]) + (" …" if len(tables) > 30 else "")
-            callers = ", ".join(f"[{c}](#{slug(prefix, c)})" for c in sorted(callers_sql.get(name.lower(), []))[:15])
-            users = sorted(used_by.get(name.lower(), []))
-            ushow = ", ".join(f"`{u.split('/')[-1]}`" for u in users[:8]) + (f" (+{len(users) - 8})" if len(users) > 8 else "")
-            if users:
-                ushow += f" · [call sites](db-access.md#{slug('dba', name)})"
-            out.append(f"| {anchor(slug(prefix, name))}**{name}** | {md_escape(ps)} | {md_escape(rets) or '—'} | {touches} | {callers} | {ushow} | `{p}` |")
-    write(fname, "\n".join(out) + "\n")
-    return len(items)
-
-def find_databases():
+def find_databases(results):
+    """[(name, path, tables_page, routines_page)] from options, .sqlproj folders, or the folders whose scripts define tables."""
     if OPT.get("databases"):
         return [(d["name"], os.path.join(ROOT, d["path"]), d.get("tables_page"), d.get("routines_page")) for d in OPT["databases"]]
     roots = []
@@ -347,34 +181,412 @@ def find_databases():
         if any(f.lower().endswith(".sqlproj") for f in files):
             roots.append(d)
             dirs[:] = []
-    if not roots:  # no SSDT projects: the shallowest folders holding CREATE TABLE scripts
-        hits = set()
-        for p in walk(ROOT, (".sql",)):
-            if re.search(r"CREATE\s+TABLE", read(p)[:20000], re.I):
-                hits.add(os.path.dirname(p))
-        for h in sorted(hits, key=len):
-            if not any(h.startswith(r + os.sep) for r in roots):
+    if not roots:
+        hits = sorted({os.path.dirname(os.path.join(ROOT, r["id"])) for r in results
+                       if any(o.get("kind") == "TABLE" for o in r.get("objects", []))}, key=len)
+        if not hits:  # no tables: any folder with routines
+            hits = sorted({os.path.dirname(os.path.join(ROOT, r["id"])) for r in results if r.get("objects")}, key=len)
+        for h in hits:
+            if not any(os.path.normpath(h).startswith(os.path.normpath(r) + os.sep) for r in roots):
                 roots.append(h)
         roots = roots[:6]
     out = []
     for k, r in enumerate(roots):
-        name = os.path.basename(r.rstrip("/\\")) or "Database"
+        name = os.path.basename(os.path.normpath(r)) or "Database"
         pre = "db" if k == 0 else slug(name)
         out.append((name, r, f"{pre}-tables.md", f"{pre}-routines.md"))
     return out
 
 
-if __name__ == "__main__":
-    dbs = find_databases()
-    if not dbs:
-        print("generic-sql: no SQL DDL found under", ROOT)
-    for name, path, tp, rp in dbs:
-        tp = tp or "db-tables.md"
-        rp = rp or "db-routines.md"
-        print(f"generic-sql [{name}] tables", gen_tables(path, f"Database tables ({name})", tp))
-        print(f"generic-sql [{name}] routines", gen_routines(path, f"Stored procedures, functions and views ({name})", rp, table_page=tp))
+def col_notes(c):
+    notes = []
+    if c.get("identity"):
+        notes.append("identity")
+    if c.get("primary_key"):
+        notes.append("PK")
+    if c.get("unique"):
+        notes.append("unique")
+    if c.get("rowversion"):
+        notes.append("rowversion")
+    if c.get("computed"):
+        notes.append(f"computed: `{c['computed']}`")
+    if c.get("default"):
+        notes.append(f"default `{c['default']}`")
+    if c.get("collation"):
+        notes.append(f"collate {c['collation']}")
+    if c.get("references"):
+        notes.append(f"FK → {c['references']}")
+    return ", ".join(notes)
+
+
+def nullable(c, pk_cols):
+    if c.get("nullable") is not None:
+        return "yes" if c["nullable"] else "no"
+    return "no" if c.get("primary_key") or c.get("identity") or c["name"].lower() in pk_cols else "yes"
+
+
+def params_text(o):
+    out = []
+    for p in o.get("params") or []:
+        s = f"{p['name']} {p.get('type') or ''}".strip()
+        if p.get("default") is not None:
+            s += f" = {p['default']}"
+        if p.get("output"):
+            s += " OUTPUT"
+        if p.get("readonly"):
+            s += " READONLY"
+        out.append(s)
+    return out
+
+
+def returns_text(o):
+    k = o["kind"]
+    if k == "FUNCTION":
+        return o.get("returns") or ""
+    if k == "PROCEDURE":
+        bits = []
+        outp = [p["name"] for p in o.get("params") or [] if p.get("output")]
+        if outp:
+            bits.append("OUTPUT " + ", ".join(outp))
+        if o.get("return_value"):
+            bits.append("RETURN value")
+        if o.get("result_sets"):
+            bits.append(f"{o['result_sets']} result set(s)")
+        return "; ".join(bits)
+    if k == "VIEW":
+        return f"rows ({', '.join(o['columns'])})" if o.get("columns") else "rows"
+    if k == "TRIGGER":
+        return f"{o.get('trigger_type', '')} {', '.join(o.get('trigger_events') or [])} on {o.get('on_object', '')}".strip()
+    return ""
+
+
+def levels(cons):
+    lv, red = Counter(), []
+    for k, n in (cons or {}).items():
+        c = conversion(k)
+        lv[c["level"]] += n
+        if c["level"] == "redesign":
+            red.append(k)
+    return lv, sorted(red)
+
+
+def pg_cell(o):
+    lv, red = levels(o.get("constructs"))
+    if not lv:
+        return "—"
+    s = " · ".join(f"{k} {lv[k]}" for k in ("auto", "rewrite", "redesign") if lv[k])
+    return s + (f" — **no equivalent:** {', '.join(red)}" if red else "")
+
+
+def generate(db, tables_page, routines_page, prefix_t="tbl", prefix_r="sp"):
+    def link(name):
+        o = db.resolve(name)
+        if not o:
+            return f"`{name}`"
+        an = db.anchor_name[o["name"].lower()]
+        if o["kind"] == "TABLE":
+            return f"[{an}]({tables_page}#{slug(prefix_t, an)})"
+        return f"[{an}]({routines_page}#{slug(prefix_r, an)})"
+
+    # reverse maps: who reads / writes / calls each object
+    read_by, written_by, called_by = defaultdict(set), defaultdict(set), defaultdict(set)
+    for o in db.objects:
+        if o["kind"] in ("TABLE", "INDEX"):
+            continue
+        me = o["name"]
+        for t in o.get("reads", []):
+            x = db.resolve(t)
+            if x:
+                read_by[x["name"].lower()].add(me)
+        for w in o.get("writes", []):
+            x = db.resolve(w["name"])
+            if x:
+                written_by[x["name"].lower()].add(f"{me}|{w['op']}")
+        for c in (o.get("calls") or []) + (o.get("functions") or []):
+            x = db.resolve(c)
+            if x and x is not o:
+                called_by[x["name"].lower()].add(me)
+        if o.get("on_object"):
+            x = db.resolve(o["on_object"])
+            if x:
+                called_by[x["name"].lower()].add(me)
+    referenced_by = defaultdict(set)
+    tables = db.of("TABLE")
+    for t in tables:
+        for fk in t.get("foreign_keys") or []:
+            x = db.resolve(fk.get("references") or "")
+            if x:
+                referenced_by[x["name"].lower()].add((t["name"], ", ".join(fk.get("columns") or [])))
+        for c in t.get("columns") or []:
+            if c.get("references"):
+                x = db.resolve(c["references"])
+                if x:
+                    referenced_by[x["name"].lower()].add((t["name"], c["name"]))
+
+    # ---- tables page
+    out = [f"# Database tables ({db.name})", "",
+           "Every table defined in the database scripts, parsed with Microsoft's T-SQL parser. Each table lists its columns, "
+           "keys and indexes, the tables it references and that reference it, and the routines that read or write it.",
+           "", f"Total tables: {len(tables)}.", "", anchor("index"), "", "| Table | Columns | Read by | Written by | File |", "| --- | ---: | ---: | ---: | --- |"]
+    for t in tables:
+        an = db.anchor_name[t["name"].lower()]
+        out.append(f"| [{t['name']}](#{slug(prefix_t, an)}) | {len(t.get('columns') or [])} | {len(read_by.get(t['name'].lower(), []))} | "
+                   f"{len(written_by.get(t['name'].lower(), []))} | `{t['file']}:{t.get('line', 1)}` |")
+    for t in tables:
+        key = t["name"].lower()
+        an = db.anchor_name[key]
+        flags = [x for x, on in (("system-versioned (temporal)", t.get("temporal")), ("memory-optimized", t.get("memory_optimized")),
+                                 (f"graph {t.get('graph')}", t.get("graph"))) if on]
+        pk = [c.lower() for c in (t.get("primary_key") or [])]
+        out += ["", anchor(slug(prefix_t, an)), "", f"## {t['name']}", "",
+                f"Source: `{t['file']}:{t.get('line', 1)}` · {BACK}" + (f" · **{', '.join(flags)}**" if flags else ""), ""]
+        if t.get("primary_key"):
+            out.append(f"Primary key: `{', '.join(t['primary_key'])}`\n")
+        cols = t.get("columns") or []
+        if cols:
+            out += ["| Column | Type | Nullable | Notes" + (" | PostgreSQL |" if PG_NOTES else " |"),
+                    "| --- | --- | --- | ---" + (" | --- |" if PG_NOTES else " |")]
+            for c in cols:
+                row = f"| {md(c['name'])} | {md(c.get('type') or ('computed' if c.get('computed') else ''))} | {nullable(c, pk)} | {md(col_notes(c))}"
+                if PG_NOTES:
+                    tc = type_conversion(c.get("type"))
+                    row += f" | {md(tc['pg']) if tc and tc['level'] != 'auto' else ''}"
+                out.append(row + " |")
+        fks = t.get("foreign_keys") or []
+        if fks:
+            out += ["", "**Foreign keys (this table → referenced table):**", ""]
+            for fk in fks:
+                out.append(f"- `{', '.join(fk.get('columns') or [])}` → {link(fk.get('references') or '')} `({', '.join(fk.get('ref_columns') or [])})`"
+                           + (f" on delete {fk['on_delete']}" if fk.get("on_delete") not in (None, "NotSpecified", "NoAction") else ""))
+        if referenced_by.get(key):
+            out += ["", "**Referenced by:** " + ", ".join(f"{link(n)}.`{c}`" for n, c in sorted(referenced_by[key]))]
+        uq = t.get("unique_constraints") or []
+        if uq:
+            out += ["", "**Unique:** " + "; ".join(f"`{', '.join(u)}`" for u in uq)]
+        idx = (t.get("indexes") or []) + [{"name": i.get("index"), "columns": i.get("index_columns"), "unique": i.get("unique"),
+                                            "include": i.get("include"), "filter": i.get("filter")} for i in db.indexes.get(key, [])]
+        if idx:
+            out += ["", "**Indexes:**", ""]
+            for i in idx:
+                out.append(f"- `{i.get('name') or '(unnamed)'}`{' unique' if i.get('unique') else ''} on `{', '.join(i.get('columns') or [])}`"
+                           + (f" include `{', '.join(i['include'])}`" if i.get("include") else "") + (f" where `{i['filter']}`" if i.get("filter") else ""))
+        if t.get("checks"):
+            out += ["", "**Checks:** " + "; ".join(f"`{md(c)}`" for c in t["checks"])]
+        if read_by.get(key):
+            out += ["", "**Read by:** " + ", ".join(link(n) for n in sorted(read_by[key]))]
+        if written_by.get(key):
+            w = defaultdict(set)
+            for x in written_by[key]:
+                n, op = x.split("|")
+                w[n].add(op)
+            out += ["", "**Written by:** " + ", ".join(f"{link(n)} ({', '.join(sorted(ops))})" for n, ops in sorted(w.items()))]
+        if called_by.get(key):
+            out += ["", "**Triggers, synonyms and policies on it:** " + ", ".join(link(n) for n in sorted(called_by[key]))]
+        DB_EXPORT["tables"].append({"name": short(t["name"]), "schema": t["name"].split(".")[0] if "." in t["name"] else "dbo",
+                                    "full_name": t["name"], "columns": [f"{c['name']} {c.get('type') or ''}".strip() for c in cols],
+                                    "primary_key": t.get("primary_key"), "foreign_keys": fks, "file": t["file"], "line": t.get("line"),
+                                    "read_by": sorted(read_by.get(key, [])), "written_by": sorted(written_by.get(key, [])),
+                                    "page": tables_page, "anchor": slug(prefix_t, an)})
+    write(tables_page, "\n".join(out) + "\n")
+
+    # ---- routines page
+    used_by = app_usage(db)
+    routines = db.of(*ROUTINE_KINDS)
+    others = db.of(*OTHER_KINDS)
+    out = [f"# Stored procedures, functions, views and triggers ({db.name})", "",
+           "Every routine in the database scripts, parsed with Microsoft's T-SQL parser (not pattern-matched):", "",
+           "- **Reads / Writes**: tables and views it reads, and the ones it changes with the operation (insert, update, delete, merge, truncate, select-into).",
+           "- **Calls**: procedures it executes and functions it uses. **Called by (SQL)**: routines that execute or use it.",
+           "- **Returns**: function return type; for procedures OUTPUT parameters, RETURN value and result sets; view columns; trigger events.",
+           "- **Used by (application)**: code files that name it; the call-site link (generic-dbaccess) shows the calling method, the access technology and the operation.",
+           "- **PostgreSQL**: how its constructs convert (automatic / rewrite / redesign); see [PostgreSQL conversion](db-postgres.md) for details." if PG_NOTES else "",
+           "", anchor("index"), ""]
+    for kind in ROUTINE_KINDS + OTHER_KINDS:
+        n = sum(1 for o in routines + others if o["kind"] == kind)
+        if n:
+            out.append(f"- [{kind.title()}s ({n})](#{slug('kind', kind)})")
+    for kind in ROUTINE_KINDS:
+        group = [o for o in routines if o["kind"] == kind]
+        if not group:
+            continue
+        out += ["", anchor(slug("kind", kind)), "", f"## {kind.title()}s ({len(group)})", "", BACK]
+        for o in group:
+            key = o["name"].lower()
+            an = db.anchor_name[key]
+            ps = params_text(o)
+            rets = returns_text(o)
+            out += ["", anchor(slug(prefix_r, an)), "", f"### {o['name']}", "",
+                    f"`{o['file']}:{o.get('line', 1)}` · {o.get('lines', 1)} lines" + (" · CLR" if o.get("clr") else "")
+                    + (" · dynamic SQL" if o.get("dynamic_sql") else "") + f" · [↑ {kind.title()}s](#{slug('kind', kind)})", ""]
+            rows = []
+            if ps:
+                rows.append(("Parameters", ", ".join(f"`{md(p)}`" for p in ps)))
+            if rets:
+                rows.append(("Returns", md(rets)))
+            if o.get("reads"):
+                rows.append(("Reads", ", ".join(link(t) for t in sorted(set(o["reads"])))))
+            if o.get("writes"):
+                rows.append(("Writes", ", ".join(f"{link(w['name'])} ({w['op']})" for w in o["writes"])))
+            calls = sorted(set((o.get("calls") or []) + [f for f in (o.get("functions") or []) if db.resolve(f)]))
+            if calls:
+                rows.append(("Calls", ", ".join(link(c) for c in calls)))
+            if called_by.get(key):
+                rows.append(("Called by (SQL)", ", ".join(link(c) for c in sorted(called_by[key]))))
+            if o.get("temp_tables"):
+                rows.append(("Temp tables", ", ".join(f"`{t}`" for t in o["temp_tables"])))
+            users = sorted(used_by.get(key, []))
+            if users:
+                rows.append(("Used by (application)", ", ".join(f"`{u}`" for u in users[:10]) + (f" (+{len(users) - 10})" if len(users) > 10 else "")
+                             + f" · [call sites](db-access.md#{slug('dba', short(o['name']))})"))
+            if PG_NOTES:
+                rows.append(("PostgreSQL", pg_cell(o)))
+            if rows:
+                out += ["| | |", "| --- | --- |"] + [f"| **{a}** | {b} |" for a, b in rows]
+            DB_EXPORT["routines"].append({"name": short(o["name"]), "schema": o["name"].split(".")[0] if "." in o["name"] else "",
+                                          "full_name": o["name"], "kind": kind.lower(), "params": ps, "returns": rets,
+                                          "touches": sorted({short(t) for t in o.get("reads", [])} | {short(w["name"]) for w in o.get("writes", [])}
+                                                            | {short(c) for c in calls}),
+                                          "reads": o.get("reads", []), "writes": o.get("writes", []), "calls": calls,
+                                          "called_by": sorted(called_by.get(key, [])), "constructs": o.get("constructs", {}),
+                                          "conversion": dict(levels(o.get("constructs"))[0]), "no_pg_equivalent": levels(o.get("constructs"))[1],
+                                          "file": o["file"], "line": o.get("line"), "page": routines_page, "anchor": slug(prefix_r, an)})
+    for kind in OTHER_KINDS:
+        group = [o for o in others if o["kind"] == kind]
+        if not group:
+            continue
+        out += ["", anchor(slug("kind", kind)), "", f"## {kind.title()}s ({len(group)})", "", BACK, "",
+                "| Name | Details | Used by | File |", "| --- | --- | --- | --- |"]
+        for o in group:
+            key = o["name"].lower()
+            an = db.anchor_name[key]
+            det = o.get("type_kind") or ""
+            if o.get("columns") and kind == "TYPE":
+                det += ": " + ", ".join(f"{c['name']} {c.get('type') or ''}".strip() for c in o["columns"])
+            if o.get("on_object"):
+                det += f"for {link(o['on_object'])}"
+            if o.get("targets"):
+                det += "on " + ", ".join(link(t) for t in o["targets"])
+            users = sorted(called_by.get(key, set()) | set(used_by.get(key, [])))
+            out.append(f"| {anchor(slug(prefix_r, an))}**{o['name']}** | {md(det)} | {', '.join(f'`{u}`' for u in users[:8])} | `{o['file']}:{o.get('line', 1)}` |")
+            DB_EXPORT["objects"].append({"name": short(o["name"]), "full_name": o["name"], "kind": kind.lower(), "file": o["file"],
+                                         "line": o.get("line"), "page": routines_page, "anchor": slug(prefix_r, an)})
+    write(routines_page, "\n".join(x for x in out if x is not None) + "\n")
+    return len(tables), len(routines) + len(others)
+
+
+def app_usage(db):
+    """Object -> application files that name it (identifier or string), EF function-import aliases followed."""
+    names = {short(o["name"]).lower(): o["name"].lower() for o in db.objects if o["kind"] in ROUTINE_KINDS + OTHER_KINDS}
+    alias = {}
+    edmx_paths = [os.path.join(ROOT, p) for p in OPT.get("edmx", [])] if OPT.get("edmx") else list(sql_parse.walk(ROOT, (".edmx",), SKIP_DIRS))
+    for edmx in edmx_paths:
+        for imp, fn in re.findall(r'FunctionImportName="(\w+)"\s+FunctionName="[\w.]*?\.(\w+)"', sql_parse.read_text(edmx)):
+            if fn.lower() in names:
+                alias[imp.lower()] = names[fn.lower()]
+    used = defaultdict(set)
+    word = re.compile(r"[A-Za-z_]\w+")
+    for fp, txt in code_files():
+        for w in set(word.findall(txt)):
+            lw = w.lower()
+            target = names.get(lw) or alias.get(lw)
+            if target:
+                used[target].add(fp.split("/")[-1])
+    return used
+
+
+def postgres_page(dbs, code_sql, stats):
+    """db-postgres.md: what converts automatically, what needs a rewrite, what has no PostgreSQL equivalent."""
+    lv_all = Counter()
+    red_rows, obj_rows, type_rows = [], [], Counter()
+    for db in dbs:
+        for o in db.objects:
+            lv, red = levels(o.get("constructs"))
+            lv_all.update(lv)
+            if lv.get("rewrite") or lv.get("redesign"):
+                an = db.anchor_name.get(o["name"].lower())
+                page = db.tables_page if o["kind"] == "TABLE" else db.routines_page
+                pref = "tbl" if o["kind"] == "TABLE" else "sp"
+                obj_rows.append((o["name"], o["kind"], lv.get("auto", 0), lv.get("rewrite", 0), lv.get("redesign", 0), page, slug(pref, an or short(o["name"]))))
+            for k in red:
+                red_rows.append((k, o["name"], o["kind"], f"{o['file']}:{o.get('line', 1)}"))
+            for c in o.get("columns") or []:
+                tc = type_conversion(c.get("type"))
+                if tc and tc["level"] != "auto":
+                    type_rows[((c.get("type") or "").split("(")[0].lower(), tc["level"], tc["pg"])] += 1
+    code_lv, code_red = Counter(), []
+    for s in code_sql:
+        cons = dict((s.get("script") or {}).get("constructs") or {})
+        lv, red = levels(cons)
+        code_lv.update(lv)
+        for k in red:
+            code_red.append((k, f"{s['file']}:{s['line']}"))
+    out = ["# PostgreSQL conversion", "",
+           "How the SQL Server code converts to PostgreSQL, construct by construct, from the parsed scripts and the SQL embedded "
+           "in application code. **Automatic**: schema-conversion tooling or a direct rename handles it. **Rewrite**: PostgreSQL "
+           "has an equivalent but the code is rewritten by hand. **Redesign**: no PostgreSQL equivalent; the feature needs a "
+           "different design. Classification: the toolkit's pg_conversion.json (AWS SQL Server to Aurora PostgreSQL playbook, "
+           "PostgreSQL documentation).", "",
+           "| Level | In database objects | In SQL embedded in code |", "| --- | ---: | ---: |"]
+    for k, label in (("auto", "Automatic"), ("rewrite", "Rewrite"), ("redesign", "Redesign (no equivalent)")):
+        out.append(f"| {label} | {lv_all.get(k, 0)} | {code_lv.get(k, 0)} |")
+    if red_rows or code_red:
+        out += ["", "## No PostgreSQL equivalent", "", "| Construct | Where | Replacement approach |", "| --- | --- | --- |"]
+        grp = defaultdict(list)
+        for k, name, kind, at in red_rows:
+            grp[k].append(f"{name} (`{at}`)")
+        for k, at in code_red:
+            grp[k].append(f"code `{at}`")
+        for k, where in sorted(grp.items(), key=lambda x: -len(x[1])):
+            out.append(f"| {md(k)} | {', '.join(where[:6])}{f' +{len(where) - 6} more' if len(where) > 6 else ''} | {md(conversion(k)['pg'])} |")
+    if type_rows:
+        out += ["", "## Column types to map by hand", "", "| SQL Server type | Columns | Level | PostgreSQL |", "| --- | ---: | --- | --- |"]
+        for (t, lvl, pg), n in sorted(type_rows.items(), key=lambda x: -x[1]):
+            out.append(f"| {md(t)} | {n} | {lvl} | {md(pg)} |")
+    if obj_rows:
+        out += ["", "## Objects that need manual work", "", "| Object | Kind | Automatic | Rewrite | Redesign |", "| --- | --- | ---: | ---: | ---: |"]
+        for name, kind, a, r, d, page, an in sorted(obj_rows, key=lambda x: (-x[4], -x[3], x[0])):
+            out.append(f"| [{name}]({page}#{an}) | {kind} | {a} | {r} | {d} |")
+    if stats.get("candidates"):
+        out += ["", "## SQL embedded in application code", "",
+                f"{stats.get('accepted', 0)} statements parsed from string literals in {stats.get('files', 0)} source files "
+                f"({sum(1 for s in code_sql if s.get('dynamic'))} built at run time). Every one runs as written against the "
+                "database, so each needs the same conversion as a stored procedure; call sites are in [Database access](db-access.md)."]
+    write("db-postgres.md", "\n".join(out) + "\n")
+
+
+def main():
+    eng = sql_parse.engine()
+    DB_EXPORT["engine"] = eng
+    if not eng:
+        print("generic-sql: no SQL parser available (.NET SDK 8+ or pip sqlglot): run install_prerequisites.py")
+        return
+    results = sql_parse.scan_files(ROOT, SKIP_DIRS)
+    dbs_cfg = find_databases(results)
+    if not dbs_cfg:
+        print("generic-sql: no SQL objects found under", ROOT)
+    dbs = []
+    for name, path, tp, rp in dbs_cfg:
+        tp, rp = tp or "db-tables.md", rp or "db-routines.md"
+        mine = [r for r in results if os.path.normpath(os.path.join(ROOT, r["id"])).startswith(os.path.normpath(path) + os.sep)]
+        db = Db(name, path, mine)
+        db.tables_page, db.routines_page = tp, rp
+        nt, nr = generate(db, tp, rp)
+        dbs.append(db)
+        print(f"generic-sql [{name}] tables {nt}, routines and other objects {nr}" + (f", {len(db.errors)} parse errors" if db.errors else "") + f" ({eng})")
+    code_sql, stats = sql_parse.scan_code(ROOT, SKIP_DIRS) if dbs else ([], {})
+    if dbs and PG_NOTES:
+        postgres_page(dbs, code_sql, stats)
     if dbs:  # machine-readable copy for generic-dbaccess, tools and retrieval
+        DB_EXPORT["code_sql"] = [{"file": s["file"], "line": s["line"], "reads": (s.get("script") or {}).get("reads", []),
+                                  "writes": (s.get("script") or {}).get("writes", []), "calls": (s.get("script") or {}).get("calls", []),
+                                  "functions": (s.get("script") or {}).get("functions", []), "dynamic": s.get("dynamic", False),
+                                  "context": s.get("context", [])} for s in code_sql]
+        DB_EXPORT["code_sql_stats"] = stats
         agent = os.path.join(CFG.get("docs_dir", "docs"), "agent")
         os.makedirs(agent, exist_ok=True)
         with open(os.path.join(agent, "db.json"), "w", encoding="utf-8", newline="\n") as fh:
             json.dump(DB_EXPORT, fh, ensure_ascii=False, indent=1)
+
+
+if __name__ == "__main__":
+    main()

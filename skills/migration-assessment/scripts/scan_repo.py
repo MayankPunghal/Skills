@@ -1,12 +1,13 @@
 """Run every deterministic migration check on one repository (or all) and write evidence-backed findings.
 
-    python <skill>/scripts/scan_repo.py --repo NAME | --all [--force] [--online | --offline]
+    python <skill>/scripts/scan_repo.py --repo NAME | --all [--force] [--online | --offline]   (online is the default)
 
 Needs discover_estate.py first. Writes:
   assessment/findings/<repo>.json   findings: rule, category, severity, confidence, project, occurrences, evidence (file:line, masked)
   assessment/scan/<repo>.json       scan facts: files scanned per type, endpoints, connection strings (no secrets), packages,
                                     tests, case-mismatch checks, artefacts, category coverage (what was checked)
-Engines: line rules (data/rules.json), package map (data/package_map.json, plus api.nuget.org when online), config parser
+Engines: line rules (data/rules.json), package map (data/package_map.json, plus api.nuget.org when online: deprecation,
+advisories, targets and licence history of every package, see licence_change()), config parser
 (connection strings, appSettings secrets: key names only), endpoint extractor (URLs/IPs/UNC: internal vs external),
 path-case checker (literals vs files on disk), structural checks (project format, TFM support, artefacts, tests, git).
 Evidence snippets never contain secret values (see _common.mask).
@@ -18,6 +19,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -32,7 +34,7 @@ MAX_FILE_BYTES = 2_500_000
 TYPE_BY_EXT = {".cs": "cs", ".vb": "vb", ".aspx": "markup", ".ascx": "markup", ".master": "markup", ".asax": "markup", ".ashx": "markup",
                ".asmx": "markup", ".svc": "markup", ".cshtml": "markup", ".vbhtml": "markup", ".razor": "markup", ".config": "config",
                ".sql": "sql", ".csproj": "proj", ".vbproj": "proj", ".fsproj": "proj", ".ps1": "script", ".psm1": "script", ".bat": "script",
-               ".cmd": "script", ".vbs": "script", ".js": "js", ".xslt": "xml", ".xsl": "xml", ".pubxml": "xml", ".targets": "proj", ".props": "proj"}
+               ".cmd": "script", ".vbs": "script", ".js": "js", ".xslt": "xml", ".xsl": "xml", ".pubxml": "xml", ".reg": "script", ".targets": "proj", ".props": "proj"}
 CI_NAMES = re.compile(r"(?i)^(azure-pipelines[\w.-]*\.ya?ml|jenkinsfile|\.gitlab-ci\.yml|buildspec[\w.-]*\.ya?ml|appveyor\.yml|bitbucket-pipelines\.yml|.*\.ya?ml)$")
 VENDOR_JS = re.compile(r"(?i)(^|[\\/])(jquery|bootstrap|modernizr|respond|angular|knockout|moment|lodash|underscore|popper|datatables|select2|"
                        r"chosen|kendo|telerik|signalr|microsoftajax|microsoftmvc|_references|json2|toastr|sweetalert|chart|d3|highcharts|"
@@ -54,7 +56,7 @@ SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\.0\.0\.1|0\.0\.0\.0|\+|\*|example\
                         r"code\.jquery\.com|ajax\.aspnetcdn\.com|cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com|stackoverflow\.com|"
                         r"microsoft\.com|www\.microsoft\.com|support\.microsoft\.com|mozilla\.org|www\.mozilla\.org|feross\.org|git\.io|"
                         r"schemas\.datacontract\.org|.*\.datacontract\.org|schemas\.openxmlformats\.org|semver\.org|spdx\.org|xmlsoap\.org|www\.omg\.org|ns\.adobe\.com|www\.iana\.org|iana\.org|.*\.local\.test)$")
-IP_SKIP_LINE = re.compile(r"(?i)(GeneratedCode|TechTalk|oid|TextExtension|\{text\}|1\.3\.6\.1|2\.5\.29|version|AssemblyVersion|AssemblyFileVersion|culture=|PublicKeyToken|\bv\d|codeBase|bindingRedirect|newVersion|oldVersion|"
+IP_SKIP_LINE = re.compile(r"(?i)(GeneratedCode|TechTalk|\boid\b|TextExtension|\{text\}|1\.3\.6\.1|2\.5\.29|version|AssemblyVersion|AssemblyFileVersion|culture=|PublicKeyToken|\bv\d|codeBase|bindingRedirect|newVersion|oldVersion|"
                           r"targetFramework|package id=|Version=\"|Include=\"[^\"]*,\s*Version)")
 INTERNAL_SUFFIX = re.compile(r"(?i)\.(local|corp|lan|internal|intranet|intra|ad|domain|home|private|priv|loc|int|office|net\.local)$")
 CONN_KEYS = {"server": re.compile(r"(?i)^(data\s*source|server|address|addr|network\s*address|host)$"),
@@ -113,6 +115,7 @@ class Scan:
         self.pdirs = sorted(((os.path.normpath(os.path.dirname(os.path.join(self.root, p["path"]))), p) for p in inv["projects"]), key=lambda x: -len(x[0]))
         self.proj_by_path = {p["path"]: p for p in inv["projects"]}
         self.files_ci = None
+        self.parsed_sql = False
 
     def project_of(self, path):
         path = os.path.normpath(path)
@@ -130,6 +133,8 @@ class Scan:
                 "title": rule["title"], "severity": rule["sev"], "confidence": rule["conf"], "occurrences": 0, "files": [], "evidence": [],
                 "why": rule.get("why", ""), "fix": rule.get("fix", ""), "alt": rule.get("alt", ""), "effort_key": rule.get("effort", "small-change"),
                 "baseline": bool(rule.get("baseline")), "db": rule.get("db"), "question": rule.get("question"), "refs": rule.get("refs", []), "source": "scan"}
+            if rule.get("db_only"):  # database-side work: priced in the database estimate only, not in application packages
+                f["db_only"] = True
         f["occurrences"] += count
         if file not in f["files"]:
             f["files"].append(file)
@@ -140,9 +145,53 @@ class Scan:
             f["evidence"].append(ev)
         return f
 
-    def synthetic(self, rid, cat, title, sev, conf, why, fix, alt="", effort="small-change", refs=None, question=None, db=None, baseline=False):
+    def synthetic(self, rid, cat, title, sev, conf, why, fix, alt="", effort="small-change", refs=None, question=None, db=None, baseline=False,
+                  db_only=False):
         return {"id": rid, "cat": cat, "title": title, "sev": sev, "conf": conf, "why": why, "fix": fix, "alt": alt, "effort": effort,
-                "refs": refs or [], "question": question, "db": db, "baseline": baseline}
+                "refs": refs or [], "question": question, "db": db, "baseline": baseline, "db_only": db_only}
+
+    # ---------------------------------------------------------------- parsed SQL (database objects and SQL embedded in code)
+    def db_findings(self, dbi):
+        """Findings from the T-SQL parser instead of line patterns: rules with a "parsed" mapping, plus one finding per construct
+        that has no PostgreSQL equivalent (data/pg_conversion.json level "redesign"). Covers .sql objects and SQL in C#."""
+        import _dbinventory as DBI
+        mapped = [r for r in self.rules if r.get("parsed")]
+        claimed = {k for r in mapped for k in r["parsed"].get("constructs", [])}
+        sites = [(o, "database") for o in dbi.get("objects", [])] + [(o, "code") for o in dbi.get("code_sql", [])]
+        for o, where in sites:
+            project = self.project_of(os.path.join(self.root, o["file"]))
+            label = f"{o.get('kind', '')} {o.get('name', '')}".strip() if where == "database" else "SQL embedded in code"
+            calls = [c.split(".")[-1].lower() for c in o.get("calls", [])]
+            cons = o.get("constructs") or {}
+            for r in mapped:
+                p = r["parsed"]
+                hit_c = {k: cons[k] for k in p.get("constructs", []) if cons.get(k)}
+                hit_p = sorted({c for c in calls if any(c.startswith(x) for x in p.get("calls", []))})
+                n = sum(hit_c.values()) + len(hit_p)
+                if n:
+                    what = ", ".join([f"{k} x{v}" for k, v in hit_c.items()] + hit_p)
+                    f = self.add(dict(r, db=dict(r.get("db") or {}, priced_by_inventory=True)), project, o["file"], o.get("line", 0),
+                                 f"{label}: {what}", count=n, extra={"parsed": True})
+                    f["source"] = "sql-parse"
+            for k, v in cons.items():
+                c = DBI.conversion(k)
+                if c["level"] != "redesign" or k in claimed:
+                    continue
+                r = self.synthetic("DB-PG-" + slug(k).upper(), "database", f"No PostgreSQL equivalent: {k}", "High", "Confirmed",
+                                   f"The T-SQL parser found `{k}`, which PostgreSQL cannot run as written; the feature has to be replaced "
+                                   "by a different design before the object (or the SQL in code) can work on PostgreSQL.",
+                                   c["pg"], effort="db-object-small", refs=["S11", "S12", "S14"],
+                                   db={"pg": "redesign", "priced_by_inventory": True}, db_only=True)
+                f = self.add(r, project, o["file"], o.get("line", 0), f"{label}: {k} x{v}", count=v, extra={"parsed": True})
+                f["source"] = "sql-parse"
+        for e in dbi.get("parse_errors", [])[:200]:
+            r = self.synthetic("DB-SQL-SYNTAX", "database", "SQL script does not parse", "Medium", "Confirmed",
+                               "Microsoft's T-SQL parser rejects this script, so it cannot be deployed as written (or it relies on a "
+                               "tool-specific syntax such as SQLCMD variables). Objects in the failing batch are missing from the inventory.",
+                               "Fix the syntax or confirm how the script is really deployed; rerun the scan.", effort="per-occurrence-small",
+                               refs=["S11"], db={"pg": "rework", "priced_by_inventory": True}, db_only=True)
+            f = self.add(r, self.project_of(os.path.join(self.root, e["file"])), e["file"], e.get("line", 0), e["message"])
+            f["source"] = "sql-parse"
 
     # ---------------------------------------------------------------- line rules
     def scan_files(self):
@@ -183,6 +232,8 @@ class Scan:
         for r in self.rules:
             if not (ftype in r["_types"] or "any" in r["_types"] or (ftype == "any-only" and "any" in r["_types"])):
                 continue
+            if ftype == "sql" and self.parsed_sql and r.get("parsed"):  # the parser decides (db_findings), not the pattern
+                continue
             if ftype == "any-only" and "any" not in r["_types"]:
                 continue
             if not r["_any"].search(clean):
@@ -196,7 +247,7 @@ class Scan:
                 if cl and cl.match(line):
                     continue
                 if r["_any"].search(line) and not (r["_not"] and r["_not"].search(line)):
-                    if r["id"] == "DATA-INTEGRATED-SECURITY" and re.search(r"(?i)\(localdb\)|AttachDbFilename|SQLEXPRESS", line):
+                    if r["id"] == "DATA-INTEGRATED-SECURITY" and re.search(r"(?i)\(localdb\)|AttachDbFilename|\bSQLEXPRESS\b", line):
                         self.add(LOCALDB_RULE, project, rp, i, line)  # developer database: production auth is unknown
                         continue
                     self.add(r, project, rp, i, line)
@@ -367,9 +418,48 @@ class Scan:
                 if row["status"] == "unknown" and not n.get("found"):
                     row["note"] = "Not on nuget.org: private/internal package (needs source or a CodeArtifact feed)."
                     row["status"], row["severity"] = "private", "Medium"
+                lic = n.get("licence_info") or {}
+                if lic.get("verdict") and row["status"] in ("ok", "upgrade", "unknown", "licence"):
+                    row["status"] = "licence"
+                    row["severity"] = "Medium" if lic["verdict"] == "restrictive-now" else "Low"
+                    row["note"] = lic["text"] + (" " + row["note"] if row["note"] and row["note"] not in lic["text"] else "")
+                    row["licence"] = lic
+                    if not row["replacement"] or row["replacement"] == "Current version":
+                        row["replacement"] = (f"Stay on {lic['last_open']} (last version under {lic['used_label']}) or review / buy the new licence"
+                                              if lic.get("last_open") else "Review the licence terms; find an open-source alternative if they do not fit")
+            if online and (row.get("nuget") or {}).get("found"):
+                row["recommendation"] = recommend(row, row["nuget"].get("versions_meta"), self.cfg.get("target_dotnet", "net10.0"))
+                plat = row["nuget"].get("platform") or {}
+                if (plat.get("win_only_native") or plat.get("win_only_lib")) and row["status"] in ("ok", "upgrade", "unknown", "licence", "replace"):
+                    why = (f"ships native binaries only for Windows ({', '.join(plat['native_rids'])})" if plat.get("win_only_native")
+                           else "its .NET builds target net*-windows only")
+                    row["status"], row["severity"] = "windows-only", "High"
+                    row["note"] = f"Windows-only on Linux: the version in use {why}. " + (row["note"] or "")
+                    row["replacement"] = row["replacement"] if row["replacement"] not in ("", "Current version") else "A cross-platform package (or a version with linux-* binaries)"
             table.append(row)
             first = a["files"][0]
             line = self.find_line(first, pid)
+            rec = row.get("recommendation") or {}
+            if rec.get("action") == "downgrade":   # a suggestion, never enforced: the client may prefer to keep the version and buy the licence
+                row["replacement"] = f"Optional, saves the licence cost: {rec['version']} ({rec['why']}). Or keep {', '.join(row['versions'])} with a licence."
+            if rec.get("action") == "upgrade" and row["status"] not in ("blocker", "replace", "windows-only", "private"):
+                big = any(k in r for r in rec.get("risks", []) for k in ("major version", "licence decision", "licence differs"))
+                r = self.synthetic("PKG-UPGRADE", "packages", f"Package {pid}: {rec['action']} to {rec['version']}", "Medium" if big else "Low",
+                                   "Confirmed", rec["why"] + (". Risks: " + "; ".join(rec["risks"]) if rec.get("risks") else "."),
+                                   (f"Upgrade {pid} to {rec['version']} (the lowest safe version), not automatically to the latest." if rec["action"] == "upgrade"
+                                    else f"Move {pid} back to {rec['version']} (last version under the old licence), or confirm the licence for the version in use."),
+                                   rec["version"], "small-change" if big else "package-replace", ["S3"])
+                r["id"] = f"PKG-UPG-{slug(pid)}"
+                f = self.add(r, "(repository)", first, line, f"{pid} {', '.join(row['versions'])} -> {rec['version']}", count=len(a["projects"]))
+                f["package"] = pid
+                f["projects_affected"] = sorted(a["projects"])
+            elif rec.get("risks") and any(k in x for x in rec["risks"] for k in ("Windows-only", "unmaintained")):
+                r = self.synthetic("PKG-RISK", "packages", f"Package {pid}: {'; '.join(x for x in rec['risks'] if 'Windows-only' in x or 'unmaintained' in x)}",
+                                   "Medium" if any("Windows-only" in x for x in rec["risks"]) else "Low", "Likely", "; ".join(rec["risks"]) + ".",
+                                   "Plan a replacement, or confirm the package is still fit for the target.", "", "package-replace", ["S3"])
+                r["id"] = f"PKG-RISK-{slug(pid)}"
+                f = self.add(r, "(repository)", first, line, f"{pid} {', '.join(row['versions'])}", count=len(a["projects"]))
+                f["package"] = pid
             if row["status"] in ("blocker", "replace", "windows-only", "licence", "private") and row["severity"] in ("Blocker", "High", "Medium", "Low"):
                 eff = "package-blocker" if row["status"] in ("blocker", "windows-only") and row["severity"] in ("Blocker", "High") else "package-replace"
                 r = self.synthetic(f"PKG-{row['status'].upper()}", "packages", f"Package {pid} ({row['status']})", row["severity"],
@@ -389,6 +479,14 @@ class Scan:
                 r["id"] = f"SEC-VULN-{slug(pid)}"
                 f = self.add(r, "(repository)", first, line, f"{pid} {', '.join(row['versions'])}")
                 f["package"] = pid
+        winonly = {r["id"].lower() for r in table if r["status"] == "windows-only"}
+        for r in table:
+            deps = {dp.get("id", "").lower() for m in ((r.get("nuget") or {}).get("versions_meta") or []) if m["v"] in r["versions"]
+                    for dp in m.get("deps", [])}
+            hit = sorted(deps & winonly)
+            if hit and r["status"] in ("ok", "upgrade", "unknown"):
+                r["status"], r["severity"] = "windows-only", "Medium"
+                r["note"] = f"Depends on Windows-only {', '.join(hit)}. " + (r["note"] or "")
         self.facts["packages"] = table
 
     def find_line(self, relfile, needle):
@@ -613,9 +711,13 @@ def nuget_info(pid, versions, cache_dir):
     """Public package metadata from api.nuget.org (cached): latest version, frameworks, deprecation, vulnerabilities, licence."""
     os.makedirs(cache_dir, exist_ok=True)
     cp = os.path.join(cache_dir, slug(pid) + ".json")
-    if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < 14 * 86400:
-        raw = read_json(cp)
-    else:
+    try:
+        raw = read_json(cp) if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < 14 * 86400 else None
+    except (ValueError, OSError):  # damaged cache entry (interrupted run): fetch again
+        raw = None
+    if raw is None or (raw.get("v", 0) < 3 and not raw.get("error")):   # v3 cache: licenseUrl + published
+        raw = None
+    if raw is None:
         url = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/index.json"
         try:
             req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"})
@@ -631,11 +733,14 @@ def nuget_info(pid, versions, cache_dir):
                         b = r.read()
                         page = json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
                 pages.append(page)
-            raw = {"items": [{"items": [{"catalogEntry": {k: it["catalogEntry"].get(k) for k in ("version", "listed", "deprecation", "vulnerabilities", "licenseExpression", "dependencyGroups")}}
-                                        for it in pg.get("items", [])]} for pg in pages]}
+            raw = {"v": 3, "items": [{"items": [{"catalogEntry": {k: it["catalogEntry"].get(k) for k in ("version", "listed", "published", "deprecation", "vulnerabilities", "licenseExpression", "licenseUrl", "dependencyGroups")}}
+                                                for it in pg.get("items", [])]} for pg in pages]}
         except (urllib.error.URLError, OSError, ValueError) as ex:
             raw = {"error": str(ex)[:200], "status": getattr(ex, "code", None)}
-        json.dump(raw, open(cp, "w", encoding="utf-8"))
+        tmp = f"{cp}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(raw, fh)
+        os.replace(tmp, cp)  # atomic, so a parallel lookup or a crash never sees half a file
     if raw.get("error"):
         return {"found": False, "error": raw["error"]} if raw.get("status") != 404 else {"found": False}
     entries = [it["catalogEntry"] for pg in raw.get("items", []) for it in pg.get("items", [])]
@@ -660,7 +765,230 @@ def nuget_info(pid, versions, cache_dir):
     used_dep = next((e.get("deprecation") for e in entries if ver_tuple(e.get("version", "0")) in used and e.get("deprecation")), None)
     return {"found": True, "latest": latest.get("version"), "frameworks": fws, "supports_modern": modern,
             "deprecated": dep_text(latest.get("deprecation")), "used_version_deprecated": dep_text(used_dep),
-            "vulnerable_versions": vuln, "licence": latest.get("licenseExpression")}
+            "vulnerable_versions": vuln, "licence": latest.get("licenseExpression"), "licence_info": licence_change(pid, entries, versions),
+            "versions_meta": versions_meta(entries, versions), "platform": platform_assets(pid, entries, versions, cache_dir)}
+
+
+def platform_assets(pid, entries, versions, cache_dir):
+    """Native binaries in the version in use (runtimes/<rid>/native): Windows-only when every RID is win-*. Any package."""
+    used = [v for v in versions if v]
+    if not used:
+        return None
+    try:
+        uv = max(used, key=ver_tuple)
+    except ValueError:
+        return None
+    cp = os.path.join(cache_dir, f"{slug(pid)}-{slug(uv)}-files.json")
+    files = read_json(cp) if os.path.exists(cp) else None
+    if files is None:
+        try:
+            reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
+            def get(u):
+                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"}), timeout=20) as r:
+                    b = r.read()
+                return json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
+            leaf = get(get(reg)["catalogEntry"])
+            files = [e.get("fullName", "") for e in leaf.get("packageEntries", [])]
+        except (urllib.error.URLError, OSError, ValueError, KeyError):
+            files = []
+        json.dump(files, open(cp, "w", encoding="utf-8"))
+    rids = sorted({f.split("/")[1] for f in files if f.lower().startswith("runtimes/") and f.count("/") >= 3 and "/native/" in f.lower()})
+    libs = sorted({f.split("/")[1].lower() for f in files if f.lower().startswith("lib/") and f.count("/") >= 2})
+    win_only_native = bool(rids) and all(r.lower().startswith("win") for r in rids)
+    win_only_lib = bool(libs) and all("-windows" in l or l.startswith(("net4", "net3", "net2")) for l in libs) and any("-windows" in l for l in libs)
+    return {"native_rids": rids, "win_only_native": win_only_native, "win_only_lib": win_only_lib}
+
+
+# ---------------------------------------------------------------- version recommendation (any package, from nuget.org metadata)
+def tfm_class(tfm, target_major):
+    """'ok' (runs on the target .NET), 'windows' (target-compatible but Windows-only TFM), 'netfx' (.NET Framework only) or None."""
+    t = (tfm or "").lower().lstrip(".")
+    if t in ("", "any", "unsupported"):
+        return None
+    m = re.match(r"^net(?:coreapp)?(\d+)\.(\d+)(-windows.*)?$", t)
+    if t.startswith(("netstandard", "netcoreapp")) or (m and int(m.group(1)) >= 5):
+        if m and int(m.group(1)) >= 5 and int(m.group(1)) > target_major:
+            return None                                   # needs a newer .NET than the target
+        return "windows" if m and m.group(3) else "ok"
+    if t.startswith(("netframework", "net4", "net3", "net2", "net1")) or re.match(r"^net\d{2,3}$", t):
+        return "netfx"
+    return None
+
+
+def versions_meta(entries, versions):
+    """Per-version facts the recommendation needs: frameworks, advisories, deprecation, licence rank, listed, published."""
+    used = {v for v in versions if v}
+    out = []
+    for e in entries:
+        v = e.get("version", "")
+        if re.search(r"-", v) and v not in used:
+            continue
+        out.append({"v": v, "tfms": sorted({(g.get("targetFramework") or "any") for g in (e.get("dependencyGroups") or [])}),
+                    "vuln": bool(e.get("vulnerabilities")), "deprecated": bool(e.get("deprecation")), "lic": licence_of(e)[0],
+                    "lic_label": licence_of(e)[1],
+                    "deps": [{"id": dp.get("id")} for g in (e.get("dependencyGroups") or []) for dp in (g.get("dependencies") or [])][:60],
+                    "listed": e.get("listed", True) is not False, "published": (e.get("published") or "")[:10], "pre": "-" in v})
+    return out
+
+
+def recommend(row, meta, target):
+    """Keep the version in use when it is safe on the target; otherwise the lowest version that fixes it, with the risks."""
+    try:
+        tmaj = int(re.match(r"net(\d+)", target).group(1))
+    except (AttributeError, ValueError):
+        tmaj = 10
+    if not meta or not row["versions"]:
+        return None
+    by_v = {m["v"]: m for m in meta}
+    cur = max(row["versions"], key=ver_tuple)
+    cm = by_v.get(cur) or next((m for m in reversed(meta) if ver_tuple(m["v"]) <= ver_tuple(cur)), None)
+
+    def compat(m):
+        cls = {tfm_class(t, tmaj) for t in m["tfms"]} - {None}
+        return "ok" if "ok" in cls else "windows" if "windows" in cls else "netfx" if "netfx" in cls else None
+
+    def problems(m):
+        p = []
+        if compat(m) == "netfx":
+            p.append(".NET Framework only")
+        if m["vuln"]:
+            p.append("has a published security advisory")
+        if m["deprecated"]:
+            p.append("deprecated on nuget.org")
+        if not m["listed"]:
+            p.append("unlisted on nuget.org")
+        if m["pre"]:
+            p.append("a prerelease")
+        return p
+
+    def lic_note(a, b):
+        """Licence difference between two versions worth a risk line (also catches one custom licence replaced by another)."""
+        if a.get("lic_label") and b.get("lic_label") and a["lic_label"] != b["lic_label"] and \
+                ((b["lic"] or 0) > (a["lic"] or 0) or (b["lic"] or 0) >= 2):
+            return f"licence differs: {a['v']} is {a['lic_label']}, {b['v']} is {b['lic_label']}: review the new terms"
+        return None
+
+    risks = []
+    if len(row["versions"]) > 1:
+        risks.append(f"{len(row['versions'])} different versions across projects ({', '.join(row['versions'])}): settle on one for the port")
+    latest = next((m for m in reversed(meta) if not m["pre"] and m["listed"]), meta[-1])
+    if latest.get("published") and latest["published"] < f"{datetime.date.today().year - 4}":
+        risks.append(f"no release since {latest['published'][:4]}: likely unmaintained")
+    if not cm:
+        return {"action": "unknown", "version": None, "why": f"version {cur} not found on nuget.org", "risks": risks}
+    if compat(cm) == "windows":
+        risks.append("the target-compatible build is Windows-only (net*-windows): blocks Linux hosting")
+    probs = problems(cm)
+    lic = row.get("licence") or {}
+    if lic.get("verdict") == "restrictive-now" and lic.get("last_open"):
+        # the version in use is already under the new (paid / restrictive) licence: prefer the last open version when it is safe
+        lo = by_v.get(lic["last_open"])
+        if lo and not problems(lo) and compat(lo) in ("ok", "windows", None):
+            if ver_tuple(lo["v"])[0] < ver_tuple(cm["v"])[0]:
+                risks.append(f"moving back a major version ({ver_tuple(cm['v'])[0]} -> {ver_tuple(lo['v'])[0]}): check APIs the code uses")
+            return {"action": "downgrade", "version": lo["v"], "risks": risks, "optional": True,
+                    "why": f"{cur} is under {lic['used_label']}; {lo['v']} is the last version under {lo['lic_label']} and is compatible "
+                           f"with {target}, with no advisories and not deprecated (or keep {cur} and buy / confirm the licence)"}
+        probs.append(f"under {lic['used_label']} (the last open version {lic['last_open']} is not safe on {target})")
+    if compat(cm) is None and not probs:
+        return {"action": "keep", "version": cur, "risks": risks,
+                "why": "no framework or security problem in the nuget.org metadata (frameworks not declared: confirm it builds on the target)"}
+    if not probs:
+        why = f"compatible with {target}, no advisories, not deprecated"
+        if ver_tuple(latest["v"]) > ver_tuple(cur):
+            why += f"; {latest['v']} is newer but upgrading is optional"
+            lic = row.get("licence") or {}
+            if lic.get("verdict") == "restrictive-on-upgrade":
+                why += f" and changes the licence from {lic.get('changed_in')}"
+        return {"action": "keep", "version": cur, "why": why, "risks": risks}
+    cands = [m for m in meta if ver_tuple(m["v"]) >= ver_tuple(cm["v"]) and not problems(m) and compat(m) in ("ok", "windows")]
+    same_lic = [m for m in cands if cm["lic"] is None or m["lic"] is None or m["lic"] <= cm["lic"]]
+    pick = same_lic[0] if same_lic else (cands[0] if cands else None)
+    if not pick:
+        return {"action": "replace", "version": None, "why": f"{cur}: {'; '.join(probs)}; no later version fixes it", "risks": risks}
+    if not same_lic:
+        risks.append(f"every fixed version is under a more restrictive licence than {cur}: licence decision needed")
+    elif lic_note(cm, pick):
+        risks.append(lic_note(cm, pick))
+    if ver_tuple(pick["v"])[0] > ver_tuple(cm["v"])[0]:
+        risks.append(f"major version jump {ver_tuple(cm['v'])[0]} -> {ver_tuple(pick['v'])[0]}: breaking API changes likely")
+    return {"action": "upgrade", "version": pick["v"], "why": f"{cur}: {'; '.join(probs)}. {pick['v']} is the lowest version that fixes it",
+            "risks": risks}
+
+
+# ---------------------------------------------------------------- licence classification (any package, from nuget.org metadata)
+# Rank: 0 permissive, 1 weak copyleft, 2 custom licence file / vendor licence page (not machine-readable), 3 strong copyleft
+# or source-available / commercial. Only SPDX ids and the licence URL are read; no package names are special-cased.
+LIC_PERMISSIVE = re.compile(r"(?i)^(MIT(-0)?|Apache-2\.0|Apache-1\.1|BSD-\d-Clause.*|ISC|MS-PL|Unlicense|0BSD|Zlib|PostgreSQL|BSL-1\.0|CC0-1\.0|"
+                            r"WTFPL|X11|PSF-2\.0|Python-2\.0|NCSA|Libpng|curl|BlueOak-1\.0\.0|UPL-1\.0)$")
+LIC_WEAK = re.compile(r"(?i)^(LGPL-.*|MPL-.*|EPL-.*|MS-RL|CDDL-.*|CPL-1\.0)$")
+LIC_STRONG = re.compile(r"(?i)^(GPL-.*|AGPL-.*|RPL-.*|OSL-.*|SSPL-.*|EUPL-.*|CPAL-.*|BUSL-.*|PolyForm-.*|Elastic-.*|CC-BY-NC.*|LicenseRef-.*)$")
+LIC_URL_HINTS = [(r"(?i)\bagpl|/gpl|gnu\.org/licenses/(gpl|agpl)", 3), (r"(?i)lgpl|mozilla\.org/mpl|/mpl", 1),
+                 (r"(?i)\bmit\b|/mit(\.|$|/)|opensource\.org/licenses/mit", 0), (r"(?i)apache\.org/licenses|apache-2|/apache", 0),
+                 (r"(?i)/bsd", 0), (r"(?i)/ms-pl|microsoft public license", 0)]
+
+
+def spdx_rank(expr):
+    """Rank of an SPDX expression: OR takes the most permissive choice, AND the most restrictive."""
+    def one(tok):
+        tok = tok.strip("() ").split(" WITH ")[0].strip()
+        if LIC_PERMISSIVE.match(tok):
+            return 0
+        if LIC_WEAK.match(tok):
+            return 1
+        return 3 if LIC_STRONG.match(tok) else 2
+    return min(max(one(t) for t in re.split(r"\s+AND\s+", alt)) for alt in re.split(r"\s+OR\s+", expr.strip("() ")))
+
+
+def licence_of(e):
+    """(rank, label) of one catalog entry, or (None, label) when nothing is declared."""
+    expr, url = (e.get("licenseExpression") or "").strip(), (e.get("licenseUrl") or "").strip()
+    if expr:
+        return spdx_rank(expr), expr
+    if not url:
+        return None, "no licence declared"
+    if re.search(r"(?i)nuget\.org/packages/[^/]+/[^/]+/licen[cs]e", url):
+        return 2, "a custom licence file"
+    for rx, rank in LIC_URL_HINTS:
+        if re.search(rx, url):
+            return rank, url
+    return 2, f"a licence page ({url})"
+
+
+def licence_change(pid, entries, versions):
+    """Did the licence get more restrictive, either before the version in use (restrictive-now) or after it
+    (restrictive-on-upgrade)? Compares every published version, so it catches any package that went commercial."""
+    rel = sorted((e for e in entries if not re.search(r"-", e.get("version", "")) and e.get("listed", True) is not False),
+                 key=lambda e: ver_tuple(e.get("version", "0")))
+    used = [v for v in versions if v]
+    if not rel or not used:
+        return None
+    try:
+        uv = max(used, key=ver_tuple)
+        ue = next((e for e in reversed(rel) if ver_tuple(e["version"]) <= ver_tuple(uv)), rel[0])
+    except ValueError:
+        return None
+    ur, ul = licence_of(ue)
+    lr, ll = licence_of(rel[-1])
+    perm = [e for e in rel if licence_of(e)[0] == 0]
+    if ur is not None and ur >= 2 and perm and ver_tuple(perm[-1]["version"]) < ver_tuple(ue["version"]):
+        was = licence_of(perm[-1])[1]
+        return {"verdict": "restrictive-now", "used_label": ul, "latest_label": ll, "last_open": perm[-1]["version"],
+                "text": f"Licence changed: version {uv} in use is under {ul}; versions up to {perm[-1]['version']} were {was}. "
+                        "Check the terms (commercial licence or free edition) before shipping the port, or move back to "
+                        f"{perm[-1]['version']}."}
+    if ur is not None and lr is not None and lr > ur and lr >= 2:
+        first = next(e for e in rel if ver_tuple(e["version"]) > ver_tuple(ue["version"]) and (licence_of(e)[0] or 0) > ur)
+        last_open = max((e["version"] for e in rel if licence_of(e)[0] == ur and ver_tuple(e["version"]) < ver_tuple(first["version"])),
+                        key=ver_tuple, default=None)
+        return {"verdict": "restrictive-on-upgrade", "used_label": ul, "latest_label": ll, "last_open": last_open, "changed_in": first["version"],
+                "text": f"Licence changes on upgrade: {uv} in use is {ul}, but from {first['version']} the package is under {ll}. "
+                        f"Upgrading to a current major during the port is a licence decision"
+                        + (f"; {last_open} is the last version under {ul}." if last_open else ".")}
+    if ur == 3:
+        return {"verdict": "restrictive-now", "used_label": ul, "latest_label": ll, "last_open": None,
+                "text": f"Version {uv} in use is under {ul} (copyleft or source-available): check it fits how the product is distributed."}
+    return None
 
 
 def scan_repo(name, cfg, online):
@@ -669,12 +997,14 @@ def scan_repo(name, cfg, online):
         sys.exit(f"no inventory for {name}: run discover_estate.py first")
     t0 = time.time()
     s = Scan(name, inv, cfg)
+    import _dbinventory
+    s.facts["db_inventory"] = _dbinventory.inventory(inv["root"], cfg.get("exclude_dirs", []))
+    s.parsed_sql = bool(s.facts["db_inventory"].get("engine"))
     s.scan_files()
+    s.db_findings(s.facts["db_inventory"])
     s.packages(online)
     s.structure()
     s.case_paths()
-    import _dbinventory
-    s.facts["db_inventory"] = _dbinventory.inventory(inv["root"], cfg.get("exclude_dirs", []))
     findings = s.result()
     s.facts["duration_s"] = round(time.time() - t0, 1)
     s.facts["generated"] = datetime.datetime.now().isoformat(timespec="seconds")

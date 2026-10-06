@@ -6,6 +6,11 @@ Writes docs/reference/dependencies.md:
   - every third-party package (anchor pkg-…): versions in use (version drift flagged) and the projects using it
 and docs/agent/dependencies.json with the same data for tools.
 
+.NET packages are enriched OFFLINE from the NuGet package folders already on this machine (NUGET_PACKAGES, ~/.nuget/packages,
+a solution-level packages/ folder): licence (from the .nuspec), the frameworks the package builds for, and whether the
+version in use only runs on Windows (native binaries only for win-* or only net*-windows builds). A package that was
+never restored here shows "not in local cache"; nothing is fetched from the network.
+
 Manifests read: .NET *.csproj / *.vbproj / *.fsproj (ProjectReference, PackageReference, packages.config, central
 versions from Directory.Packages.props), package.json (npm / yarn / pnpm workspaces), pyproject.toml and
 requirements*.txt, pom.xml, build.gradle(.kts), go.mod, Cargo.toml. Options (adapter_options.generic-deps):
@@ -265,6 +270,52 @@ PARSERS = [(re.compile(r"\.(csproj|vbproj|fsproj)$", re.I), parse_dotnet), (re.c
            (re.compile(r"^go\.mod$"), parse_go), (re.compile(r"^Cargo\.toml$"), parse_cargo)]
 
 
+def nuget_dirs():
+    dirs = [os.environ.get("NUGET_PACKAGES") or "", os.path.join(os.path.expanduser("~"), ".nuget", "packages")]
+    for d, sub, _ in os.walk(ROOT):
+        r = rel(d)
+        if "packages" in sub and r.count("/") < 3:
+            dirs.append(os.path.join(d, "packages"))
+        sub[:] = [x for x in sub if not SKIP.search((r + "/" + x).lstrip("./"))] if r.count("/") < 3 else []
+    return [d for d in dict.fromkeys(dirs) if d and os.path.isdir(d)]
+
+
+def nuget_info(name, version, dirs, cache={}):
+    """Licence, target frameworks and Windows-only flag of a restored package version (None when not restored here)."""
+    v = (version or "").strip("[]() ").split(",")[0].strip()
+    key = (name.lower(), v.lower())
+    if key in cache:
+        return cache[key]
+    cands = []
+    for d in dirs:
+        cands += [os.path.join(d, name.lower(), v.lower()), os.path.join(d, f"{name}.{v}")]
+    folder = next((c for c in cands if v and os.path.isdir(c)), None)
+    info = None
+    if folder:
+        spec = next((os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".nuspec")), None)
+        lic = ""
+        if spec:
+            r = xml(spec)
+            for e in (r.iter() if r is not None else []):
+                t = local(e.tag)
+                if t == "license" and e.text:
+                    lic = e.text.strip() if (e.get("type") or "expression") == "expression" else f"file {e.text.strip()}"
+                elif t == "licenseUrl" and e.text and not lic:
+                    lic = e.text.strip()
+        libs = sorted(x.lower() for x in os.listdir(os.path.join(folder, "lib"))) if os.path.isdir(os.path.join(folder, "lib")) else []
+        rt = os.path.join(folder, "runtimes")
+        rids = sorted(x for x in os.listdir(rt) if os.path.isdir(os.path.join(rt, x, "native"))) if os.path.isdir(rt) else []
+        win_native = bool(rids) and all(x.lower().startswith("win") for x in rids)
+        win_lib = bool(libs) and all("-windows" in x or x.startswith(("net4", "net3", "net2")) for x in libs) and any("-windows" in x for x in libs)
+        net_fx_only = bool(libs) and all(x.startswith(("net4", "net3", "net2")) for x in libs)
+        info = {"licence": lic, "frameworks": libs, "native_rids": rids, "windows_only": win_native or win_lib,
+                "why": ("native binaries only for " + ", ".join(rids)) if win_native else ("builds only for " + ", ".join(libs)) if win_lib
+                else ("builds only for .NET Framework (" + ", ".join(libs) + ")") if net_fx_only else "",
+                "netfx_only": net_fx_only}
+    cache[key] = info
+    return info
+
+
 def discover():
     projects = []
     for d, dirs, files in os.walk(ROOT):
@@ -341,6 +392,27 @@ def main():
     for k, p in enumerate(projects):
         for n, v in p["packages"].items():
             pkgs[n][k] = (v["version"], v["dev"])
+    ndirs = nuget_dirs() if any(p["kind"] == ".NET" and p["packages"] for p in projects) else []
+    meta = {}  # name -> {version: nuget_info}
+    for n, used in pkgs.items():
+        if any(projects[k]["kind"] == ".NET" for k in used):
+            meta[n] = {ver: nuget_info(n, ver, ndirs) for ver in sorted({v for v, _ in used.values() if v})}
+    for k, p in enumerate(projects):
+        for n, v in p["packages"].items():
+            i = (meta.get(n) or {}).get(v["version"])
+            if i:
+                v.update({"licence": i["licence"], "windows_only": i["windows_only"]})
+
+    def pinfo(n):
+        infos = [i for i in (meta.get(n) or {}).values() if i]
+        if n not in meta:
+            return "", ""
+        if not infos:
+            return "not in local cache", ""
+        lic = ", ".join(sorted({i["licence"] for i in infos if i["licence"]})) or "not declared"
+        plat = "; ".join(sorted({("**Windows-only**: " + i["why"]) if i["windows_only"] else i["why"] for i in infos if i["why"]})) or \
+            ", ".join(sorted({f for i in infos for f in i["frameworks"]})) or "—"
+        return lic, plat
 
     def plink(k):
         return f"[{label[k]}](#{aid[k]})"
@@ -386,15 +458,28 @@ def main():
                 f"[{n}](#{slug('pkg', n)}) {v['version']}".rstrip() + (" (dev)" if v["dev"] else "")
                 for n, v in sorted(p["packages"].items(), key=lambda kv: kv[0].lower())))
     out += ["", '<a id="packages"></a>', "", "## Packages", "", BACK, "",
-            "A package with more than one declared version is marked ⚠ (version drift: align before upgrading or porting).", "",
-            "| Package | Versions | Used by |", "| --- | --- | --- |"]
+            "A package with more than one declared version is marked ⚠ (version drift: align before upgrading or porting)."
+            + (" Licence and platform of .NET packages come from the NuGet packages restored on this machine (no network): "
+               "**Windows-only** means the version in use ships native binaries only for Windows or builds only for net*-windows; "
+               "a package that builds only for .NET Framework needs a newer version or a replacement to run on modern .NET."
+               if meta else ""), "",
+            "| Package | Versions | Licence | Platform | Used by |" if meta else "| Package | Versions | Used by |",
+            "| --- | --- | --- | --- | --- |" if meta else "| --- | --- | --- |"]
     drift = 0
+    winonly = []
     for n in sorted(pkgs, key=str.lower):
         vers = sorted({v for v, _ in pkgs[n].values() if v})
         drift += len(vers) > 1
+        lic, plat = pinfo(n)
+        winonly += [n] if "Windows-only" in plat else []
         out.append(f'| <a id="{slug("pkg", n)}"></a>**{n}** | {", ".join(vers) or "—"}{" ⚠" if len(vers) > 1 else ""} | '
+                   + (f"{lic or '—'} | {plat or '—'} | " if meta else "")
                    + ", ".join(plink(k) + (f" {v}" if len(vers) > 1 else "") + (" (dev)" if dev else "")
                                for k, (v, dev) in sorted(pkgs[n].items(), key=lambda kv: label[kv[0]])) + " |")
+    if winonly:
+        out += ["", f"Windows-only packages ({len(winonly)}): " + ", ".join(f"[{n}](#{slug('pkg', n)})" for n in winonly)
+                + ". The projects using them cannot run on Linux until the package is replaced or upgraded to a cross-platform version."
+                + (" Code-level Linux issues: [platform portability](platform-portability.md)." if "generic-portability" in CFG.get("adapters", []) else "")]
     os.makedirs(OUT, exist_ok=True)
     open(os.path.join(OUT, "dependencies.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
     agent = os.path.join(DOCS, "agent")
@@ -403,10 +488,12 @@ def main():
                           "framework": projects[k]["framework"], "output": projects[k]["output"], "layer": level.get(k, 0),
                           "depends_on": sorted(label[t] for t in deps[k]), "used_by": sorted(label[t] for t in users[k]),
                           "packages": projects[k]["packages"]} for k in order],
-            "cycles": [[label[k] for k in c] for c in cycles]}
+            "cycles": [[label[k] for k in c] for c in cycles],
+            "package_info": {n: {v: i for v, i in vs.items() if i} for n, vs in meta.items() if any(vs.values())}}
     open(os.path.join(agent, "dependencies.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(data, ensure_ascii=False, indent=1))
     print(f"dependencies: {len(projects)} projects, {sum(len(v) for v in deps.values())} project references, "
-          f"{len(pkgs)} packages ({drift} with version drift), {len(cycles)} cycles")
+          f"{len(pkgs)} packages ({drift} with version drift), {len(cycles)} cycles"
+          + (f"; local NuGet info for {sum(1 for vs in meta.values() if any(vs.values()))}/{len(meta)} .NET packages, {len(winonly)} Windows-only" if meta else ""))
 
 
 if __name__ == "__main__":

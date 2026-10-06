@@ -70,7 +70,8 @@ def dotnet(path, text):
         start, end = c.end(), (classes[k + 1].start() if k + 1 < len(classes) else len(text))
         body = text[start:end]
         ctl = re.sub(r"Controller$", "", name)
-        area = re.search(r"\[Area\(\s*\"([^\"]+)\"", cattrs)
+        # [Area("X")] (ASP.NET Core), else the Areas/<X>/Controllers folder (MVC 5 AreaRegistration convention)
+        area = re.search(r"\[Area\(\s*\"([^\"]+)\"", cattrs) or re.search(r"(?i)(?:^|/)Areas/([^/]+)/Controllers/", path)
         prefix = attr_route(cattrs) or ""
         cauth = auth_of(cattrs)
         for m in CS_METHOD.finditer(body):
@@ -105,9 +106,47 @@ def dotnet(path, text):
         line = line_at(text, m.start())
         handler_text = text[m.end():m.end() + 400]
         mg = re.match(r"\s*,\s*([\w.]+)\s*\)", handler_text)
+        target = minimal_handler(path, line, text, m.start(), mg.group(1) if mg else None)
+        lp = lambda_params(handler_text)
         add("ANY" if verb in ("Methods", "Fallback") else verb, f"{groups.get(recv, '')}/{route}", "ASP.NET minimal API", path, line,
-            handler=False, inline_params=lambda_params(handler_text),
-            note=f"handler {mg.group(1)}" if mg else f"registered in {M.data.get(M.enclosing(path, line), {}).get('name', 'top-level code')}")
+            handler=target or False, inline_params=lp,
+            params=[x.strip() for x in lp.split(",") if x.strip()] if (target and not mg and lp is not None) else None,
+            note=(f"handler {mg.group(1)}" if mg else "inline lambda" + (" (calls the linked method)" if target else
+                  f", registered in {M.data.get(M.enclosing(path, line), {}).get('name', 'top-level code')}")))
+
+
+def minimal_handler(path, line, text, start, group):
+    """Method behind a minimal-API endpoint: the method group (MapGet("/x", Health)), else the first call the lambda makes on
+    one of its typed parameters or on a type (runner.RunAllAsync(..), ScenarioRunner.Find(..))."""
+    by_name = {}
+    for a, x in M.data.items():
+        by_name.setdefault(x["name"], []).append(a)
+    if group:
+        parts = group.split(".")
+        cands = [a for n, al in by_name.items() if n.endswith("." + parts[-1]) and (len(parts) == 1 or n.startswith(parts[-2] + "."))
+                 for a in al]
+        same = [a for a in cands if M.data[a]["file"] == path]
+        return (same or cands or [None])[0]
+    p = text.find("(", start)
+    depth, end = 0, len(text)
+    for k in range(p, len(text)):
+        depth += (text[k] == "(") - (text[k] == ")")
+        if depth == 0:
+            end = k
+            break
+    body = text[p:end]
+    lam = re.search(r"\(([^()]*)\)\s*=>", body)
+    ptypes = {}
+    for prm in (lam.group(1).split(",") if lam else []):
+        prm = re.sub(r"\[[^\]]*\]", "", prm).strip()
+        mm = re.match(r"([\w.]+)(?:<[^>]*>)?\??\s+(\w+)$", prm)
+        if mm:
+            ptypes[mm.group(2)] = mm.group(1).split(".")[-1]
+    for mm in re.finditer(r"(?<![\w.])(\w+)\s*\.\s*(\w+)\s*(?:<[^()]*>)?\s*\(", body):
+        owner = ptypes.get(mm.group(1)) or (mm.group(1) if mm.group(1)[:1].isupper() else None)
+        if owner and by_name.get(f"{owner}.{mm.group(2)}"):
+            return by_name[f"{owner}.{mm.group(2)}"][0]
+    return None
 
 
 # ---------------------------------------------------------------- JS / TS

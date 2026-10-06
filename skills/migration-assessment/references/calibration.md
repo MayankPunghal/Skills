@@ -34,4 +34,5 @@ Put sample reports in `calibration/samples/` (excluded from packaging), then:
 | Date | Change | Evidence |
 | --- | --- | --- |
 | 2026-10-02 | Initial research baseline (no house samples yet) | references/sources.md |
+| 2026-10-06 | Estimation v5: size factor max(1, (repo KLOC / 10)^0.10); redesign work at AI factor 0.70–1.0 instead of 0.30–0.50; "likely" at 50 % for repositories of 100+ KLOC; 8-hour day kept. SmartStore manual likely (code only) 2,583 h to 3,635 h | references/estimation-validation.md (Smartstore port ≈ 3,200–6,600 code hours; COCOMO II; METR; AWS / Google AI studies) |
 | 2026-10-05 | Estimation v4: coding hours only, complexity factor, dual / PostgreSQL scenarios, optional modernizations kept outside the total. Testbed FulfillmentHub: 849 h to 203 h likely | AWS Transform for .NET case study (143 KLOC, about 270 h saved); FulfillmentHub testbed |

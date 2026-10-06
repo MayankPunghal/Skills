@@ -6,9 +6,10 @@
 | **codebase-documenter** skill (sibling folder or `~/.claude/skills/codebase-documenter`) | Prerequisite installer, graph naming workflow, optional deep documentation of an application | `python install.py` in this skill installs both when packaged together |
 | graphify | Code graph per repository (`map_graphs.py`) | `python <codebase-documenter>/scripts/install_prerequisites.py` (installs graphify with uv or pip --user) |
 | git | Activity / merge-risk analysis | Usually present; otherwise parallel-dev is reported as not assessed |
-| .NET SDK (optional) | `validate_linux_build.py --run --runner local` (CA1416 analysis) | Only with the user's approval |
+| sqlglot | SQL parser fallback, PostgreSQL preview (`codebase-documenter/scripts/sql_parse.py`) | The codebase-documenter `install_prerequisites.py` (`pip install --user`) |
+| .NET SDK 8+ | Microsoft's T-SQL parser (ScriptDom): database inventory, SQL inside C# strings, PostgreSQL conversion levels, the database layer of the graph; also `validate_linux_build.py --run --runner local` | The codebase-documenter `install_prerequisites.py` (Microsoft's `dotnet-install`, per user, ~250 MB): ask the user first. Without it SQL is parsed by sqlglot only and procedural T-SQL is partly unparsed (the report says so) |
 | Docker or a WSL distro with .NET (optional) | Real Linux build validation | Only with the user's approval (image download) |
-| Network to api.nuget.org (optional) | Package frameworks / deprecation / advisories (`--online`) | Sends public package IDs only; disable with `--offline` for confidential estates |
+| Network to api.nuget.org (on by default) | Package frameworks / deprecation / advisories / licence history | Sends package IDs and versions, private ones too; disable with `--offline` (or `online_package_lookup: false`) for confidential estates |
 
 ## Workspace rules
 

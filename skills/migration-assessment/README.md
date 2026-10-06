@@ -38,7 +38,7 @@ The deterministic part runs from the command line too:
 python scripts/setup_assessment.py --client "Acme" --roots D:/clients/acme/repos
 python scripts/discover_estate.py
 python scripts/map_graphs.py --all --exports
-python scripts/scan_repo.py --all --online
+python scripts/scan_repo.py --all            # online package lookup is the default; --offline to keep package ids local
 python scripts/classify_apps.py
 python scripts/estimate_effort.py
 python scripts/build_report.py
@@ -121,4 +121,4 @@ The report wording and structure live in `references/report-template.md` and `re
 
 ## Confidentiality
 
-The skill never writes into client repositories, never copies secret values (the masking is verified by a gate), and only sends public package IDs to nuget.org when `--online` is used. Reports contain architecture and security findings: share them privately.
+The skill never writes into client repositories, never copies secret values (the masking is verified by a gate), and sends package IDs (and versions) to api.nuget.org unless the scan runs `--offline` or `online_package_lookup` is false; private package IDs are sent too (they are simply not found), so use `--offline` for confidential estates. Reports contain architecture and security findings: share them privately.

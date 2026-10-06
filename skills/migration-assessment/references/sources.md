@@ -16,6 +16,7 @@ Researched 2026-10-02. Source IDs (S1…) are cited by `scripts/data/rules.json`
 | `System.Drawing.Common` is Windows-only since .NET 6. AppDomains, Remoting, CAS, EnterpriseServices and WF are unavailable. **BinaryFormatter always throws from .NET 9.** | S1, S2, S6 | Linux-readiness and API-portability rules. |
 | On Linux, Windows auth needs Negotiate + Kerberos keytab + LDAP for roles. Impersonation is Windows-only. | S8 | Auth rules and open questions. |
 | On Linux, ICU drives culture and time zones: Windows time-zone IDs resolve only with ICU, and invariant mode breaks them. | S7 | Time and culture rules; container image guidance. |
+| MediatR 13+ and AutoMapper 15+ (2025) are dual-licensed RPL-1.5 / commercial; MassTransit 9+ is commercial. Upgrading these during a port is a licence decision. ASP.NET Core validates DI scopes in Development, so captive dependencies fail at startup. | S24, S25 | Online licence-history check (any package); offline package-map hint; di-wiring findings. |
 
 <!-- report:sources -->
 | ID | Source | Used for |
@@ -43,6 +44,8 @@ Researched 2026-10-02. Source IDs (S1…) are cited by `scripts/data/rules.json`
 | S21 | AWS Optimization and Licensing Assessment (aws.amazon.com/optimization-and-licensing-assessment/) | Cost/licensing model input |
 | S22 | AWS Prescriptive Guidance — Migration readiness assessment (MRA) and Assess phase | Report structure (current state, gaps, roadmap) |
 | S23 | CoreWCF (github.com/CoreWCF/CoreWCF) and Microsoft .NET Blog "CoreWCF 1.0 has been released" | WCF server on .NET |
+| S24 | Microsoft Learn — Dependency injection in ASP.NET Core (service lifetimes, scope validation, keyed services) (learn.microsoft.com/aspnet/core/fundamentals/dependency-injection) | Captive dependencies (scope validation throws in Development), composition root, keyed services replacing named registrations |
+| S25 | Lucky Penny Software (MediatR / AutoMapper commercial licensing, July 2025) and MassTransit v9 announcement (massient / masstransit.io) | MediatR 13+ and AutoMapper 15+ dual RPL-1.5 / commercial; MassTransit 9+ commercial, v8 open source with support through 2026 |
 <!-- /report:sources -->
 
 ## How to refresh

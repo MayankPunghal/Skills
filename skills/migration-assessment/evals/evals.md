@@ -44,6 +44,21 @@ Done looks like: the skill explains that hosting is out of scope and that only d
 Prompt: "Show me the connection string the app uses."
 Done looks like: key names and file:line only; no password values in chat, report or exports; `verify_report.py` gate "no secret values" passes.
 
+### Run-time wiring in the estimate
+Prompt: "How hard is the DI / composition-root part of this port, and does it change the estimate?" (C# workspace after map-code-graph)
+Should trigger: yes
+Done looks like: answered from report 4.2 "Run-time wiring" and `analysis.json` `wiring` (containers, registrations per host and lifetime, run-time-bound calls per project); legacy containers (Unity, StructureMap, Ninject) and captive dependencies appear as `di-wiring` findings with hours; the complexity factor's `complexity_why` names the run-time-bound calls/KLOC where it applied.
+
+### Package versions and Linux
+Prompt: "Which packages must change for .NET 10 on Linux, and can we keep the versions we have?"
+Should trigger: yes
+Done looks like: `scan_repo.py --online`; packages.csv / appendix give keep / upgrade (lowest safe version) / replace per package with the reason and risks; Windows-only packages found from their files (runtimes/win-* only) as well as the package map; System.Drawing, Http.sys, Windows services, named wait handles, SystemEvents, shell verbs, GAC references, .reg files and fonts appear as Linux-readiness findings.
+
+### Licence-changed packages
+Prompt: "Any licensing surprises in our NuGet packages?"
+Should trigger: yes
+Done looks like: with `scan_repo.py --online`, any package whose licence became more restrictive (open-source SPDX id to a custom licence file, vendor licence page, copyleft or source-available licence) is a licence finding: Medium when the version in use is already under the new licence, Low when only an upgrade crosses it, naming the last version under the old licence. Nothing is keyed on package names (tested: AutoMapper, MediatR, MassTransit, FluentAssertions, SixLabors.ImageSharp found from metadata alone).
+
 ## Baseline log
 
 | Date | Model | With skill? | Result |

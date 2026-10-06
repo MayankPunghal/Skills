@@ -13,6 +13,7 @@ import re
 from collections import Counter, defaultdict
 
 from _common import load_config, tick, utf8_stdout, write
+from vendor_files import client_packages, is_vendored
 
 SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build", "target", "__pycache__", ".venv", "venv",
         ".idea", "graphify-out", "site", "publish", ".next", ".nuxt", "vendor", "coverage"}
@@ -32,8 +33,20 @@ STACK_MARKERS = [
 CONFIG_PAT = re.compile(r"(?i)(web|app)\.config$|appsettings.*\.json$|\.env(\..+)?$|settings\.py$|application\.(ya?ml|properties)$|config\.(ya?ml|json|toml)$")
 LANG = {".cs": "C#", ".vb": "VB.NET", ".java": "Java", ".py": "Python", ".js": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript",
         ".jsx": "JavaScript", ".go": "Go", ".rb": "Ruby", ".php": "PHP", ".sql": "SQL", ".cshtml": "Razor", ".razor": "Razor",
-        ".kt": "Kotlin", ".rs": "Rust", ".scala": "Scala", ".swift": "Swift", ".vue": "Vue", ".svelte": "Svelte"}
-ADAPTER_HINTS = {".NET project (C#)": "aspnet-mvc-ssdt (if ASP.NET MVC + SSDT) else generic-graph",
+        ".kt": "Kotlin", ".rs": "Rust", ".scala": "Scala", ".swift": "Swift", ".vue": "Vue", ".svelte": "Svelte",
+        ".fs": "F#", ".vbhtml": "Razor", ".aspx": "Web Forms markup", ".ascx": "Web Forms markup", ".master": "Web Forms markup",
+        ".asmx": "ASP.NET service", ".ashx": "ASP.NET service", ".svc": "WCF service", ".asax": "ASP.NET service", ".xaml": "XAML",
+        ".tt": "T4 template", ".proto": "Protobuf", ".ps1": "Scripts", ".psm1": "Scripts", ".bat": "Scripts", ".cmd": "Scripts",
+        ".sh": "Scripts", ".vbs": "Scripts", ".config": "Config", ".yml": "Config / pipelines", ".yaml": "Config / pipelines",
+        ".tf": "Infrastructure as code", ".bicep": "Infrastructure as code", ".rdl": "SSRS report", ".dtsx": "SSIS package",
+        ".html": "HTML", ".htm": "HTML", ".css": "CSS", ".scss": "CSS", ".less": "CSS"}
+# minified / generated assets are not code to read or document
+GENERIC_DIR = {"src", "source", "sources", "app", "apps", "code", "lib", "libs", "main", "projects", "solution", "web"}
+
+
+GENERATED = re.compile(r"(?i)\.min\.(js|css)$|\.designer\.cs$|\.g\.cs$|\.g\.i\.cs$|assemblyinfo\.cs$|\.bundle\.js$")
+ADAPTER_HINTS = {".NET project (C#)": "aspnet-mvc-ssdt (if ASP.NET MVC + SSDT) else generic-graph; always generic-di "
+                                      "(DI, messages, pipeline, events, jobs: the calls graphify cannot see)",
                  "SQL Server database project (SSDT)": "generic-sql (or aspnet-mvc-ssdt)"}
 
 
@@ -49,6 +62,8 @@ def main():
         raise SystemExit(f"source root not found: {src}")
     exts, lines_by_ext, stacks, configs = Counter(), Counter(), defaultdict(list), []
     dir_files, dir_lines = Counter(), Counter()
+    vend_files = vend_lines = 0
+    pkgs = client_packages(src, SKIP)
     largest = []
     for d, dirs, files in os.walk(src):
         dirs[:] = [x for x in dirs if x not in SKIP and not x.startswith(".")]
@@ -64,8 +79,14 @@ def main():
                     stacks[label].append(os.path.relpath(p, src).replace("\\", "/"))
             if CONFIG_PAT.search(f):
                 configs.append(os.path.relpath(p, src).replace("\\", "/"))
-            if e in (".cs", ".vb", ".java", ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rb", ".php", ".sql", ".cshtml", ".razor",
-                     ".kt", ".rs", ".scala", ".swift", ".vue", ".svelte"):
+            relp = os.path.relpath(p, src).replace("\\", "/")
+            if e in LANG and not GENERATED.search(f) and is_vendored(p, relp, pkgs):
+                try:
+                    vend_lines += sum(1 for _ in open(p, encoding="utf-8", errors="ignore"))
+                except OSError:
+                    pass
+                vend_files += 1
+            elif e in LANG and not GENERATED.search(f):
                 try:
                     n = sum(1 for _ in open(p, encoding="utf-8", errors="ignore"))
                 except OSError:
@@ -82,6 +103,10 @@ def main():
            "## Stacks detected", "", "| Stack | Evidence (first files) | Count |", "| --- | --- | ---: |"]
     for label, ps in sorted(stacks.items(), key=lambda kv: -len(kv[1])):
         out.append(f"| {label} | {', '.join('`' + x + '`' for x in ps[:3])} | {len(ps)} |")
+    if vend_files:
+        out += ["", f"Third-party front-end libraries copied into the repository (vendor folders, files named after a declared client-side "
+                    f"package, or files with a library banner) are not "
+                    f"counted as code: {vend_files:,} files, {vend_lines:,} lines."]
     out += ["", "## Files by type", "", "| Extension | Files | Lines (code) |", "| --- | ---: | ---: |"]
     for e, n in exts.most_common(25):
         out.append(f"| `{e}` | {n:,} | {lines_by_ext.get(e, 0):,} |")
@@ -104,7 +129,11 @@ def main():
     total_lines = sum(dir_lines.values())
     floor = 200 if total_lines > 20000 else 0  # small codebases: every folder with code is an area
     for d, n in dir_lines.most_common(40):
-        if n <= floor or d == ".":
+        if n <= floor:
+            continue
+        if d == ".":  # files directly in the source root: solution-level scripts, build and deployment files
+            areas.append({"id": None, "title": "Root Files", "paths": ["."], "code_lines": n, "communities": [],
+                          "note": "files directly in the source root only (not subfolders): build, deployment and solution-level files"})
             continue
         pre_full = f"{src}/{d}".replace("\\", "/").lstrip("./")
         pre_rel = d.replace("\\", "/")
@@ -113,7 +142,10 @@ def main():
             f = f.replace("\\", "/").lstrip("./")
             return f == pre_rel or f.startswith(pre_rel + "/") or f.startswith(pre_full)
         cs = [c["name"] for c in comm if any(inside(f) for f in c.get("folders", []))][:5]
-        areas.append({"id": None, "title": d.split("/")[-1].replace("_", " ").title(), "paths": [d], "code_lines": n, "communities": cs})
+        parts = d.split("/")
+        name = parts[-1] if parts[-1].lower() not in GENERIC_DIR or len(parts) == 1 else f"{parts[-2]} {parts[-1]}"
+        areas.append({"id": None, "title": name.replace("_", " ").title() if name.islower() else name.replace("_", " "),
+                      "paths": [d], "code_lines": n, "communities": cs})
     for i, ar in enumerate(areas):
         ar["id"] = f"{10 + i * 5}-{re.sub(r'[^a-z0-9]+', '-', ar['title'].lower()).strip('-')}"
     write(os.path.join(cfg["docs_dir"], "_notes", "00-survey.md"), "\n".join(out) + "\n")

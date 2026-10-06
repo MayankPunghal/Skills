@@ -8,7 +8,12 @@ Runs first in `full-run`, and whenever a script reports a missing tool. Everythi
 | pip | installing the rest | `install_prerequisites.py` (`ensurepip`) |
 | MkDocs Material | the website (`build-site`, `verify-docs`) | `install_prerequisites.py` (`pip install --user`) |
 | graphify | the code graph | `install_prerequisites.py` (`uv tool install`, else `pip install --user`) |
+| sqlglot | SQL parser fallback and the PostgreSQL preview (`sql_parse.py`) | `install_prerequisites.py` (`pip install --user`) |
+| .NET SDK 8+ | Microsoft's T-SQL parser (ScriptDom) for `.sql` files and SQL inside C# strings; the assessment's Linux build checks | `install_prerequisites.py` with Microsoft's `dotnet-install` script, per user (`%LOCALAPPDATA%\Microsoft\dotnet` or `~/.dotnet`), current LTS. About 250 MB: **ask the user before running the installer when it is missing**. `--no-dotnet` skips it (SQL then parsed by sqlglot only, procedural T-SQL partly unparsed) |
+| ScriptDom helper | the small parser program in `scripts/sqlscan` | built once by `install_prerequisites.py` (or on first use) into the per-user cache; restores one NuGet package (`Microsoft.SqlServer.TransactSql.ScriptDom`, MIT) from nuget.org |
 | git | optional: change detection, graphify hooks | not installed automatically; report only |
+| Docker or WSL | optional (assessment): real Linux builds | report only |
+| api.nuget.org | optional (assessment `--online`): package frameworks, deprecation, advisories, licence history | report only (a reachability check) |
 | LLM key | optional: community naming | read from environment variables; when none is set, the installer recommends OpenRouter + GLM 5.3 Flash and offers to save a pasted key (`--no-key-prompt` to skip the question) |
 
 ## 1. Python
@@ -40,6 +45,9 @@ It prints one line per tool (`ok` / `MISSING` / `absent` for optional ones), ins
 | `externally-managed` / PEP 668 (Homebrew or Debian Python) | Create a virtual environment as printed and run every script with that environment's `python`. Record the interpreter path in `codebase-docs.json` notes or memory. |
 | graphify installed but `not on this shell's PATH` | Nothing to do: the scripts find it in the uv / pip user folders. New terminals see it after a restart. |
 | graphify install fails on build tools (rare, tree-sitter wheels) | Upgrade pip (`python -m pip install -U pip`) and rerun. If that fails, report the last lines to the user. |
+| `.NET SDK` download fails or is blocked | Install the SDK from https://dotnet.microsoft.com/download (or the client's software portal), open a new terminal, rerun. Until then SQL is parsed with sqlglot. |
+| `ScriptDom helper build failed` | Usually no access to nuget.org: set `HTTPS_PROXY` or a NuGet source that mirrors nuget.org, then `python <skill>/scripts/sql_parse.py --build`. |
+| `dotnet` installed but not found | Open a new terminal (the installer adds it to the user PATH); the scripts also look in the per-user folders directly. |
 | Corporate proxy / no internet | Report it; the user sets `HTTPS_PROXY` or installs from an internal mirror. |
 
 ## 3. Done when

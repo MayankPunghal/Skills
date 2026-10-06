@@ -168,23 +168,30 @@ def main():
     lp = os.path.join(CFG.get("graph_dir", "graphify-out"), ".graphify_labels.json")
     if os.path.exists(lp):
         labels = json.load(open(lp, encoding="utf-8"))
+    sp = os.path.join(CFG.get("graph_dir", "graphify-out"), "community-summaries.json")
+    sums = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
     comm = defaultdict(list)
     for i in units:
         c = nodes[i].get("community")
         if c is not None:
             comm[c].append(i)
     out = ["# Code communities", "", "Clusters of tightly connected code found by graphify (community detection). Useful to see which "
-           "classes form one feature or subsystem.", "", '<a id="index"></a>', "", "| Community | Members | Main folders |", "| --- | ---: | --- |"]
+           "classes form one feature or subsystem. Names and summaries come from community_names.py (heuristic, or an LLM "
+           "when one was used).", "", '<a id="index"></a>', "", "| Community | Members | Summary | Main folders |", "| --- | ---: | --- | --- |"]
     ordered = sorted(comm.items(), key=lambda kv: -len(kv[1]))
     for c, ids in ordered:
         name = labels.get(str(c)) or nodes[ids[0]].get("community_name") or f"Community {c}"
         dirs = Counter(folder(i) for i in ids)
-        out.append(f"| [{esc(name)}](#{slug('com', c)}) | {len(ids)} | {', '.join('`' + esc(d) + '`' for d, _ in dirs.most_common(3))} |")
+        summ = esc((sums.get(str(c)) or {}).get("summary", ""))
+        out.append(f"| [{esc(name)}](#{slug('com', c)}) | {len(ids)} | {summ} | {', '.join('`' + esc(d) + '`' for d, _ in dirs.most_common(3))} |")
     for c, ids in ordered:
         name = labels.get(str(c)) or nodes[ids[0]].get("community_name") or f"Community {c}"
         hubs = sorted(ids, key=lambda i: -(len(calls_in[i]) + len(calls_out[i])))[:25]
-        out += ["", f'<a id="{slug("com", c)}"></a>', "", f"## {name}", "", f"Community id {c} · {len(ids)} members · {BACK}", "",
-                "Main members (most connected first): " + ", ".join(link(i) for i in hubs)]
+        s = sums.get(str(c)) or {}
+        out += ["", f'<a id="{slug("com", c)}"></a>', "", f"## {name}", "", f"Community id {c} · {len(ids)} members · {BACK}", ""]
+        if s.get("summary"):
+            out += [s["summary"] + (f" Distinguishing terms: {', '.join(s.get('terms', [])[:6])}." if s.get("terms") else ""), ""]
+        out += ["Main members (most connected first): " + ", ".join(link(i) for i in hubs)]
     open(os.path.join(OUT, "communities.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
     print(f"graph-reference: {len(classes)} classes, {len(funcs)} functions, {len(files)} files, {len(comm)} communities")
 

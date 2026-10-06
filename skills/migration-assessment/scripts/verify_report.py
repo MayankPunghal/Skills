@@ -10,7 +10,7 @@ Gates
   5 narratives      no PENDING markers left in assessment/narrative/*.md and no missing narrative in the report
   6 secrets         no secret value from the client's config/code appears in the report or exports
   7 structure       report sections 1-11 present; estimate, open questions and an up-to-date HTML report present
-  8 dependencies    sections 4.5-4.7 present; every inventoried project in the interdependency table; workflows traced for every application
+  8 dependencies    sections 4.5-4.8 present; every inventoried project in the interdependency table; workflows traced for every application
 """
 import argparse
 import glob
@@ -19,7 +19,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-from _common import OUT, data, load_config, read_json, read_text, utf8_stdout
+from _common import OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
 import _findings as F
 
 SECRET_KEY = re.compile(r"(?i)pass|pwd|secret|token|apikey|api_key|accesskey|credential|privatekey|clientkey|sharedkey|decryptionkey|validationkey")
@@ -70,6 +70,24 @@ def main():
         if inv:
             invs[r] = inv
             findings += F.assign_apps(F.load(root, r), inv)
+    # 0 every repository analysed: scanned after its latest inventory, graphed, SQL parsed (a failed step must not leave a
+    # report that silently reuses older or missing data)
+    st = load_state(root)
+    gaps0 = []
+    for r in repos:
+        sp = os.path.join(OUT, "scan", f"{r}.json")
+        ip = os.path.join(OUT, "inventory", f"{r}.json")
+        if not os.path.exists(sp) or not os.path.exists(os.path.join(OUT, "findings", f"{r}.json")):
+            gaps0.append(f"{r}: never scanned")
+            continue
+        if os.path.exists(ip) and os.path.getmtime(sp) < os.path.getmtime(ip) - 1:
+            gaps0.append(f"{r}: scan older than inventory (rerun scan_repo.py)")
+        if st["repos"].get(r, {}).get("graph") != "done":
+            gaps0.append(f"{r}: not graphed (map_graphs.py)")
+        dbi = (read_json(sp, {}) or {}).get("db_inventory") or {}
+        if dbi.get("note"):
+            gaps0.append(f"{r}: SQL not parsed ({dbi['note'][:80]})")
+    results.append(("every repository analysed", bool(repos) and not gaps0, f"{len(repos)} repositories" + (f"; {'; '.join(gaps0[:6])}" if gaps0 else "")))
     # 1 evidence
     bad, missing = [], []
     cache = {}
@@ -138,7 +156,7 @@ def main():
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
                     f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
     # 8 dependencies: project interdependencies and workflow tracing
-    miss_sec = [h for h in ("### 4.5 ", "### 4.6 ", "### 4.7 ") if h not in report]
+    miss_sec = [h for h in ("### 4.5 ", "### 4.6 ", "### 4.7 ", "### 4.8 ") if h not in report]
     sec45 = report.split("### 4.5 ", 1)[1].split("### 4.6 ", 1)[0] if "### 4.5 " in report and "### 4.6 " in report else ""
     sec46 = report.split("### 4.6 ", 1)[1].split("### 4.7 ", 1)[0] if "### 4.6 " in report and "### 4.7 " in report else ""
     miss_proj = [p["name"] for inv in invs.values() for p in inv["projects"] if p["name"] not in sec45]

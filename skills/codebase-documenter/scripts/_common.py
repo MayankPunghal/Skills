@@ -25,8 +25,9 @@ DEFAULTS = {
     "docs_dir": "docs",
     "graph_dir": "graphify-out",
     "adapters": ["generic-graph", "generic-deps", "generic-sql", "generic-config", "generic-build", "generic-api",
-                 "generic-errors", "generic-tests", "generic-dbaccess", "generic-trace", "generic-flows",
-                 "generic-areas"],
+                 "generic-errors", "generic-di", "generic-tests", "generic-dbaccess", "generic-trace", "generic-views",
+                 "generic-portability", "generic-flows", "generic-areas"],
+                                             # generic-di / generic-views / generic-portability: .NET only; no-ops elsewhere
     "adapter_options": {},
     "coverage": [
         {"title": "Classes", "prefix": "cls-", "page": "components.md"},
@@ -96,7 +97,11 @@ def tool_exe(name):
     if found:
         return found
     dirs = [os.path.join(os.path.expanduser("~"), ".local", "bin"), os.path.join(os.path.expanduser("~"), ".cargo", "bin"),
-            sysconfig.get_path("scripts"), os.path.dirname(sys.executable)]
+            sysconfig.get_path("scripts"), os.path.dirname(sys.executable),
+            # .NET SDK: dotnet-install.sh/.ps1 user folders, then the system-wide installs
+            os.path.join(os.path.expanduser("~"), ".dotnet"), os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "dotnet"),
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "dotnet"), "/usr/share/dotnet", "/usr/local/share/dotnet",
+            "/usr/lib/dotnet"]
     try:
         dirs.append(sysconfig.get_path("scripts", f"{os.name}_user"))
     except KeyError:
