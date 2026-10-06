@@ -34,6 +34,18 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
   - `[Area]` attributes and `MapAreaControllerRoute` (ASP.NET Core).
   - Plugin projects routed as one area with `MapRoute(…).DataTokens["area"] = <constant>` (SmartStore, nopCommerce).
 - `@page` is a directive only when it stands alone on its line: `@pager` in a view is not a Razor Page.
+- Generated reference pages hit by the code map:
+  - `###` routine headings and `**dbo.Name**` table rows both carry anchors;
+  - `[Invoice Summary]` names keep their space;
+  - two classes with one name (`OrderListItem` in two projects) must link by full anchor id. A bare `[[cls:Name]]` resolves both to the same entry, so coverage stalls below 100 %.
+- SQL lives outside C# too:
+  - Web Forms `SqlDataSource` `Select/Insert/Update/DeleteCommand` attributes in `.aspx` / `.ascx` markup;
+  - table names handed to framework settings (`AddDistributedSqlServerCache` `TableName`, EF `ToTable`, `[Table]`, NHibernate `Table(…)`);
+  - row-level security predicate functions, reached only from the `CREATE SECURITY POLICY`.
+
+  Without them, objects look unused that are not (`sql_graph.py` reads all three).
+- A section whose only content is a diagram or code block is not empty (`verify_docs.py` page hygiene).
+- After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and migration-assessment's `map_graphs.py` does the same for the resolver and the database layer.
 
 ## Site and links
 

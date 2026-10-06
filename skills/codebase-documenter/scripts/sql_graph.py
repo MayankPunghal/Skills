@@ -12,10 +12,15 @@ uses them are disconnected. This script parses both with sql_parse.py (Microsoft
           synonym -> target  references ("synonym for")
           C# method -> table / routine   reads_from / writes_to / calls (context "embedded SQL", the enclosing method of
           the string literal, from graphify's own method nodes)
+          page -> table / routine   from Web Forms data source markup (Select/Insert/Update/DeleteCommand; context
+          "markup SQL", from the code-behind class, else a node for the markup file)
+          C# method -> table   references (context "name in code") for a bare table name in a table-name setting
+          (TableName = "X", DestinationTableName, ToTable("X"), [Table("X")])
 Idempotent: nodes and edges with _origin "sql-parse" are replaced on every run; graphify's own are never touched.
 Writes sql-graph.json beside graph.json (counts, unresolved names) for reports.
 """
 import argparse
+import html
 import json
 import os
 import re
@@ -28,6 +33,27 @@ import sql_parse  # noqa: E402
 
 ORIGIN = "sql-parse"
 SYSTEM = ("sys.", "information_schema.", "inserted", "deleted")
+MARKUP_EXTS = (".aspx", ".ascx", ".master")
+# <asp:SqlDataSource SelectCommand="..." UpdateCommand="dbo.usp_X" ...>: the attribute value only; the SQL itself goes to the parser
+CMD_ATTR = re.compile(r'\b(Select|Insert|Update|Delete)Command\s*=\s*"([^"]*)"', re.I)
+# a table-name setting earlier in the same statement: TableName = "X", TableName = config["k"] ?? "X", DestinationTableName = "X",
+# ToTable("X"), [Table("X")], NHibernate Table("X"); not new DataTable("X") (an in-memory ADO.NET table)
+TABLE_SETTING = re.compile(r'(?i)(?<!data)table\w*\s*(?:=|\(|:)[^;]*$')
+_LINES = {}
+
+
+def lines_of(path, rp):
+    if rp not in _LINES:
+        _LINES.clear()  # one file at a time is enough: literals are visited file by file
+        _LINES[rp] = sql_parse.read_text(path).splitlines()
+    return _LINES[rp]
+
+
+def table_context(lines, line, value):
+    """True when the C# literal sits in a table-name setting (AddDistributedSqlServerCache, SqlBulkCopy, EF ToTable, …)."""
+    text = lines[line - 1] if 0 < line <= len(lines) else ""
+    i = text.find('"' + value + '"')
+    return i > 0 and bool(TABLE_SETTING.search(text[:i]))
 
 
 def node_id(name):
@@ -143,6 +169,8 @@ def main():
                  {"events": o.get("trigger_events"), "type": o.get("trigger_type")})
         for t in o.get("targets") or []:  # security policy -> protected tables
             link(s, ensure(t, "TABLE"), "references", "security policy on", sf, ln)
+        for fn in o.get("predicates") or []:  # security policy -> the predicate function it runs on every row
+            link(s, ensure(fn, "FUNCTION"), "calls", "security predicate", sf, ln)
         for fk in o.get("foreign_keys") or []:
             link(s, ensure(fk["references"], "TABLE"), "references", "foreign key", sf, ln, {"columns": fk.get("columns")})
 
@@ -206,13 +234,50 @@ def main():
             real = names.get(v)
             if not real or kind_of.get(real.lower()) not in ("PROCEDURE", "FUNCTION", "TYPE", "VIEW", "SEQUENCE", "TABLE"):
                 continue
-            if kind_of[real.lower()] == "TABLE" and "." not in v:  # a bare word such as "Orders" is too often UI text
-                continue
+            if kind_of[real.lower()] == "TABLE" and "." not in v and not table_context(lines_of(path, rp), line, value):
+                continue  # a bare word such as "Orders" is too often UI text, unless a table-name setting takes it
             cands = [(ln, i) for ln, i in by_file.get(rp.lower(), []) if ln <= line] or                 [(ln, i) for ln, i in any_by_file.get(rp.lower(), []) if ln <= line]
             if cands:
                 rel = "calls" if kind_of[real.lower()] in ("PROCEDURE", "FUNCTION") else "references"
                 link(max(cands)[1], node_id(real), rel, "name in code", rp, line, {"literal": value})
                 named += 1
+    # Web Forms data source controls: Select/Insert/Update/DeleteCommand attributes hold SQL or a procedure name in the markup,
+    # where the C# scan never looks. The edge starts at the page's code-behind class (or a node for the markup file).
+    cmds, markup = [], 0
+    for path in sql_parse.walk(src, MARKUP_EXTS):
+        rp = os.path.relpath(path, src).replace("\\", "/")
+        text = sql_parse.read_text(path)
+        for m in CMD_ATTR.finditer(text):
+            value = html.unescape(m.group(2)).strip()
+            if value:
+                cmds.append({"file": rp, "line": text.count("\n", 0, m.start()) + 1, "verb": m.group(1), "value": value})
+    sql_items = [{"id": f"m{k}", "text": c["value"]} for k, c in enumerate(cmds) if " " in c["value"]]
+    parsed = {r.get("id"): r for r in sql_parse.parse(sql_items)} if sql_items else {}
+    for k, c in enumerate(cmds):
+        cb = sorted((ln, i) for ln, i in any_by_file.get(c["file"].lower() + ".cs", []) if nodes[i].get("_callable_class"))
+        sid = cb[0][1] if cb else "markup_" + re.sub(r"[^a-z0-9]+", "_", c["file"].lower()).strip("_")
+        if not cb and sid not in have:
+            have.add(sid)
+            new_nodes.append({"id": sid, "label": os.path.basename(c["file"]), "file_type": "code", "_origin": ORIGIN, "_markup": True,
+                              "norm_label": os.path.basename(c["file"]).lower(), "source_file": c["file"], "source_location": "L1"})
+        meta = {"dynamic": False, "at": f"{c['file']}:{c['line']}", "command": c["verb"] + "Command"}
+        if " " not in c["value"]:  # a procedure name (…CommandType="StoredProcedure")
+            real = names.get(c["value"].replace("[", "").replace("]", ""))
+            if real and kind_of.get(real.lower()) in ("PROCEDURE", "FUNCTION"):
+                link(sid, node_id(real), "calls", "markup SQL", c["file"], c["line"], meta)
+                markup += 1
+            continue
+        sc = (parsed.get(f"m{k}") or {}).get("script") or {}
+        for t in sc.get("reads", []):
+            link(sid, ensure(t, "TABLE"), "reads_from", "markup SQL", c["file"], c["line"], meta)
+        for w in sc.get("writes", []):
+            link(sid, ensure(w["name"], "TABLE"), "writes_to", "markup SQL", c["file"], c["line"], dict(meta, op=w["op"]))
+        for cl in sc.get("calls", []):
+            if not cl.split(".")[-1].lower().startswith(("sp_", "xp_")):
+                link(sid, ensure(cl, "PROCEDURE"), "calls", "markup SQL", c["file"], c["line"], meta)
+        for f in sc.get("functions", []):
+            link(sid, ensure(f, "FUNCTION"), "calls", "markup SQL", c["file"], c["line"], meta)
+        markup += bool(sc)
     # parameter types: table-valued parameters and alias types used by routines
     for key, o in objs.items():
         for prm in o.get("params") or []:
@@ -227,14 +292,15 @@ def main():
         json.dump(g, fh, ensure_ascii=False)
     os.replace(tmp, gpath)
     summary = {"engine": eng, "objects": len(objs), "external_objects": sum(1 for n in new_nodes if n.get("external")),
-               "edges": dict(kinds), "embedded_sql": stats, "embedded_sql_without_method": no_method,
+               "edges": dict(kinds), "embedded_sql": stats, "embedded_sql_without_method": no_method, "markup_commands": len(cmds), "markup_commands_linked": markup,
                "unresolved_names": dict(unresolved.most_common(50))}
     with open(os.path.join(gdir, "sql-graph.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(summary, fh, indent=1, ensure_ascii=False)
     if not a.quiet:
         print(f"sql_graph [{eng}]: {len(objs)} database objects (+{summary['external_objects']} referenced only from code), "
               f"{len(new_links)} edges: " + ", ".join(f"{k} {v}" for k, v in kinds.most_common(8))
-              + f"; {stats.get('accepted', 0)} SQL statements in code ({no_method} outside a known method)")
+              + f"; {stats.get('accepted', 0)} SQL statements in code ({no_method} outside a known method)"
+              + (f"; {markup}/{len(cmds)} data source commands in markup" if cmds else ""))
 
 
 if __name__ == "__main__":
