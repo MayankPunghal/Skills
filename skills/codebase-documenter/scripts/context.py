@@ -41,6 +41,10 @@ def main():
     miss = missing_tools()
     if miss:
         print(f"PREREQUISITES: missing {', '.join(miss)}")
+    import tool_updates
+    upd = tool_updates.cached_summary()  # the last `npx ... update` check; no network here
+    if upd:
+        print(upd)
     if not root:
         print("STATE: no codebase-docs.json — new documentation project.\nNEXT: " + ("install-prerequisites, then " if miss else "") + "setup-workspace (or full-run)")
         return

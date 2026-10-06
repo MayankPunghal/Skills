@@ -37,6 +37,14 @@ def main():
     miss, sdks = prereqs()
     if miss:
         print("PREREQUISITES: missing " + ", ".join(miss) + "  (see references/setup.md)")
+    if documenter_dir():
+        try:
+            import tool_updates  # codebase-documenter's: the cached result of the last `npx ... update` check
+            upd = tool_updates.cached_summary()
+            if upd:
+                print(upd)
+        except ImportError:
+            pass
     print("DOTNET SDKS: " + (", ".join(s.split(" ")[0] for s in sdks) if sdks else "none (Linux build validation will be skipped or use a container)"))
     root, cfg = load_config(required=False)
     if not root:

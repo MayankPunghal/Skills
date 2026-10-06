@@ -1,0 +1,10 @@
+{
+  "_about": "Tool versions this skill release was tested with. install_prerequisites.py installs exactly these, --update moves an installed tool to them, and tool_updates.py reports newer releases without installing them. After testing a newer release end to end (both skills on the testbed), raise the version here in the same pull request as any fix it needed.",
+  "tools": {
+    "graphify": {"package": "graphifyy", "source": "pypi", "tested": "0.9.77",
+                 "why": "graph build; a release changed how graph.json is merged and saved (0.9.53 -> 0.9.77)"},
+    "mkdocs-material": {"package": "mkdocs-material", "source": "pypi", "tested": "9.7.7", "why": "documentation site"},
+    "sqlglot": {"package": "sqlglot", "source": "pypi", "tested": "30.21.0", "why": "SQL parser fallback, PostgreSQL preview"},
+    "mermaid": {"package": "mermaid", "source": "npm", "tested": "11.17.2", "why": "offline diagrams in the site"}
+  }
+}

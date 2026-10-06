@@ -2,7 +2,7 @@
 name: codebase-documenter
 description: "Documents an existing codebase end to end (any language or stack): builds a graphify knowledge graph, researches every area against the code, generates a cross-linked reference and narrative docs (architecture, modules, workflows, data model, security findings), builds a searchable offline MkDocs site, verifies quality gates, and adds an AI-agent layer. Use when the user asks to document, analyse, reverse-engineer, onboard onto, write a BA or technical specification for, or explain a whole codebase; to build a knowledge graph of a repo; to make project docs usable by AI agents; or to update, resume or package such documentation."
 metadata:
-  version: 1.14.0
+  version: 1.15.0
 user-invocable: true
 argument-hint: "[full-run · install-prerequisites · setup-workspace · build-code-graph · survey-codebase · research-area <area> · generate-reference · write-pages <section> · build-site · verify-docs · make-agent-skill · package-docs · update-docs · resume] [target]"
 license: Apache 2.0
@@ -78,3 +78,4 @@ Follow Anthropic's skill authoring best practices when editing (summary in `CONV
 - Reference files over 100 lines start with a `## Contents` list.
 - Forward slashes in paths; one term per concept; no "before/after <date>" instructions (keep superseded methods under an "Old patterns" note).
 - Changes are additive: never drop a rule, command or lesson without the owner's say-so.
+- Prerequisite tools are pinned in `scripts/data/tool_versions.json`; raise a version only after running both skills with it.

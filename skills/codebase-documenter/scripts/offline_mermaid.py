@@ -14,20 +14,36 @@ mkdocs.yml (reader_guide.py), so no workspace needs a download of its own.
 """
 import argparse
 import glob
+import json
 import os
 import re
 import shutil
 import sys
 import urllib.request
 
-URL = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"  # the npm package, served by jsDelivr
+def tested_version():
+    """The Mermaid release this skill was tested with (scripts/data/tool_versions.json)."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "tool_versions.json")
+    return json.load(open(p, encoding="utf-8"))["tools"]["mermaid"]["tested"]
+
+
+URL = f"https://cdn.jsdelivr.net/npm/mermaid@{tested_version()}/dist/mermaid.min.js"  # the npm package, served by jsDelivr
 CACHE = os.path.join(os.path.expanduser("~"), ".cache", "codebase-documenter", "mermaid.min.js")
 REL = "assets/javascripts/mermaid.min.js"  # relative to docs_dir, as mkdocs.yml lists it
 
 
+def cached_version():
+    """Version of the cached copy (its embedded version string), or None."""
+    if not os.path.exists(CACHE):
+        return None
+    found = re.findall(r'version:"(\d+\.\d+\.\d+)"', open(CACHE, encoding="utf-8", errors="ignore").read())
+    real = [v for v in found if v != "0.0.0"]
+    return real[0] if real else None
+
+
 def fetch_to_cache():
-    """Download mermaid.min.js into the cache. (ok, message); an error or captive-portal page is never cached, since every
-    later workspace would copy it."""
+    """Download the tested mermaid.min.js into the cache, replacing any other version. (ok, message); an error or
+    captive-portal page is never cached, since every later workspace would copy it."""
     try:
         data = urllib.request.urlopen(URL, timeout=60).read()
     except OSError as e:
