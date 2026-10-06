@@ -37,4 +37,5 @@ If any box is unchecked, go back to the research for that area, fix the note, an
 - Use `lookup.py` once the reference exists (`--find TEXT` lists matching lines of a declaring file).
 - Read in large slices; avoid many tiny reads of the same file.
 - Prefer graph queries to wide greps; prefer one grep with a good regex to many narrow ones.
+- **Search with `safe_grep.py`, not plain grep**, whenever the search can touch configuration, connection strings, credentials or commented-out code: `python <skill>/scripts/safe_grep.py "<regex>" [--path SUB] [--glob "*.config"] [--context 2]`. It masks values after `password=`, `pwd=`, `uid=`, `key=`, secret / token / API-key names and provider keys (`pk_live_`, `sk_live_`, `whsec_` …), so a value never reaches the transcript. `safe_grep.py --secrets` lists where such values sit (locations only); the survey already lists them for SEC findings.
 - No subagents unless the user allowed them; if allowed, give each a self-contained brief and verify their claims before they enter a note.
