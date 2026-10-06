@@ -52,8 +52,16 @@ HTTP_ATTR = re.compile(r"\[(?:\w+,\s*)*Http(Get|Post|Put|Delete|Patch)(?:\s*\(\s
 def sig_params(text, open_paren):
     """Parameters of the signature whose "(" is at open_paren, read from the text itself (overloads share one method-map
     entry, so Create() and [HttpPost] Create(CouponForm form) would otherwise both show the first one's parameters)."""
-    depth, out, cur = 0, [], ""
+    depth, out, cur, quote = 0, [], "", ""
     for ch in text[open_paren:open_paren + 2000]:
+        if quote:  # inside a default value's string / char literal: brackets there do not nest
+            cur += ch
+            quote = "" if ch == quote and not cur.endswith("\\" + ch) else quote
+            continue
+        if ch in "\"'" and depth >= 1:
+            quote = ch
+            cur += ch
+            continue
         depth += (ch in "(<[{") - (ch in ")>]}")
         if depth == 0:
             break

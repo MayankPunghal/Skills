@@ -142,9 +142,11 @@ def main():
                 if gi and ext != ".sql" and text[hit.start(gi) - 1:hit.start(gi)] == '"':  # read the whole literal, then any concatenation
                     msg, end = literal_at(text, hit.start(gi) - 1)
                     msg = with_concat(text, end, msg).strip()
+                elif re.match(r"\s*\+", text[hit.end():hit.end() + 4]):  # 'Connection string ' + name (single-quoted, JS / Python)
+                    msg += " …"
                 if len(msg) < 3 or not re.search(r"[A-Za-z]{2}", msg):
                     continue
-                if kind == "exception" and re.fullmatch(r"[A-Za-z_]\w*", msg) and re.search(r"Argument(Null|OutOfRange)?Exception|Null", hit.group(0)):
+                if kind == "exception" and re.fullmatch(r"[A-Za-z_]\w*", msg) and re.search(r"Argument(Null|OutOfRange)?Exception", hit.group(0)):
                     continue  # ArgumentNullException("blogPost"): a parameter name, not a message anyone reads
                 line = line_at(text, hit.start())
                 if (line, msg) in seen:

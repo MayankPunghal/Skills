@@ -90,15 +90,26 @@ def match_paren(s, i):
 MODS = r"(?:public|private|protected|internal|static|async|override|virtual|sealed|new|abstract|extern|unsafe|partial|final|synchronized|Public|Private|Protected|Friend|Shared|Overrides|Overridable|Overloads|Async|MustOverride|NotOverridable)"
 
 
-def overload_lines(path, name):
-    """Lines of every declaration of `name` in the file (C# / VB / Java). The code graph keeps one node per name, so overloads
-    share one entry: its calls, callers and reach are the union of all of them, which the pages must say."""
+TYPE_DECL = re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:\w+\s+)*(?:class|struct|record|interface|Class|Structure|Module|Interface)\s+(\w+)")
+
+
+def overload_lines(path, name, cls=""):
+    """Lines of every declaration of `name` in its own class (C# / VB / Java). The code graph keeps one node per name, so
+    overloads share one entry: its calls, callers and reach are the union of all of them, which the pages must say. A
+    same-named method of another class in the file (two controllers' Index) is not an overload."""
     if os.path.splitext(path)[1].lower() not in (".cs", ".vb", ".java"):
         return []
     short = name.split(".")[-1]
     rx = re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:" + MODS + r"\s+)+(?:[\w<>\[\],.?() ]*?\s+)?(?:Sub\s+|Function\s+)?"
                     + re.escape(short) + r"\s*(?:<[^>()]*>|\(Of[^)]*\))?\s*\(")
-    return [k for k, ln in enumerate(source_lines(path) or [], 1) if short in ln and rx.search(ln)]
+    out, current = [], ""
+    for k, ln in enumerate(source_lines(path) or [], 1):
+        t = TYPE_DECL.match(ln)
+        if t:
+            current = t.group(1)  # nearest type declared above the line
+        elif short in ln and rx.search(ln) and (not cls or current == cls):
+            out.append(k)
+    return out
 
 
 def parse_decl(n, name):
@@ -246,7 +257,7 @@ def main():
         decl, params, returns = parsed if parsed else (first_line(n), None, "")
         info[i] = {"name": (cls_name(i) + "." if cls_name(i) else "") + name, "file": norm(n["source_file"]),
                    "line": line_of(n), "decl": decl, "params": params, "returns": returns}
-        ov = overload_lines(n["source_file"], name)
+        ov = overload_lines(n["source_file"], name, cls_name(i))
         if len(ov) > 1:
             info[i]["overloads"] = ov
 

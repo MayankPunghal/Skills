@@ -170,7 +170,8 @@ def main():
                 qual = m.group(1)
                 if qual and owner and qual != owner:
                     continue
-                if not qual and path != dpath and not (owner and re.search(r"\busing\s+static\s+[\w.]*\b" + re.escape(owner) + r"\s*;|\bImports\s+[\w.]*\b" + re.escape(owner) + r"\b", text)):
+                if not qual and path != dpath and not (owner and re.search(r"\busing\s+static\s+[\w.]*\b" + re.escape(owner) + r"\s*;|\bImports\s+[\w.]*\b"
+                                                                         + re.escape(owner) + r"\b|\b(?:class|struct|record|Class|Module)\s+" + re.escape(owner) + r"\b", text)):  # partial class in another file
                     continue
                 o = objs[obj]
                 record(obj, path, line, text, "exec" if o["type"] == "procedure" else "call" if o["type"] == "function" else "read",
