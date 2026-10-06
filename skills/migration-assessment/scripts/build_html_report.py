@@ -201,6 +201,12 @@ def collect(c, cfg):
             "linuxBuild": lbuild, "map": A.architecture_map(c), "effort": effort}
 
 
+# blocks that need a heading on their card (the Markdown report has its own section headings)
+BLOCK_TITLES = {"sprints": "Coding sprint plan", "multipliers": "How the hours are built", "assumptions": "Estimate assumptions",
+                "methodology": "How the estimate was calculated",
+                "optional": "Optional modernizations"}
+
+
 def component(name, c):
     if name.startswith("narrative:"):
         n = name.split(":", 1)[1]
@@ -209,8 +215,11 @@ def component(name, c):
             return f'<div class="callout warn">Narrative <code>{n}</code> not written yet.</div>'
         return f'<div class="card prose">{md_to_html(txt)}</div>'
     if name.startswith("block:"):
-        fn = BR.BLOCKS.get(name.split(":", 1)[1])
-        return f'<div class="card prose">{md_to_html(fn(c))}</div>' if fn else ""
+        key = name.split(":", 1)[1]
+        fn = BR.BLOCKS.get(key)
+        title = BLOCK_TITLES.get(key)
+        head = f"<h3>{html.escape(title)}</h3>" if title else ""
+        return f'<div class="card prose">{head}{md_to_html(fn(c))}</div>' if fn else ""
     return f'<div class="component" data-component="{html.escape(name)}"></div>'
 
 

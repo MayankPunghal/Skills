@@ -44,7 +44,15 @@ def package_group(p):
 
 
 SOURCE_LABEL = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
-                "unc-path": "UNC path"}
+                "unc-path": "UNC path", "session-state": "session state setting"}
+ROLE_NEEDS = {
+    "Mail server (SMTP)": "SMTP egress on the port (AWS blocks port 25 by default: use 587 / Amazon SES, or request removal); relay allow-lists the new source IPs",
+    "File transfer (SFTP / FTP)": "Egress to the partner's SFTP / FTP port; the partner allow-lists the NAT Elastic IPs; keys / known_hosts move to Secrets Manager (or AWS Transfer Family)",
+    "Report server (SSRS / reporting)": "Report server stays reachable (VPN) or moves (SSRS on EC2 / RDS for SQL Server with SSRS, or replace the reports)",
+    "Session state server (ASP.NET)": "ASP.NET State Service is Windows-only: move session state to ElastiCache (Redis) or a database",
+    "Directory (LDAP / Active Directory)": "LDAP to the domain controllers over VPN, or AWS Managed Microsoft AD / AD Connector",
+    "Identity provider": "HTTPS egress to the identity provider; register the new redirect URIs for the AWS host names",
+}
 NEEDS = {"internal": "Route from the AWS VPC to the client network (Site-to-Site VPN / Direct Connect), DNS for the name "
                      "(Route 53 Resolver outbound rule), security-group egress to the port; or the system moves to AWS too",
          "external": "Egress through a NAT gateway to the port; give the provider the NAT Elastic IPs if it allow-lists callers",
@@ -54,7 +62,7 @@ NEEDS = {"internal": "Route from the AWS VPC to the client network (Site-to-Site
 def network(c):
     """Network allow-list: outbound destinations (with ports) and inbound listeners from scan facts["network"]."""
     apps = c.cls["applications"]
-    out, inb, clients, runtime, missing = [], [], [], 0, []
+    out, inb, clients, runtime, missing, drives = [], [], [], 0, [], []
     for r in c.repos:
         net = c.scan[r].get("network")
         inv = c.inv[r]
@@ -68,7 +76,10 @@ def network(c):
                 needs = "Database: security-group rule to the database port (RDS in the VPC, or on-premises over VPN / Direct Connect)"
             elif g["scheme"] == "smb":
                 needs = "SMB 445 to a file share: keep it on-premises over VPN / Direct Connect, or move it (Amazon FSx for Windows File Server / S3)"
-            out.append({"host": g["host"], "port": (f"{g['port']} (default)" if g.get("port_default") else str(g["port"])) if g["port"] else "?",
+            if g.get("role") in ROLE_NEEDS:  # role-specific need; an on-premises host still needs the route and DNS
+                needs = ROLE_NEEDS[g["role"]] + ("; on-premises host: Site-to-Site VPN / Direct Connect route and Route 53 Resolver DNS"
+                                                 if g["kind"] == "internal" and g["role"] != "Session state server (ASP.NET)" else "")  # state moves to AWS
+            out.append({"role": g.get("role") or "-", "host": g["host"], "port": (f"{g['port']} (default)" if g.get("port_default") else str(g["port"])) if g["port"] else "?",
                         "protocol": g["scheme"], "kind": g["kind"], "applications": ", ".join(used) or ", ".join(p.split("/")[-1] for p in g["projects"][:3]) or "-",
                         "defined": ", ".join([f"`{k}`" for k in g["keys"][:4]] + (["…"] if len(g["keys"]) > 4 else [])
                                              + [SOURCE_LABEL.get(s, s) for s in g["sources"] if s != "url" or not g["keys"]]),
@@ -82,7 +93,45 @@ def network(c):
             if not cl["keys"] and not cl["literals"]:
                 runtime += 1
             clients.append(cl)
-    return {"outbound": out, "inbound": inb, "clients": clients, "runtime_clients": runtime, "missing": missing}
+        for dv in net.get("drives", []):
+            drives.append(dict(dv, repo=r))
+    return {"outbound": out, "inbound": inb, "clients": clients, "runtime_clients": runtime, "missing": missing, "drives": drives}
+
+
+JOB_AWS = {
+    "Windows Task Scheduler": "EventBridge Scheduler triggering an ECS task (or Lambda); the command must run on Linux, or the task stays on a Windows EC2 host",
+    "SQL Server Agent": "Kept on RDS for SQL Server (Agent supported) while SQL Server stays; on PostgreSQL use pg_cron (RDS / Aurora) or EventBridge Scheduler + a task",
+    "Windows service": "Worker Service in a Linux container (ECS service), or kept on a Windows EC2 host",
+    "Hangfire": "Runs inside the application container; job storage must follow the database (Hangfire.PostgreSql for PostgreSQL); safe with several instances",
+    "Quartz.NET": "Runs inside the application container; use a clustered ADO.NET job store when more than one instance runs",
+    "Hosted / background service": "Runs in every container instance: confirm that is safe with several instances, or give it its own ECS service with one task",
+    "Console job (trigger outside the repository)": "Ask the client who runs it and when; then EventBridge Scheduler + ECS RunTask",
+    "Azure Functions timer": "EventBridge Scheduler + Lambda",
+    "Kubernetes CronJob": "EKS CronJob as is, or EventBridge Scheduler + ECS task",
+    "CI pipeline schedule": "Stays with the CI/CD platform",
+    "Schedule setting": "Carry the value to Parameter Store / the application configuration",
+    "AWS EventBridge schedule": "Already an AWS schedule",
+}
+
+
+def jobs(c):
+    """Scheduled and background jobs from scan facts["scheduled_jobs"], with the applications and the AWS target."""
+    apps = c.cls["applications"]
+    rows, missing = [], []
+    for r in c.repos:
+        js = c.scan[r].get("scheduled_jobs")
+        if js is None:
+            missing.append(r)
+            continue
+        inv = c.inv[r]
+        for j in js:
+            used = apps_for_files([j["file"]], inv, apps) if inv else []
+            app = ", ".join(used) or os.path.splitext(j["project"].split("/")[-1])[0]
+            if j["scheduler"] == "SQL Server Agent":
+                app = "database server (msdb)"
+            rows.append(dict(j, repo=r, application=app,
+                             aws=JOB_AWS.get(j["scheduler"], "EventBridge Scheduler + ECS task")))
+    return {"jobs": rows, "missing": missing}
 
 
 def apps_for_files(files, inv, apps):

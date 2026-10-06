@@ -49,7 +49,7 @@ COMMENT_OF = {".cs": "c", ".fs": "c", ".java": "c", ".kt": "c", ".go": "c", ".ph
 SCHEME_PORT = {"http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21, "ftps": 990, "sftp": 22, "ssh": 22, "ldap": 389,
                "ldaps": 636, "amqp": 5672, "amqps": 5671, "mqtt": 1883, "mqtts": 8883, "redis": 6379, "rediss": 6380,
                "mongodb": 27017, "postgres": 5432, "postgresql": 5432, "mysql": 3306, "sqlserver": 1433, "smtp": 25, "smtps": 465,
-               "net.tcp": 808, "grpc": 443, "smb": 445, "kafka": 9092, "nats": 4222, "imap": 143, "imaps": 993, "pop3": 110, "pop3s": 995}
+               "net.tcp": 808, "grpc": 443, "smb": 445, "aspnet-state": 42424, "kafka": 9092, "nats": 4222, "imap": 143, "imaps": 993, "pop3": 110, "pop3s": 995}
 URL = re.compile(r"(?i)(?<![\w.+-])(https?|wss?|net\.tcp|ftps?|sftp|ssh|ldaps?|amqps?|mqtts?|rediss?|mongodb(?:\+srv)?|postgres(?:ql)?|"
                  r"mysql|sqlserver|smtps?|grpc|kafka|nats|imaps?|pop3s?|tcp)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9_.\-]+|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?")
 IP = re.compile(r"^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$")
@@ -121,6 +121,37 @@ INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|L
                           r"""\bapp\.Run\s*\(\s*["'](https?://[^"']+)["']|\.listen\s*\(\s*(\d{2,5})""")
 
 
+ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match wins
+    (r"^(smtps?|imaps?|pop3s?)\b|mail|smtp|sendgrid|mailgun|\bses\b|email\.[\w-]+\.amazonaws", "Mail server (SMTP)"),
+    (r"^(sftp|ftps?|ssh)\b|sftp|\bftp", "File transfer (SFTP / FTP)"),
+    (r"^smb\b|unc-path", "File share (SMB)"),
+    (r"^ldaps?\b|ldap|activedirectory|domaincontroller", "Directory (LDAP / Active Directory)"),
+    (r"reportserver|reportservice|reportexecution|ssrs|/reports?\b|crystal", "Report server (SSRS / reporting)"),
+    (r"^aspnet-state\b|session-state", "Session state server (ASP.NET)"),
+    (r"^(sqlserver|postgres(ql)?|mysql|mongodb(\+srv)?)\b", "Database"),
+    (r"^rediss?\b|redis|memcache|elasticache", "Cache (Redis)"),
+    (r"^(amqps?|kafka|mqtts?|nats)\b|rabbit|servicebus|kafka|activemq|\bqueue|\bsqs\b|\bsns\b|eventhub", "Message broker / queue"),
+    (r"authority|identity|oidc|oauth|openid|\bsts\b|adfs|\blogin\.|\bsso\b|saml|issuer|okta|auth0|keycloak|cognito", "Identity provider"),
+    (r"elastic|opensearch|\bseq\b|splunk|loki|datadog|newrelic|applicationinsights|logstash|graylog|sentry|otlp|opentelemetry", "Logging / monitoring"),
+    (r"payment|stripe|paypal|braintree|adyen|worldpay|authorize\.net", "Payment gateway"),
+    (r"\bs3\b|s3\.|blob\.core|\bstorage\b|bucket", "Object storage"),
+    (r"twilio|\bsms\b|nexmo|vonage", "SMS / messaging"),
+    (r"^net\.tcp\b|wcf-client|\.svc\b|\.asmx\b|soap|wsdl", "SOAP / WCF service"),
+    (r"^grpc\b", "gRPC service"),
+    (r"^wss?\b", "WebSocket"),
+    (r"^https?\b", "HTTP service / API"),
+]
+ROLE_RX = [(re.compile(p, re.I), r) for p, r in ROLES]
+
+
+def role_of(scheme, source, key, hint):
+    text = f"{scheme} {source} {key} {hint}"
+    for rx, r in ROLE_RX:
+        if rx.search(text):
+            return r
+    return "Network service"
+
+
 def host_kind(host):
     h = host.lower().strip("[]")
     if IP.match(h):
@@ -166,12 +197,13 @@ class Scan:
         self.skip = SKIP_DIRS | {s.lower() for s in (skip_dirs or [])}
         self.outbound, self.inbound, self.clients = [], [], []
         self.dest_keys = set()
+        self.drives = []  # drive letters other than C: in configuration / code literals: often mapped network drives
         self.key_reads = defaultdict(list)  # key name in code -> [(file, line)]
         self.seen = set()
         self.files = 0
 
     # ------------------------------------------------------------ helpers
-    def out(self, host, port, scheme, source, file, line, key=""):
+    def out(self, host, port, scheme, source, file, line, key="", hint=""):
         host = host.strip().strip(".").lower()
         if not usable_host(host):
             return
@@ -183,7 +215,7 @@ class Scan:
             return
         self.seen.add(k)
         self.outbound.append({"host": host, "port": port, "scheme": scheme, "kind": host_kind(host), "source": source, "key": key,
-                              "file": file, "line": line, "port_default": default})
+                              "file": file, "line": line, "port_default": default, "role": role_of(scheme, source, key, f"{host} {hint}")})
         if key:
             self.dest_keys.add(key)
 
@@ -254,6 +286,9 @@ class Scan:
                     h = m.group(1)
                     if not re.fullmatch(r"(?i)\?|\.|localhost|wsl\$|wsl\.localhost|tsclient|[a-z]", h) and not re.fullmatch(r"\d+", h):
                         self.out(h, None, "smb", "unc-path", rp, i)
+            if ext in (".cs", ".vb") and not (cm and cm.match(line)):
+                for dm in re.finditer(r'(?:@"|")([D-Zd-z]):\\', line):  # "Z:\\exports" / @"Z:\exports" in a string literal
+                    self.drives.append({"drive": dm.group(1).upper() + ":", "key": "", "file": rp, "line": i})
             if "://" not in line or i in inbound_lines or (cm and cm.match(line)) or re.search(r"(?i)xmlns|schemaLocation|<!DOCTYPE|\$schema", line):
                 continue
             if ext in (".cs", ".vb") and line.lstrip().startswith(("///", "'''", "[assembly:", "<Assembly:")):
@@ -262,7 +297,7 @@ class Scan:
                 scheme = m.group(1).lower()
                 if scheme == "tcp" and ext not in (".config", ".json", ".yml", ".yaml", ".env", ".properties", ".cs", ".vb"):
                     continue
-                self.out(m.group(2), int(m.group(3)) if m.group(3) else None, scheme, "url", rp, i)
+                self.out(m.group(2), int(m.group(3)) if m.group(3) else None, scheme, "url", rp, i, hint=line[m.end():m.end() + 60])
 
     # ------------------------------------------------------------ config formats
     def config_value(self, rp, line, key, value, port_hint=None):
@@ -277,7 +312,11 @@ class Scan:
                 m = URL.search(value)
                 if m:
                     self.dest_keys.add(key)
-                    self.out(m.group(2), int(m.group(3)) if m.group(3) else None, m.group(1), "url", rp, line, key)
+                    self.out(m.group(2), int(m.group(3)) if m.group(3) else None, m.group(1), "url", rp, line, key, value[m.end():m.end() + 60])
+            return
+        dm = re.match(r"^\s*([D-Zd-z]):\\", value)
+        if dm:
+            self.drives.append({"drive": dm.group(1).upper() + ":", "key": key, "file": rp, "line": line})
             return
         u = UNC.search(value)
         if u:
@@ -339,16 +378,43 @@ class Scan:
             root = ET.fromstring(text.encode("utf-8"))
         except ET.ParseError:
             return inbound_lines
+        settings = {a.get("key", "").lower(): a.get("value") or "" for a in root.iter("add") if a.get("key")}
         for add in root.iter("add"):
             if add.get("connectionString") is not None and add.get("name"):
                 self.connection_string(rp, self.line_of(text, f'"{add.get("name")}"'), add.get("name"), add.get("connectionString"),
                                        add.get("providerName", ""))
             elif add.get("key") and add.get("value") is not None:
-                self.config_value(rp, self.line_of(text, f'"{add.get("key")}"'), add.get("key"), add.get("value"))
+                pk = re.sub(r"(?i)(host|hostname|server|address)$", "port", add.get("key"))  # SftpHost + SftpPort
+                sib = settings.get(pk.lower(), "") if pk != add.get("key") else ""
+                self.config_value(rp, self.line_of(text, f'"{add.get("key")}"'), add.get("key"), add.get("value"), int(sib) if sib.isdigit() else None)
             if add.get("baseAddress"):
                 ln = self.line_of(text, add.get("baseAddress"))
                 inbound_lines.add(ln)
                 self.inbound_url(add.get("baseAddress"), "WCF service base address", rp, ln)
+        handled = {"key", "value", "name", "connectionString", "providerName", "address", "baseAddress", "binding", "contract"}
+
+        def walk(el, path):
+            tag = el.tag.split("}")[-1]
+            here = f"{path}/{tag}" if path else ("" if tag == "configuration" else tag)
+            here = here.lstrip("/")
+            port = el.get("port") if (el.get("port") or "").isdigit() else None
+            for attr, val in el.attrib.items():
+                a = attr.split("}")[-1]
+                if a != "connectionString" and a.lower().endswith("connectionstring") and val:  # <sessionState stateConnectionString=…>
+                    ln = self.line_of(text, f'{attr}="')
+                    st = re.match(r"(?i)\s*tcpip\s*=\s*([^:;\s]+)(?::(\d+))?", val)
+                    if st:
+                        self.out(st.group(1), int(st.group(2)) if st.group(2) else None, "aspnet-state", "session-state", rp, ln, f"{here}:{a}")
+                    else:
+                        self.connection_string(rp, ln, f"{here}:{a}", val)
+                    continue
+                if a not in handled and val and HOST_KEY.search(a):
+                    self.config_value(rp, self.line_of(text, f'{attr}="{val}"'), f"{here}:{a}", val, int(port) if port else None)
+            if HOST_KEY.search(tag) and el.get("value") and tag != "add":
+                self.config_value(rp, self.line_of(text, el.get("value")), here, el.get("value"))
+            for ch in el:
+                walk(ch, here)
+        walk(root, "")
         for sm in root.iter("system.serviceModel"):
             for client in sm.iter("client"):
                 for ep in client.iter("endpoint"):
@@ -522,7 +588,7 @@ class Scan:
             users[key] = sorted(set(hits))
         return {"outbound": sorted(self.outbound, key=lambda e: (e["host"], e["port"] or 0, e["file"], e["line"])),
                 "inbound": sorted(self.inbound, key=lambda e: (e["file"], e["line"])),
-                "clients": self.clients, "config_users": users, "files_scanned": self.files}
+                "clients": self.clients, "config_users": users, "drives": self.drives, "files_scanned": self.files}
 
 
 def scan(root, skip_dirs=None):
@@ -538,6 +604,8 @@ def destinations(net):
                                                                    "port_default": True})
         g["port_default"] = g["port_default"] and e.get("port_default", False)
         g["sources"].add(e["source"])
+        if g.get("role") in (None, "HTTP service / API", "Network service"):
+            g["role"] = e.get("role") or g.get("role")
         if e["key"]:
             g["keys"].add(e["key"])
         if e["file"] not in g["files"]:

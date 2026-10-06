@@ -25,7 +25,7 @@ from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, options, project_of,
 OPT = options("generic-endpoints")
 KIND = {"internal": "Internal / on-premises", "external": "External service", "external-ip": "Public IP"}
 SOURCE = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
-          "unc-path": "UNC path"}
+          "unc-path": "UNC path", "session-state": "session state setting"}
 MAX_USERS = 8
 
 
@@ -63,7 +63,8 @@ def main():
            f"- [Outbound call sites](#net-clients): {len(net['clients'])}", "",
            '<a id="net-outbound"></a>', "", "## Outbound destinations", "", BACK, ""]
     if dests:
-        out += ["| Destination | Port | Protocol | Kind | Defined in | Used by | Evidence |", "| --- | ---: | --- | --- | --- | --- | --- |"]
+        out += ["| Role | Destination | Port | Protocol | Kind | Defined in (how it is configured) | Used by | Evidence |",
+                "| --- | --- | ---: | --- | --- | --- | --- | --- |"]
         for g in dests:
             port = (f"({g['port']})" if g["port_default"] else str(g["port"])) if g["port"] else "?"
             defined = ", ".join([f"`{esc(k)}`" for k in g["keys"]] + [SOURCE.get(s, s) for s in g["sources"] if s != "url" or not g["keys"]])
@@ -71,10 +72,14 @@ def main():
             users = list(dict.fromkeys(users))
             shown = ", ".join(users[:MAX_USERS]) + (f" +{len(users) - MAX_USERS} more" if len(users) > MAX_USERS else "")
             ev = ", ".join(f"`{esc(e)}`" for e in g["evidence"][:3]) + (f" +{len(g['evidence']) - 3}" if len(g["evidence"]) > 3 else "")
-            out.append(f'| <a id="{slug("net", g["host"], g["port"] or "x")}"></a>`{esc(g["host"])}` | {port} | {g["scheme"]} | {KIND[g["kind"]]} | '
+            out.append(f'| {esc_text(g.get("role", "-"))} | <a id="{slug("net", g["host"], g["port"] or "x")}"></a>`{esc(g["host"])}` | {port} | {g["scheme"]} | {KIND[g["kind"]]} | '
                        f"{defined} | {shown or '_not traced to code (read through configuration binding or at run time)_'} | {ev} |")
     else:
         out.append("_No outbound destination is named in the code or configuration._")
+    if net.get("drives"):
+        out += ["", "**Drive letters other than C:** (often mapped network drives: they do not exist in a container or on a new host; ask what "
+                "each maps to):", "", "| Drive | Config key | Evidence |", "| --- | --- | --- |"]
+        out += [f"| `{d['drive']}` | {('`' + esc(d['key']) + '`') if d['key'] else '_code literal_'} | `{esc(d['file'])}:{d['line']}` |" for d in net["drives"]]
     out += ["", '<a id="net-inbound"></a>', "", "## Inbound listeners", "", BACK, "",
             "Ports opened by the applications. Development-only sources (launchSettings, IIS Express) show local ports; production "
             "ports come from the container / host configuration. HTTP routes behind each port are on the [endpoints](endpoints.md) page.", ""]
@@ -107,7 +112,7 @@ def main():
     write_page("network-endpoints.md", out)
     os.makedirs(os.path.join(DOCS, "agent"), exist_ok=True)
     doc = {"outbound": [{k: v for k, v in g.items() if k != "code_users"} | {"anchor": slug("net", g["host"], g["port"] or "x")} for g in dests],
-           "inbound": net["inbound"], "clients": net["clients"]}
+           "inbound": net["inbound"], "clients": net["clients"], "drives": net.get("drives", [])}
     open(os.path.join(DOCS, "agent", "network.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(doc, ensure_ascii=False, indent=1, default=list))
     kinds = Counter(g["kind"] for g in dests)
     print(f"network-endpoints: {len(dests)} outbound destinations ({', '.join(f'{k} {v}' for k, v in kinds.most_common()) or 'none'}), "

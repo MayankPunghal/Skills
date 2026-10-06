@@ -314,11 +314,19 @@ class Scan:
                 self.endpoint(g["host"], g["scheme"], f, projects[0] if projects else "(repository)", int(ln),
                               f"{label}" + (f" {', '.join(g['keys'][:3])}" if g["keys"] else "") + f" -> {g['host']}:{g['port'] or '?'}", "config")
             outbound.append({"host": g["host"], "port": g["port"], "port_default": g["port_default"], "scheme": g["scheme"], "kind": g["kind"],
+                             "role": g.get("role", ""),
                              "sources": g["sources"], "keys": g["keys"], "files": g["files"][:30], "evidence": g["evidence"][:10],
                              "projects": projects, "used_in": sorted({u[0] for u in g["users"]})[:20]})
         inbound = [dict(e, project=self.project_of(os.path.join(self.root, e["file"]))) for e in net["inbound"]]
         clients = [dict(c, project=self.project_of(os.path.join(self.root, c["file"]))) for c in net["clients"]]
-        self.facts["network"] = {"outbound": outbound, "inbound": inbound, "clients": clients[:500], "clients_total": len(clients)}
+        self.facts["network"] = {"outbound": outbound, "inbound": inbound, "clients": clients[:500], "clients_total": len(clients),
+                                 "drives": net.get("drives", [])}
+        try:  # scheduled and background jobs (codebase-documenter scheduled_jobs.py): what runs when, configured how
+            import scheduled_jobs as SJ
+            jobs = SJ.scan(self.root, sorted(SOURCE_DIR_SKIP | {s.lower() for s in self.cfg.get("exclude_dirs", [])}))
+            self.facts["scheduled_jobs"] = [dict(j, project=self.project_of(os.path.join(self.root, j["file"]))) for j in jobs]
+        except ImportError:
+            self.facts["scheduled_jobs"] = None
 
     # ---------------------------------------------------------------- endpoints
     def endpoints(self, rp, project, text, ftype):
@@ -793,7 +801,7 @@ LOCALDB_RULE = {"id": "CFG-DEV-DATABASE", "cat": "configuration-secrets", "title
                 "alt": "", "effort": "trivial", "refs": ["S11"], "question": "Where are production connection strings configured (IIS, transforms, deployment tool), and do they use Windows or SQL authentication?"}
 SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
 SOURCE_LABEL = {"url": "URL", "config-host": "host setting", "connection-string": "connection string", "wcf-client": "WCF client endpoint",
-                "unc-path": "UNC path"}
+                "unc-path": "UNC path", "session-state": "session state setting"}
 
 
 def ver_tuple(v):
