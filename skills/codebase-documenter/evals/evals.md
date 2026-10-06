@@ -53,4 +53,4 @@ Done looks like: answered from `ui-map.md` (button → endpoint → handler), `e
 ### What starts this method
 Prompt: "Who or what ends up calling OrderWorkflow.LockStatusAsync? I want to know which screens can reach it."
 Should trigger: yes
-Done looks like: `trace_flow.py OrderWorkflow.LockStatusAsync --entry` lists each entry point with one call path and the UI triggers of each endpoint; the answer says that dependency injection or reflection paths are not covered.
+Done looks like: `trace_flow.py OrderWorkflow.LockStatusAsync --entry` lists each entry point with one call path and the UI triggers of each endpoint; the answer says that reflection and run-time dispatch paths are not covered (DI, overrides, messages and events are, through generic-di).

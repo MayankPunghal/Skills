@@ -1,0 +1,1679 @@
+{
+  "_doc": "SQL Server -> PostgreSQL conversion knowledge for every construct the T-SQL parser (codebase-documenter sql_parse.py / sqlscan) reports. level: auto = schema-conversion tools (AWS DMS Schema Conversion / SCT, sqlglot) or a one-to-one rename handle it, review only; rewrite = a PostgreSQL equivalent exists but the code must be rewritten by hand and retested; redesign = no PostgreSQL equivalent, the feature has to be replaced by a different design (extension, application code, another AWS service). hours = manual-equivalent [low, high] per occurrence, before the AI factor. Keys are exact construct labels; prefix_defaults cover 'fn: X', 'global: @@X' and 'data type: x' labels not listed. Sources: AWS SQL Server to Aurora PostgreSQL migration playbook, PostgreSQL documentation, Babelfish for Aurora PostgreSQL limitations.",
+  "levels": {
+    "auto": "converted by schema-conversion tooling or a direct rename; review only",
+    "rewrite": "PostgreSQL has an equivalent, but the code is rewritten by hand and retested",
+    "redesign": "no PostgreSQL equivalent: replace with a different design (extension, application code or another service)"
+  },
+  "refs": [
+    "https://docs.aws.amazon.com/dms/latest/sql-server-to-aurora-postgresql-migration-playbook/chap-sql-server-aurora-pg.html",
+    "https://www.postgresql.org/docs/current/plpgsql.html",
+    "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/babelfish-compatibility.html"
+  ],
+  "constructs": {
+    "cursor": {
+      "level": "rewrite",
+      "pg": "PL/pgSQL cursor or, better, a set-based query / FOR row IN SELECT loop",
+      "hours": [
+        1,
+        2.5
+      ]
+    },
+    "TRY/CATCH": {
+      "level": "rewrite",
+      "pg": "BEGIN ... EXCEPTION WHEN ... END block; ERROR_*() -> GET STACKED DIAGNOSTICS",
+      "hours": [
+        0.1,
+        0.25
+      ]
+    },
+    "MERGE": {
+      "level": "rewrite",
+      "pg": "MERGE (PostgreSQL 15+, no OUTPUT/$action until 17) or INSERT ... ON CONFLICT",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "OUTPUT clause": {
+      "level": "rewrite",
+      "pg": "RETURNING (no OUTPUT INTO a table variable; use a CTE)",
+      "hours": [
+        0.25,
+        0.5
+      ]
+    },
+    "PIVOT": {
+      "level": "rewrite",
+      "pg": "conditional aggregation (FILTER / CASE) or tablefunc crosstab()",
+      "hours": [
+        0.5,
+        1
+      ]
+    },
+    "UNPIVOT": {
+      "level": "rewrite",
+      "pg": "LATERAL (VALUES ...) or unnest()",
+      "hours": [
+        0.5,
+        1
+      ]
+    },
+    "FOR XML": {
+      "level": "rewrite",
+      "pg": "xmlagg / xmlelement, or string_agg for the FOR XML PATH('') concatenation idiom",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "FOR JSON": {
+      "level": "rewrite",
+      "pg": "json_agg / json_build_object / row_to_json",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "OPENJSON": {
+      "level": "rewrite",
+      "pg": "jsonb_to_recordset / jsonb_array_elements",
+      "hours": [
+        0.5,
+        1
+      ]
+    },
+    "OPENXML": {
+      "level": "rewrite",
+      "pg": "XMLTABLE",
+      "hours": [
+        1,
+        2
+      ]
+    },
+    "RAISERROR": {
+      "level": "rewrite",
+      "pg": "RAISE EXCEPTION / RAISE NOTICE (severity and state have no equivalent; error numbers become SQLSTATE codes)",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "THROW": {
+      "level": "rewrite",
+      "pg": "RAISE EXCEPTION ... USING ERRCODE (callers that test SQL Server error numbers must test SQLSTATE)",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "TOP": {
+      "level": "auto",
+      "pg": "LIMIT / FETCH FIRST n ROWS ONLY",
+      "hours": [
+        0.03,
+        0.06
+      ]
+    },
+    "TOP WITH TIES": {
+      "level": "rewrite",
+      "pg": "FETCH FIRST n ROWS WITH TIES (PostgreSQL 13+)",
+      "hours": [
+        0.1,
+        0.25
+      ]
+    },
+    "TOP PERCENT": {
+      "level": "rewrite",
+      "pg": "window function (percent_rank / ntile) or a computed LIMIT",
+      "hours": [
+        0.25,
+        0.5
+      ]
+    },
+    "WAITFOR": {
+      "level": "rewrite",
+      "pg": "pg_sleep(); WAITFOR RECEIVE (Service Broker) has no equivalent",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "GOTO": {
+      "level": "redesign",
+      "pg": "no GOTO in PL/pgSQL: restructure with loops, EXIT/CONTINUE and exception blocks",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "savepoint": {
+      "level": "rewrite",
+      "pg": "SAVEPOINT / ROLLBACK TO SAVEPOINT; inside functions use nested BEGIN ... EXCEPTION blocks",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "transactions": {
+      "level": "rewrite",
+      "pg": "transaction control only in procedures (CALL), not in functions; no nested-transaction counting",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "IDENTITY_INSERT": {
+      "level": "rewrite",
+      "pg": "INSERT ... OVERRIDING SYSTEM VALUE, then setval() the identity sequence",
+      "hours": [
+        0.25,
+        0.5
+      ]
+    },
+    "table variable": {
+      "level": "rewrite",
+      "pg": "temporary table, array of composite type or CTE",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "temp table": {
+      "level": "rewrite",
+      "pg": "CREATE TEMP TABLE (session-scoped; must be created before use, no #name scoping per procedure)",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "SELECT INTO #temp": {
+      "level": "rewrite",
+      "pg": "CREATE TEMP TABLE ... AS SELECT",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "inserted/deleted": {
+      "level": "rewrite",
+      "pg": "NEW / OLD in row triggers, or transition tables (REFERENCING NEW TABLE AS ...) in statement triggers",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "IIF": {
+      "level": "auto",
+      "pg": "CASE WHEN ... THEN ... ELSE ... END",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "TRY_CONVERT": {
+      "level": "rewrite",
+      "pg": "no TRY_ cast: a helper function with an exception block, or pg_input_is_valid() (PostgreSQL 16+)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "TRY_CAST": {
+      "level": "rewrite",
+      "pg": "no TRY_ cast: a helper function with an exception block, or pg_input_is_valid() (PostgreSQL 16+)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "PARSE": {
+      "level": "rewrite",
+      "pg": "to_date / to_timestamp / to_number with an explicit format (culture argument has no equivalent)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "full-text": {
+      "level": "redesign",
+      "pg": "tsvector / tsquery with GIN indexes (different ranking, language and CONTAINS/FREETEXT semantics), or OpenSearch",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "OPENQUERY/OPENROWSET": {
+      "level": "redesign",
+      "pg": "postgres_fdw / other foreign data wrappers (not on every managed service), or move the integration to the application / AWS Glue",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "linked server": {
+      "level": "redesign",
+      "pg": "postgres_fdw / dblink or application-level integration",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "cross-database": {
+      "level": "redesign",
+      "pg": "PostgreSQL cannot query another database in one statement: merge into schemas of one database, or use postgres_fdw / dblink",
+      "hours": [
+        1,
+        4
+      ]
+    },
+    "USE database": {
+      "level": "redesign",
+      "pg": "no USE: one connection per database; switch schemas with search_path",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "EXECUTE AS": {
+      "level": "rewrite",
+      "pg": "SECURITY DEFINER functions / SET ROLE",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "row-level security": {
+      "level": "rewrite",
+      "pg": "CREATE POLICY row-level security (different predicate model)",
+      "hours": [
+        2,
+        4
+      ]
+    },
+    "temporal table": {
+      "level": "redesign",
+      "pg": "no system-versioned tables: history table maintained by triggers, or the temporal_tables extension",
+      "hours": [
+        3,
+        8
+      ]
+    },
+    "temporal query": {
+      "level": "redesign",
+      "pg": "FOR SYSTEM_TIME queries rewritten against the trigger-maintained history table",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "memory-optimized": {
+      "level": "redesign",
+      "pg": "no In-Memory OLTP: ordinary tables (UNLOGGED for transient data); natively compiled procedures become PL/pgSQL",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "columnstore": {
+      "level": "redesign",
+      "pg": "no columnstore indexes: BRIN indexes, partitioning, or an analytics store (Redshift / a columnar extension)",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "partitioning": {
+      "level": "rewrite",
+      "pg": "declarative partitioning (PARTITION BY RANGE / LIST / HASH); partition functions and schemes have no direct form",
+      "hours": [
+        2,
+        5
+      ]
+    },
+    "CLR": {
+      "level": "redesign",
+      "pg": "SQL CLR assemblies cannot run in PostgreSQL: rewrite as PL/pgSQL, an extension, or move the logic into the .NET application",
+      "hours": [
+        4,
+        16
+      ]
+    },
+    "graph MATCH": {
+      "level": "redesign",
+      "pg": "recursive CTEs, or Apache AGE / Amazon Neptune for graph workloads",
+      "hours": [
+        3,
+        8
+      ]
+    },
+    "Service Broker": {
+      "level": "redesign",
+      "pg": "no Service Broker: LISTEN/NOTIFY, a queue table with SKIP LOCKED, or Amazon SQS",
+      "hours": [
+        8,
+        24
+      ]
+    },
+    "event notification": {
+      "level": "redesign",
+      "pg": "event triggers / LISTEN-NOTIFY or application-level events",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "BULK INSERT": {
+      "level": "rewrite",
+      "pg": "COPY (server files) or \\copy / Npgsql binary import (client files); aws_s3 extension on RDS/Aurora",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "spatial index": {
+      "level": "rewrite",
+      "pg": "PostGIS GiST index",
+      "hours": [
+        0.5,
+        1
+      ]
+    },
+    "XML index": {
+      "level": "redesign",
+      "pg": "no XML indexes: expression indexes on xpath() results, or store the queried values in columns / jsonb",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "data type: xml": {
+      "level": "rewrite",
+      "pg": "xml type exists, but .value()/.query()/.nodes()/.modify() methods become xpath() / XMLTABLE",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "method call on column (xml/spatial/hierarchyid)": {
+      "level": "rewrite",
+      "pg": "xpath() / PostGIS ST_* functions / ltree operators instead of column methods",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "SET options": {
+      "level": "rewrite",
+      "pg": "ANSI_NULLS / QUOTED_IDENTIFIER / ARITHABORT have no equivalent; SET options become GUC settings where they exist",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "SET option OFF": {
+      "level": "rewrite",
+      "pg": "code relying on ANSI_NULLS OFF (= NULL comparisons) or CONCAT_NULL_YIELDS_NULL OFF behaves differently: rewrite the predicates",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "WHILE loop": {
+      "level": "auto",
+      "pg": "WHILE ... LOOP in PL/pgSQL",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "PRINT": {
+      "level": "auto",
+      "pg": "RAISE NOTICE",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "table type": {
+      "level": "rewrite",
+      "pg": "composite type + array parameter (no table-valued parameters); callers change too",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "synonym": {
+      "level": "redesign",
+      "pg": "no synonyms: views, search_path or wrapper functions",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "sequence": {
+      "level": "auto",
+      "pg": "CREATE SEQUENCE / nextval()",
+      "hours": [
+        0.05,
+        0.1
+      ]
+    },
+    "index": {
+      "level": "auto",
+      "pg": "CREATE INDEX (INCLUDE and filtered WHERE supported; CLUSTERED has no equivalent)",
+      "hours": [
+        0.03,
+        0.1
+      ]
+    },
+    "variables": {
+      "level": "auto",
+      "pg": "PL/pgSQL DECLARE / := assignment",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "INSERT EXEC": {
+      "level": "rewrite",
+      "pg": "INSERT ... SELECT * FROM set-returning function (procedures cannot feed INSERT)",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "AT TIME ZONE": {
+      "level": "rewrite",
+      "pg": "AT TIME ZONE exists, but Windows time-zone names must become IANA names",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "ODBC escape": {
+      "level": "rewrite",
+      "pg": "standard SQL function calls instead of {fn ...} escapes",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "CONVERT": {
+      "level": "rewrite",
+      "pg": "CAST / to_char / to_date; CONVERT style codes have no equivalent",
+      "hours": [
+        0.03,
+        0.1
+      ]
+    },
+    "CAST": {
+      "level": "auto",
+      "pg": "CAST / :: (check type names)",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "COALESCE": {
+      "level": "auto",
+      "pg": "COALESCE",
+      "hours": [
+        0,
+        0
+      ]
+    },
+    "database options": {
+      "level": "redesign",
+      "pg": "ALTER DATABASE SET options differ: review each (READ_COMMITTED_SNAPSHOT is PostgreSQL's default behaviour)",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "logins/users": {
+      "level": "rewrite",
+      "pg": "CREATE ROLE; Windows logins become IAM / Kerberos / password authentication",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "permissions": {
+      "level": "auto",
+      "pg": "GRANT / REVOKE (DENY has no equivalent: revoke and grant selectively)",
+      "hours": [
+        0.02,
+        0.1
+      ]
+    },
+    "identity column": {
+      "level": "auto",
+      "pg": "GENERATED ... AS IDENTITY",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "computed column": {
+      "level": "rewrite",
+      "pg": "GENERATED ALWAYS AS (...) STORED (no virtual / non-persisted columns before PostgreSQL 18; expression must be immutable)",
+      "hours": [
+        0.1,
+        0.5
+      ]
+    },
+    "COLLATE": {
+      "level": "rewrite",
+      "pg": "ICU or citext collations; SQL Server's case-insensitive default has no default equivalent, so equality, LIKE and unique keys can change behaviour",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "ROWGUIDCOL": {
+      "level": "auto",
+      "pg": "uuid column with DEFAULT gen_random_uuid()",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "FILESTREAM": {
+      "level": "redesign",
+      "pg": "no FILESTREAM: bytea / large objects, or move files to Amazon S3 and keep the key",
+      "hours": [
+        4,
+        12
+      ]
+    },
+    "table hints": {
+      "level": "auto",
+      "pg": "remove (PostgreSQL has no table hints; pg_hint_plan extension if a plan must be forced)",
+      "hours": [
+        0.03,
+        0.06
+      ]
+    },
+    "NOLOCK": {
+      "level": "rewrite",
+      "pg": "remove: MVCC readers never block; code that relied on dirty reads sees committed data only",
+      "hours": [
+        0.03,
+        0.1
+      ]
+    },
+    "UPDATE ... FROM": {
+      "level": "rewrite",
+      "pg": "UPDATE ... FROM exists but the target must not be repeated in FROM; alias rules differ",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "DELETE ... FROM": {
+      "level": "rewrite",
+      "pg": "DELETE ... USING",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "APPLY": {
+      "level": "rewrite",
+      "pg": "CROSS / LEFT JOIN LATERAL",
+      "hours": [
+        0.25,
+        0.5
+      ]
+    },
+    "dynamic SQL": {
+      "level": "rewrite",
+      "pg": "EXECUTE format(...) USING ... in PL/pgSQL (quote_ident / %I for names); review every dynamic statement for T-SQL text",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "extended procedure (xp_)": {
+      "level": "redesign",
+      "pg": "no extended procedures (xp_cmdshell, xp_sendmail ...): move to the application, AWS Lambda or a job scheduler",
+      "hours": [
+        2,
+        8
+      ]
+    },
+    "system procedure (sp_)": {
+      "level": "rewrite",
+      "pg": "catalog queries / built-in functions instead of sp_ procedures (sp_rename -> ALTER ... RENAME, sp_getapplock -> pg_advisory_lock)",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "string concatenation with +": {
+      "level": "rewrite",
+      "pg": "|| or concat(); note NULL || x is NULL while concat() skips NULLs",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "LIKE character class": {
+      "level": "rewrite",
+      "pg": "LIKE has no [a-z] classes: SIMILAR TO or ~ regular expressions",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "distributed transaction": {
+      "level": "redesign",
+      "pg": "no distributed transactions (MSDTC) on managed PostgreSQL: two-phase commit is not available on RDS/Aurora by default; use an outbox / saga pattern",
+      "hours": [
+        4,
+        12
+      ]
+    },
+    "OPENROWSET BULK": {
+      "level": "rewrite",
+      "pg": "COPY / aws_s3.table_import_from_s3 instead of reading server files",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "external table (PolyBase)": {
+      "level": "redesign",
+      "pg": "foreign data wrappers or AWS Glue / Athena instead of PolyBase external tables",
+      "hours": [
+        2,
+        6
+      ]
+    }
+  },
+  "functions": {
+    "ISNULL": {
+      "level": "auto",
+      "pg": "COALESCE",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "GETDATE": {
+      "level": "auto",
+      "pg": "now() / clock_timestamp() (now() is fixed per transaction)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "GETUTCDATE": {
+      "level": "auto",
+      "pg": "now() AT TIME ZONE 'UTC'",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "SYSDATETIME": {
+      "level": "auto",
+      "pg": "clock_timestamp()",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "SYSUTCDATETIME": {
+      "level": "auto",
+      "pg": "clock_timestamp() AT TIME ZONE 'UTC'",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "SYSDATETIMEOFFSET": {
+      "level": "auto",
+      "pg": "clock_timestamp() (timestamptz does not keep the offset)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "CURRENT_TIMESTAMP": {
+      "level": "auto",
+      "pg": "CURRENT_TIMESTAMP",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "NEWID": {
+      "level": "auto",
+      "pg": "gen_random_uuid()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "NEWSEQUENTIALID": {
+      "level": "rewrite",
+      "pg": "uuidv7() (PostgreSQL 18) or an extension; ordering semantics differ",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "SCOPE_IDENTITY": {
+      "level": "rewrite",
+      "pg": "INSERT ... RETURNING id (callers change too)",
+      "hours": [
+        0.1,
+        0.25
+      ]
+    },
+    "IDENT_CURRENT": {
+      "level": "rewrite",
+      "pg": "currval(pg_get_serial_sequence(...)) (session-scoped, unlike IDENT_CURRENT)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "DATEADD": {
+      "level": "rewrite",
+      "pg": "+ interval / make_interval()",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "DATEDIFF": {
+      "level": "rewrite",
+      "pg": "date arithmetic / EXTRACT(EPOCH ...); DATEDIFF counts boundaries crossed, so results differ unless rewritten carefully",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "DATEDIFF_BIG": {
+      "level": "rewrite",
+      "pg": "date arithmetic / EXTRACT(EPOCH ...); DATEDIFF counts boundaries crossed, so results differ unless rewritten carefully",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "DATEPART": {
+      "level": "rewrite",
+      "pg": "EXTRACT / date_part (week and weekday numbering differ: DATEFIRST)",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "DATENAME": {
+      "level": "rewrite",
+      "pg": "to_char(..., 'Month' / 'Day')",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "EOMONTH": {
+      "level": "rewrite",
+      "pg": "date_trunc('month', d) + interval '1 month - 1 day'",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "DATEFROMPARTS": {
+      "level": "auto",
+      "pg": "make_date()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "DATETIMEFROMPARTS": {
+      "level": "auto",
+      "pg": "make_timestamp()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "SWITCHOFFSET": {
+      "level": "rewrite",
+      "pg": "AT TIME ZONE (offsets are not stored with timestamptz)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "TODATETIMEOFFSET": {
+      "level": "rewrite",
+      "pg": "AT TIME ZONE (offsets are not stored with timestamptz)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "CHARINDEX": {
+      "level": "auto",
+      "pg": "strpos() / position()",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "PATINDEX": {
+      "level": "rewrite",
+      "pg": "regexp_instr() (PostgreSQL 15+) or substring with a regular expression",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "STUFF": {
+      "level": "rewrite",
+      "pg": "overlay(); STUFF(... FOR XML PATH('')) concatenation becomes string_agg()",
+      "hours": [
+        0.05,
+        0.25
+      ]
+    },
+    "LEN": {
+      "level": "auto",
+      "pg": "length() (LEN ignores trailing spaces; length() does not)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "DATALENGTH": {
+      "level": "auto",
+      "pg": "octet_length()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "REPLICATE": {
+      "level": "auto",
+      "pg": "repeat()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "SPACE": {
+      "level": "auto",
+      "pg": "repeat(' ', n)",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "QUOTENAME": {
+      "level": "rewrite",
+      "pg": "quote_ident() / format('%I')",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "FORMAT": {
+      "level": "rewrite",
+      "pg": "to_char() with PostgreSQL format patterns (.NET format strings and cultures have no equivalent)",
+      "hours": [
+        0.05,
+        0.2
+      ]
+    },
+    "CHOOSE": {
+      "level": "auto",
+      "pg": "CASE or (ARRAY[...])[n]",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "STRING_SPLIT": {
+      "level": "auto",
+      "pg": "string_to_table() / regexp_split_to_table()",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "STRING_AGG": {
+      "level": "auto",
+      "pg": "string_agg() (WITHIN GROUP becomes ORDER BY inside the call)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "STRING_ESCAPE": {
+      "level": "rewrite",
+      "pg": "to_json(text) or replace() chains",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "TRANSLATE": {
+      "level": "auto",
+      "pg": "translate()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "SUSER_SNAME": {
+      "level": "rewrite",
+      "pg": "current_user / session_user (Windows account names do not exist; audit columns change meaning)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "SUSER_NAME": {
+      "level": "rewrite",
+      "pg": "current_user",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "USER_NAME": {
+      "level": "rewrite",
+      "pg": "current_user",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "HOST_NAME": {
+      "level": "rewrite",
+      "pg": "inet_client_addr() / application_name (client host name is not available)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "APP_NAME": {
+      "level": "auto",
+      "pg": "current_setting('application_name')",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "DB_NAME": {
+      "level": "auto",
+      "pg": "current_database()",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "DB_ID": {
+      "level": "rewrite",
+      "pg": "pg_database oid lookup",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "OBJECT_ID": {
+      "level": "rewrite",
+      "pg": "to_regclass() / catalog queries",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "OBJECT_NAME": {
+      "level": "rewrite",
+      "pg": "::regclass::text / catalog queries",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "OBJECTPROPERTY": {
+      "level": "rewrite",
+      "pg": "pg_catalog / information_schema queries",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "COL_LENGTH": {
+      "level": "rewrite",
+      "pg": "information_schema.columns query",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "ERROR_MESSAGE": {
+      "level": "rewrite",
+      "pg": "SQLERRM / GET STACKED DIAGNOSTICS MESSAGE_TEXT",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "ERROR_NUMBER": {
+      "level": "rewrite",
+      "pg": "SQLSTATE (five-character codes, not numbers): every caller that branches on numbers changes",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "ERROR_LINE": {
+      "level": "rewrite",
+      "pg": "PG_EXCEPTION_CONTEXT",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "ERROR_PROCEDURE": {
+      "level": "rewrite",
+      "pg": "PG_EXCEPTION_CONTEXT",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "ERROR_SEVERITY": {
+      "level": "rewrite",
+      "pg": "no severity levels: map to SQLSTATE classes",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "ERROR_STATE": {
+      "level": "rewrite",
+      "pg": "no state: drop or map to SQLSTATE",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "XACT_STATE": {
+      "level": "redesign",
+      "pg": "no equivalent: an exception block always rolls back its subtransaction; restructure error handling",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "SESSION_CONTEXT": {
+      "level": "rewrite",
+      "pg": "set_config('app.key', value, false) / current_setting('app.key', true)",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "CONTEXT_INFO": {
+      "level": "rewrite",
+      "pg": "custom GUC via set_config / current_setting",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "JSON_VALUE": {
+      "level": "rewrite",
+      "pg": "->> / jsonb_path_query_first()",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "JSON_QUERY": {
+      "level": "rewrite",
+      "pg": "-> / jsonb_path_query()",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "JSON_MODIFY": {
+      "level": "rewrite",
+      "pg": "jsonb_set() / jsonb_insert()",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "ISJSON": {
+      "level": "rewrite",
+      "pg": "IS JSON (PostgreSQL 16+) or a cast inside an exception block",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "OPENJSON": {
+      "level": "rewrite",
+      "pg": "jsonb_to_recordset / jsonb_array_elements",
+      "hours": [
+        0.5,
+        1
+      ]
+    },
+    "CHECKSUM": {
+      "level": "redesign",
+      "pg": "no equivalent hash (values differ): md5 / hashtext; anything that stored or compared CHECKSUM values must be recomputed",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "BINARY_CHECKSUM": {
+      "level": "redesign",
+      "pg": "no equivalent hash (values differ): md5 / hashtext; anything that stored or compared CHECKSUM values must be recomputed",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "HASHBYTES": {
+      "level": "rewrite",
+      "pg": "pgcrypto digest() / sha256() (same algorithms; byte encoding of nvarchar input differs: UTF-16 vs UTF-8)",
+      "hours": [
+        0.25,
+        0.75
+      ]
+    },
+    "COMPRESS": {
+      "level": "redesign",
+      "pg": "no GZIP function: compress in the application (stored compressed bytes stay readable only there)",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "DECOMPRESS": {
+      "level": "redesign",
+      "pg": "no GZIP function: compress in the application (stored compressed bytes stay readable only there)",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "SQUARE": {
+      "level": "auto",
+      "pg": "power(x, 2)",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "LOG": {
+      "level": "rewrite",
+      "pg": "ln(x) / log(base, x): argument order differs from LOG(x, base)",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "ATN2": {
+      "level": "auto",
+      "pg": "atan2()",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "RAND": {
+      "level": "auto",
+      "pg": "random() (seeded RAND(n) becomes setseed())",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "SOUNDEX": {
+      "level": "rewrite",
+      "pg": "fuzzystrmatch extension soundex()",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "DIFFERENCE": {
+      "level": "rewrite",
+      "pg": "fuzzystrmatch extension difference()",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "ISNUMERIC": {
+      "level": "rewrite",
+      "pg": "regular-expression test or pg_input_is_valid() (PostgreSQL 16+); ISNUMERIC accepts '$', ',' and 'e'",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "ISDATE": {
+      "level": "rewrite",
+      "pg": "pg_input_is_valid(x, 'date') (PostgreSQL 16+) or a helper with an exception block",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "CONCAT": {
+      "level": "auto",
+      "pg": "concat()",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "CONCAT_WS": {
+      "level": "auto",
+      "pg": "concat_ws()",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "IIF": {
+      "level": "auto",
+      "pg": "CASE",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "TRY_PARSE": {
+      "level": "rewrite",
+      "pg": "helper function with an exception block",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "GREATEST": {
+      "level": "auto",
+      "pg": "GREATEST() (ignores NULLs, SQL Server 2022 GREATEST also ignores NULLs)",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "LEAST": {
+      "level": "auto",
+      "pg": "LEAST()",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "APPROX_COUNT_DISTINCT": {
+      "level": "rewrite",
+      "pg": "count(DISTINCT ...) or the hll extension",
+      "hours": [
+        0.1,
+        0.5
+      ]
+    },
+    "COUNT_BIG": {
+      "level": "auto",
+      "pg": "count() (already bigint)",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "GROUPING_ID": {
+      "level": "rewrite",
+      "pg": "GROUPING(a, b, ...) returns the same bitmask",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "ROWCOUNT_BIG": {
+      "level": "rewrite",
+      "pg": "GET DIAGNOSTICS n = ROW_COUNT",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "SERVERPROPERTY": {
+      "level": "rewrite",
+      "pg": "version() / current_setting() / pg_settings",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "DATABASEPROPERTYEX": {
+      "level": "rewrite",
+      "pg": "pg_database / current_setting()",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "FILESTREAM": {
+      "level": "redesign",
+      "pg": "no FILESTREAM: Amazon S3 + key column",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "PATHNAME": {
+      "level": "redesign",
+      "pg": "no FILESTREAM: Amazon S3 + key column",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "GET_FILESTREAM_TRANSACTION_CONTEXT": {
+      "level": "redesign",
+      "pg": "no FILESTREAM: Amazon S3 + key column",
+      "hours": [
+        1,
+        3
+      ]
+    }
+  },
+  "globals": {
+    "@@ROWCOUNT": {
+      "level": "rewrite",
+      "pg": "GET DIAGNOSTICS n = ROW_COUNT / FOUND",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "@@IDENTITY": {
+      "level": "rewrite",
+      "pg": "INSERT ... RETURNING (@@IDENTITY also sees trigger inserts; RETURNING does not)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "@@ERROR": {
+      "level": "rewrite",
+      "pg": "exception blocks (errors abort the statement; there is no error-code polling)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "@@TRANCOUNT": {
+      "level": "redesign",
+      "pg": "no transaction nesting count: restructure transaction ownership (procedures with COMMIT, or the application)",
+      "hours": [
+        0.25,
+        1
+      ]
+    },
+    "@@FETCH_STATUS": {
+      "level": "rewrite",
+      "pg": "FOUND / EXIT WHEN NOT FOUND",
+      "hours": [
+        0.02,
+        0.06
+      ]
+    },
+    "@@SPID": {
+      "level": "auto",
+      "pg": "pg_backend_pid()",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "@@VERSION": {
+      "level": "auto",
+      "pg": "version()",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "@@SERVERNAME": {
+      "level": "rewrite",
+      "pg": "inet_server_addr() / a configuration value",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "@@DATEFIRST": {
+      "level": "rewrite",
+      "pg": "no DATEFIRST: compute weekdays with EXTRACT(ISODOW)",
+      "hours": [
+        0.1,
+        0.3
+      ]
+    },
+    "@@NESTLEVEL": {
+      "level": "redesign",
+      "pg": "no nesting level: pass depth explicitly",
+      "hours": [
+        0.25,
+        1
+      ]
+    }
+  },
+  "data_types": {
+    "money": {
+      "level": "rewrite",
+      "pg": "numeric(19,4) (PostgreSQL money is locale-dependent; avoid it)",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "smallmoney": {
+      "level": "rewrite",
+      "pg": "numeric(10,4)",
+      "hours": [
+        0.05,
+        0.15
+      ]
+    },
+    "smalldatetime": {
+      "level": "auto",
+      "pg": "timestamp(0)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "datetime": {
+      "level": "auto",
+      "pg": "timestamp(3) (datetime rounds to 1/300 s; equality on stored values can differ)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "datetimeoffset": {
+      "level": "rewrite",
+      "pg": "timestamptz stores the instant, not the original offset: add an offset column if the offset matters",
+      "hours": [
+        0.1,
+        0.5
+      ]
+    },
+    "uniqueidentifier": {
+      "level": "auto",
+      "pg": "uuid (sort order differs from SQL Server's)",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "text": {
+      "level": "auto",
+      "pg": "text",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "ntext": {
+      "level": "auto",
+      "pg": "text",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "image": {
+      "level": "auto",
+      "pg": "bytea",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "timestamp": {
+      "level": "redesign",
+      "pg": "rowversion has no equivalent: xmin system column (EF Core Npgsql UseXminAsConcurrencyToken) or a trigger-maintained version column",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "rowversion": {
+      "level": "redesign",
+      "pg": "rowversion has no equivalent: xmin system column (EF Core Npgsql UseXminAsConcurrencyToken) or a trigger-maintained version column",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "sql_variant": {
+      "level": "redesign",
+      "pg": "no variant type: jsonb, text plus a type column, or separate typed columns",
+      "hours": [
+        1,
+        3
+      ]
+    },
+    "tinyint": {
+      "level": "auto",
+      "pg": "smallint (tinyint is unsigned 0-255)",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "bit": {
+      "level": "rewrite",
+      "pg": "boolean (queries and code comparing to 0/1 change) or smallint",
+      "hours": [
+        0.02,
+        0.05
+      ]
+    },
+    "(max)": {
+      "level": "auto",
+      "pg": "text / bytea",
+      "hours": [
+        0,
+        0.01
+      ]
+    },
+    "hierarchyid": {
+      "level": "redesign",
+      "pg": "ltree extension or a parent-id / path column; GetAncestor / IsDescendantOf rewritten",
+      "hours": [
+        2,
+        6
+      ]
+    },
+    "geography": {
+      "level": "rewrite",
+      "pg": "PostGIS geography (extension); STDistance etc. become ST_* functions",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "geometry": {
+      "level": "rewrite",
+      "pg": "PostGIS geometry (extension)",
+      "hours": [
+        0.5,
+        1.5
+      ]
+    },
+    "sysname": {
+      "level": "auto",
+      "pg": "varchar(128) / name",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "xml": {
+      "level": "rewrite",
+      "pg": "xml (methods become xpath() / XMLTABLE)",
+      "hours": [
+        0.25,
+        1
+      ]
+    }
+  },
+  "prefix_defaults": {
+    "fn: ": {
+      "level": "rewrite",
+      "pg": "check the PostgreSQL equivalent of this built-in function",
+      "hours": [
+        0.02,
+        0.1
+      ]
+    },
+    "global: ": {
+      "level": "rewrite",
+      "pg": "check the PostgreSQL equivalent of this @@ variable",
+      "hours": [
+        0.05,
+        0.2
+      ]
+    },
+    "data type: ": {
+      "level": "auto",
+      "pg": "map the type",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    }
+  },
+  "default": {
+    "level": "rewrite",
+    "pg": "review for PostgreSQL",
+    "hours": [
+      0.05,
+      0.2
+    ]
+  }
+}

@@ -143,7 +143,7 @@
    "replacement": "Microsoft.Data.Sqlite"
   },
   {
-   "match": "Dapper(\\..*)?|Newtonsoft\\.Json(\\..*)?|AutoMapper(\\..*)?|NLog|Serilog(\\..*)?|Polly|FluentValidation|Humanizer(\\..*)?|HtmlAgilityPack|CsvHelper|MediatR|Castle\\.Core|Moq|NUnit|xunit(\\..*)?|MSTest\\..*|FluentAssertions|RestSharp|StackExchange\\.Redis|AWSSDK\\..*|Twilio|Stripe\\.net|SendGrid|SharpZipLib|MimeKit|MailKit|ClosedXML|DocumentFormat\\.OpenXml|NPOI|ExcelDataReader(\\..*)?|QuestPDF|SkiaSharp(\\..*)?|Hangfire\\.Core|Quartz|Autofac|Unity|Ninject|SimpleInjector|Microsoft\\.Extensions\\..*|BouncyCastle(\\..*)?|Portable\\.BouncyCastle|BCrypt\\.Net-Next|Swashbuckle\\.AspNetCore(\\..*)?|MySql\\.Data|MySqlConnector|Npgsql(\\..*)?|MongoDB\\.Driver|Selenium\\.WebDriver|Microsoft\\.Data\\.SqlClient|log4net",
+   "match": "Dapper(\\..*)?|Newtonsoft\\.Json(\\..*)?|AutoMapper\\..*|NLog|Serilog(\\..*)?|Polly|FluentValidation|Humanizer(\\..*)?|HtmlAgilityPack|CsvHelper|MediatR\\..*|Castle\\.Core|Moq|NUnit|xunit(\\..*)?|MSTest\\..*|FluentAssertions|RestSharp|StackExchange\\.Redis|AWSSDK\\..*|Twilio|Stripe\\.net|SendGrid|SharpZipLib|MimeKit|MailKit|ClosedXML|DocumentFormat\\.OpenXml|NPOI|ExcelDataReader(\\..*)?|QuestPDF|SkiaSharp(\\..*)?|Hangfire\\.Core|Quartz|Autofac|Unity|Ninject|SimpleInjector|Microsoft\\.Extensions\\..*|BouncyCastle(\\..*)?|Portable\\.BouncyCastle|BCrypt\\.Net-Next|Swashbuckle\\.AspNetCore(\\..*)?|MySql\\.Data|MySqlConnector|Npgsql(\\..*)?|MongoDB\\.Driver|Selenium\\.WebDriver|Microsoft\\.Data\\.SqlClient|log4net",
    "status": "ok",
    "sev": "Info",
    "note": "Cross-platform on .NET 10 in current versions; upgrade to a current major (check breaking changes).",
@@ -207,6 +207,13 @@
    "sev": "Low",
    "note": "Azure monitoring for System.Web/Windows.",
    "replacement": "OpenTelemetry + CloudWatch / X-Ray (ADOT)"
+  },
+  {
+   "match": "MediatR|AutoMapper|MassTransit(\\..*)?",
+   "status": "licence",
+   "sev": "Low",
+   "note": "Offline hint (an online scan checks every package's licence history on nuget.org instead): MediatR 13+ and AutoMapper 15+ are dual RPL-1.5 / commercial (free Community edition under USD 5M revenue); MassTransit 9+ is commercial (v8 open source with fixes through 2026).",
+   "replacement": "Stay on the last open-source version (MediatR 12.5.0, AutoMapper 14.0.0, MassTransit 8.x) or buy a licence; alternatives: Mediator (source-generated), Mapperly / hand-written mapping, Wolverine / Rebus"
   },
   {
    "match": "iTextSharp(\\..*)?|itextsharp\\.xmlworker",

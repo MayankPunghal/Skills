@@ -182,6 +182,12 @@ def classify(p, files_by_ext, code_hits):
     razor = files_by_ext.get(".cshtml", 0) + files_by_ext.get(".vbhtml", 0)
     mvc = "system.web.mvc" in refs or "microsoft.aspnet.mvc" in pk
     webapi = "system.web.http" in refs or "microsoft.aspnet.webapi.core" in pk or "microsoft.aspnet.webapi" in pk
+    # a web application has the Web Application project type or a web.config / Global.asax beside the project file; a
+    # library that only references MVC / Web API (framework extensions, services with filters, base controllers) is not
+    # deployed on its own: it is ported at the web rate but is not an application
+    webapp = bool(guids & {"web-application", "mvc4"}) or p.get("web_root")
+    if (mvc or webapi) and not webapp and not files_by_ext.get(".svc") and p.get("output_type", "").lower() not in ("exe", "winexe"):
+        return "web-library"
     if aspx and not mvc:
         return "aspnet-webforms"
     if mvc:
@@ -203,6 +209,7 @@ def classify(p, files_by_ext, code_hits):
     return "class-library"
 
 
+NON_DEPLOYABLE_NOTE = "web-library: references ASP.NET MVC / Web API but has no web.config, Global.asax or Web Application project type"
 DEPLOYABLE = {"aspnet-mvc", "aspnet-webapi", "aspnet-webforms", "wcf-service", "windows-service", "console", "winforms", "wpf",
               "aspnet-core", "website", "database"}
 
@@ -311,6 +318,8 @@ def inventory_repo(name, repo_root, cfg):
                         per_proj[o["path"]]["servicebase"] = True
     for p in projects:
         b = per_proj[p["path"]]
+        pdir = os.path.dirname(os.path.join(repo_root, p["path"]))
+        p["web_root"] = any(os.path.exists(os.path.join(pdir, x)) for x in ("web.config", "Web.config", "Global.asax", "global.asax"))
         p["files_by_ext"] = dict(b["ext"])
         p["loc"] = dict(b["loc"])
         p["loc_code"] = sum(v for k, v in b["loc"].items() if k in ("C#", "VB.NET", "F#", "markup"))
@@ -352,6 +361,13 @@ def inventory_repo(name, repo_root, cfg):
     for w in websites:
         apps.append({"id": slug(f"{name}-{w['path']}-site"), "name": w["name"], "entry": w["path"], "type": "website",
                      "framework_family": "netfx", "target_frameworks": [], "projects": [], "loc": 0})
+    # two applications with the same name (a legacy and a modernised copy of one project): add the first folder that tells them apart
+    for nm in [n for n, k in Counter(a["name"] for a in apps).items() if k > 1]:
+        grp = [a for a in apps if a["name"] == nm]
+        parts = [a["entry"].replace("\\", "/").split("/") for a in grp]
+        i = next((i for i in range(min(map(len, parts))) if len({x[i] for x in parts}) > 1), None)
+        for a, pp in zip(grp, parts):
+            a["name"] = f"{nm} ({pp[i] if i is not None else a['entry']})"
     usage = Counter(d for a in apps for d in a["projects"][1:])
     shared = [{"path": d, "name": by_path[d]["name"], "used_by": sorted(a["name"] for a in apps if d in a["projects"][1:]),
                "framework_family": by_path[d]["framework_family"], "target_frameworks": by_path[d]["target_frameworks"]}

@@ -8,6 +8,8 @@ Prints the callees (or with --up the callers) of a method as an indented tree: n
 --entry answers "what starts this?": every endpoint, UI event or job that reaches the method, one call path each,
 and the buttons / links / scripts that call those endpoints (needs the generic-trace adapter's entry-points.json).
 "↺" marks a method already shown above. Calls include graphify's INFERRED (name-resolved) edges: verify in code.
+A hop bound at run time shows how: "[di registration]", "[di decorator]", "[override]", "[message]", "[event]",
+"[method group]", "[stored delegate]", "[background job]", "[redirect]", "[filter]" … (C#, from csharp_resolve.py).
 --draft writes docs/_src/workflows/flows/<flow-id>.flow.json: one step per method in call order, lane = project,
 step text = method name. Rewrite the texts in business language, merge or drop technical steps, add decisions,
 data and external steps, then run build_site.py (reference/flows.md has the format).
@@ -45,22 +47,27 @@ def params(x):
 def tree(m, root, depth, up, limit):
     lines, seen = [], set()
 
-    def walk(a, d, prefix):
+    def walk(a, d, prefix, how=""):
         if len(lines) >= limit:
             return
         x = m[a]
         mark = " ↺" if a in seen else ""
-        lines.append(f"{prefix}{x['name']}{params(x)}  {x['file']}:{x['line']}{mark}")
+        lines.append(f"{prefix}{f'[{how}] ' if how else ''}{x['name']}{params(x)}  {x['file']}:{x['line']}{mark}")
         if a in seen or d >= depth:
             return
         seen.add(a)
         for b in (x["callers"] if up else x["calls"]):
             if b in m:
-                walk(b, d + 1, prefix + "  ")
+                walk(b, d + 1, prefix + "  ", hop(m, b, a) if up else hop(m, a, b))
     walk(root, 0, "")
     if len(lines) >= limit:
         lines.append(f"... truncated at {limit} lines (use --depth or --max)")
     return lines
+
+
+def hop(m, a, b):
+    """How the call a -> b is bound at run time ("" for a plain call)."""
+    return (m[a].get("via") or {}).get(b, "")
 
 
 def entries(cfg, m, target):
@@ -83,11 +90,13 @@ def entries(cfg, m, target):
         if target in prev:
             path, a = [], target
             while a:
-                path.append(m[a]["name"])
-                a = prev[a]
+                p = prev[a]
+                how = hop(m, p, a) if p else ""
+                path.append((f"[{how}] " if how else "") + m[a]["name"])
+                a = p
             out.append((len(path), e, " → ".join(reversed(path))))
     if not out:
-        return [f"{m[target]['name']}: no entry point reaches it in the static call graph (dead code, DI / reflection, or a missing edge)"]
+        return [f"{m[target]['name']}: no entry point reaches it in the static call graph (dead code, reflection / run-time dispatch, or a missing edge; for C# check reference/dependency-injection.md)"]
     lines = [f"{m[target]['name']} is reached from {len(out)} entry point(s):"]
     for _, e, path in sorted(out, key=lambda t: t[0]):
         lines.append(f"  {e['kind']}: {e['label']}  ({e['file']}:{e['line']})")

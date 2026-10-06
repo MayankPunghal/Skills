@@ -6,7 +6,9 @@ Part of the generic-graph adapter (runs after graph_reference.py). Writes into d
   methods-<project>.md  instead, when the estate has more methods than adapter_options.generic-graph.methods_split
                         (default 2000): methods.md becomes the index and each project gets its own page
 and docs/agent/methods.json (compact, for tools and the flow viewer):
-  {"<anchor>": {"name", "file", "line", "decl", "params": [...], "returns", "calls": [anchor...], "callers": [anchor...]}}
+  {"<anchor>": {"name", "file", "line", "decl", "params": [...], "returns", "calls": [anchor...], "callers": [anchor...],
+                "via": {anchor: "di registration" | "override" | "message" | ...}}}   (via: only calls bound at run time,
+  from csharp_resolve.py; trace_flow.py prints them on each hop)
 
 Calls come from graphify: EXTRACTED edges are shown plainly, INFERRED ones in italics (resolved by name, verify in code).
 Declarations are parsed from the source text, so they work for any language with name(...) declarations
@@ -23,6 +25,7 @@ SRC_ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
 SPLIT = OPT.get("methods_split", 2000)
 MAX_LINKS = OPT.get("max_call_links", 12)
 CALLS = {"calls", "indirect_call", "dispatches_to"}
+PLAIN = {"local variable", "only implementation"}  # "partial class field" keeps its label: the field is in another file   # resolver edges that are ordinary static calls: no "via" label
 MANIFEST = re.compile(r"\.(csproj|vbproj|fsproj)$|^(package\.json|pyproject\.toml|setup\.py|pom\.xml|build\.gradle(\.kts)?|go\.mod|Cargo\.toml|composer\.json)$", re.I)
 MODIFIERS = {"public", "private", "protected", "internal", "static", "async", "virtual", "override", "abstract", "sealed",
              "extern", "unsafe", "new", "partial", "final", "synchronized", "readonly", "export", "default", "declare",
@@ -199,6 +202,7 @@ def main():
         aid[i] = a
     out_e, in_e = defaultdict(dict), defaultdict(dict)   # i -> {j: inferred?}
     ctor_calls = defaultdict(set)                          # method -> classes it instantiates / calls statically
+    via = defaultdict(dict)                                # i -> {j: how the call is bound at run time}
     for e in g["links"]:
         s, t, r = e["source"], e["target"], e.get("relation")
         if r not in CALLS or s not in methods or s == t:
@@ -207,6 +211,8 @@ def main():
         if t in methods:
             out_e[s][t] = out_e[s].get(t, True) and inferred
             in_e[t][s] = in_e[t].get(s, True) and inferred
+            if e.get("_origin") == "csharp-resolve" and e.get("context") and e["context"] not in PLAIN:
+                via[s][t] = e["context"]
         elif t in nodes and nodes[t].get("_callable_class"):
             ctor_calls[s].add(t)
 
@@ -226,18 +232,20 @@ def main():
         info[i] = {"name": (cls_name(i) + "." if cls_name(i) else "") + name, "file": norm(n["source_file"]),
                    "line": line_of(n), "decl": decl, "params": params, "returns": returns}
 
-    def link(j, here, inferred=False):
+    def link(j, here, inferred=False, how=""):
         target = "" if page[j] == here else page[j]
         s = f"[{esc(info[j]['name'])}]({target}#{aid[j]})"
-        return f"*{s}*" if inferred else s
+        return (f"*{s}*" if inferred else s) + (f" ({esc(how)})" if how else "")
 
-    def links(edges, here):
+    def links(edges, here, hows=None):
         items = sorted(edges.items(), key=lambda kv: (kv[1], info[kv[0]]["name"]))
-        s = ", ".join(link(j, here, inf) for j, inf in items[:MAX_LINKS])
+        s = ", ".join(link(j, here, inf, (hows or {}).get(j, "")) for j, inf in items[:MAX_LINKS])
         return s + (f" +{len(items) - MAX_LINKS} more" if len(items) > MAX_LINKS else "") or "—"
 
     legend = ("Declarations are read from the source line graphify reports. *Italic* calls were resolved by name "
-              "(INFERRED edges): check them in the code. Overloads share a name; the file:line tells them apart.")
+              "(INFERRED edges): check them in the code. A call followed by (di registration), (override), (message), "
+              "(event) … is bound at run time: that is the method that actually runs, found by the C# resolver "
+              "(see dependency-injection.md). Overloads share a name; the file:line tells them apart.")
     pages = defaultdict(list)
     for gname in sorted(groups):
         here = page_of_group[gname]
@@ -251,7 +259,7 @@ def main():
                      "| Method | Declaration | Calls | Called by |", "| --- | --- | --- | --- |"]
             for i in mids:
                 x = info[i]
-                calls = links(out_e[i], here)
+                calls = links(out_e[i], here, via[i])
                 if ctor_calls[i]:
                     calls = (calls if calls != "—" else "") + ("; " if calls != "—" else "") + "creates " + ", ".join(
                         f"`{esc(clean(nodes[t].get('label')))}`" for t in sorted(ctor_calls[i])[:6])
@@ -280,7 +288,8 @@ def main():
 
     agent = os.path.join(DOCS, "agent")
     os.makedirs(agent, exist_ok=True)
-    data = {aid[i]: dict(info[i], page=page[i], calls=[aid[j] for j in out_e[i]], callers=[aid[j] for j in in_e[i]])
+    data = {aid[i]: dict(info[i], page=page[i], calls=[aid[j] for j in out_e[i]], callers=[aid[j] for j in in_e[i]],
+                         **({"via": {aid[j]: k for j, k in via[i].items()}} if via[i] else {}))
             for i in methods}
     open(os.path.join(agent, "methods.json"), "w", encoding="utf-8", newline="\n").write(
         json.dumps(data, ensure_ascii=False, separators=(",", ":")))

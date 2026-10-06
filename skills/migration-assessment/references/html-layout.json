@@ -163,6 +163,7 @@
       "narrative:architecture",
       "architecture-map",
       "block:graph-insights",
+      "block:wiring",
       "dependencies-table"
      ]
     },
@@ -174,7 +175,8 @@
       "narrative:dependencies",
       "block:project-deps",
       "block:workflows",
-      "block:db-dependents"
+      "block:db-dependents",
+      "block:db-coupling"
      ]
     },
     {

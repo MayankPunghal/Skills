@@ -7,3 +7,5 @@ _old/
 .impeccable/
 .idea/
 .vscode/
+bin/
+obj/

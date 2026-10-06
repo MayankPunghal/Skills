@@ -268,6 +268,42 @@ def b_db_dependents(c):
         out.append("")
     return "\n".join(out) or "_No database objects inventoried._"
 
+def b_db_coupling(c):
+    """Shared database objects (map_graphs analysis.database, from the parsed SQL and the code graph): which applications read,
+    write and call each one. Objects shared by several applications tie their migration together."""
+    out = []
+    for r in c.repos:
+        g = (c.graph.get(r) or {}).get("database") or {}
+        if not g:
+            continue
+        inv = c.inv.get(r) or {}
+        pname_path = {p["name"]: p["path"] for p in inv.get("projects", [])}
+        app_of = {}
+        for a in c.cls["applications"]:
+            if a["repo"] == r:
+                for pp in a["projects"]:
+                    app_of.setdefault(pp, []).append(a["name"])
+
+        def apps(projects):
+            names = sorted({x for p in projects for x in (app_of.get(pname_path.get(p, ""), []) or [p])})
+            return ", ".join(names) or "-"
+        out.append(f"**{r}** — {g['objects']} database objects; **{g['shared_count']} shared by more than one project**, "
+                   f"{len(g.get('multi_writer', []))} written by more than one (finding DB-MULTI-WRITER), "
+                   f"{g.get('unused_count', 0)} with no caller found in code or SQL.\n")
+        if g.get("shared"):
+            out.append(table(["Object", "Kind", "Written by", "Read by", "Executed by", "Through routines", "Code sites"],
+                             [(x["name"], x["kind"], apps(x["writers"]), apps(x["readers"]), apps(x["callers"]),
+                               _list(x.get("routines", []), 4), x.get("code_sites", 0)) for x in g["shared"][:40]]))
+            if g["shared_count"] > 40:
+                out.append(f"\n_{g['shared_count'] - 40} more in assessment/graphs/{r}/analysis.json (database.shared)._")
+        if g.get("objects_per_project"):
+            out.append("\nDatabase objects each project touches: " + ", ".join(f"{p} {n}" for p, n in list(g["objects_per_project"].items())[:15]) + ".\n")
+        if g.get("unused_in_code"):
+            out.append("No caller found (check before removing: jobs, reports, other databases or dynamic SQL may use them): "
+                       + ", ".join(f"`{x}`" for x in g["unused_in_code"][:30]) + (" …" if g.get("unused_count", 0) > 30 else "") + "\n")
+    return "\n".join(out) or "_No database layer in the code graph (rerun map_graphs.py with the codebase-documenter and a SQL parser installed)._"
+
+
 def b_architecture_diagram(c):
     """Layered Mermaid map (same model as the HTML map): clients -> applications -> shared libraries -> data -> external systems.
     Retired applications are left out to keep the picture readable; they are listed under the diagram."""
@@ -317,9 +353,74 @@ def b_graph_insights(c):
         big = [x for x in g["communities"] if not re.search(r"(?i)scripts|wwwroot|/lib", " ".join(x["folders"]))][:8]
         if big:
             out.append("\nLargest code clusters:\n")
-            out.append(table(["Cluster", "Elements", "Main folders", "Projects"], [(x["name"], x["size"], ", ".join(x["folders"]), ", ".join(x["projects"])) for x in big]))
+            out.append(table(["Cluster", "What it holds", "Elements", "Main folders", "Projects"],
+                             [(x["name"], F.short(x.get("summary") or "", 160), x["size"], ", ".join(x["folders"]), ", ".join(x["projects"])) for x in big]))
         out.append("")
     return "\n".join(out) or "_Code graph not built._"
+
+
+WIRING_MEANING = {
+    "di registration": "interface call dispatched to the class the DI container registers for it",
+    "di decorator": "call passes through a registered decorator first",
+    "keyed service": "named / keyed registration picked by key at the injection site",
+    "implementation (no registration found)": "interface call that can reach any implementation (no registration found)",
+    "override": "virtual / abstract call dispatched to an override in a subclass",
+    "message": "MediatR / bus message sent to its handler",
+    "event": "event raised and handled by a subscriber",
+    "method group": "method passed as a delegate and called later",
+    "stored delegate": "lambda stored in an object and invoked elsewhere",
+    "dispatch table": "handler picked from a dictionary / switch of delegates",
+    "background job": "Hangfire / Quartz job enqueued for later",
+    "redirect": "MVC RedirectToAction / string route to another action",
+    "filter": "MVC filter attribute run around an action",
+    "service locator": "service resolved from the container inside a method",
+    "local variable": "static call through a local or loop variable (missed by graphify's own pass, not run-time bound)",
+    "only implementation": "interface call with a single implementation",
+    "partial class field": "static call on a field declared in another file of the same partial class",
+}
+
+
+def b_wiring(c):
+    out = []
+    for r in c.repos:
+        w = (c.graph.get(r) or {}).get("wiring")
+        if not w:
+            continue
+        cont = ", ".join(f"{k} ({v})" for k, v in w["containers"].items()) or "none found"
+        hosts = ", ".join(f"{h} ({n})" for h, n in sorted(w["by_host"].items(), key=lambda x: -x[1]))
+        lts = ", ".join(f"{k} {v}" for k, v in sorted(w["by_lifetime"].items(), key=lambda x: -x[1]))
+        out.append(f"**{r}** — DI containers: {cont}. {w['registrations']} registrations"
+                   + (f" in {hosts}" if hosts else "") + (f"; lifetimes: {lts}" if lts else "") + ". "
+                   + f"{w['consumers']} classes take dependencies through constructors or `@inject`.\n")
+        added = w.get("edges_added") or {}
+        if added:
+            out.append(f"Calls the code graph could not see and the C# resolver added (graphify found {w['graphify_calls']:,} calls itself):\n")
+            out.append(table(["How the call is bound", "Calls", "Meaning"],
+                             [(k, n, WIRING_MEANING.get(k, "")) for k, n in sorted(added.items(), key=lambda x: -x[1])]))
+        facts = [(label, w.get(key)) for label, key in (("keyed registrations", "keyed"), ("decorators", "decorators"), ("factory registrations", "factories"),
+                                                         ("assembly-scan conventions", "conventions"), ("registration modules", "modules"),
+                                                         ("message types", "messages"), ("message handlers", "message_handlers"),
+                                                         ("background jobs", "jobs"), ("event subscriptions", "events"), ("stored delegates", "stored_delegates"),
+                                                         ("dispatch tables", "dispatch_tables"), ("options bindings", "options"),
+                                                         ("service-locator calls", "locators"), ("reflection sites", "reflection")) if w.get(key)]
+        if facts or w.get("pipeline"):
+            out.append("\n" + "; ".join(f"{n} {label}" for label, n in facts)
+                       + ("; pipeline: " + ", ".join(f"{k} ({n})" for k, n in w["pipeline"].items()) if w.get("pipeline") else "") + ".\n")
+        if w.get("framework_features"):
+            out.append(f"Framework features registered (re-created in the new composition root): {', '.join('`' + x + '`' for x in w['framework_features'][:20])}.\n")
+        pp = sorted(w.get("per_project", {}).items(), key=lambda x: -(x[1]["indirect"] + x[1]["locators"]))
+        rows = [(os.path.splitext(os.path.basename(p))[0], v["indirect"], v["locators"], v["reflection"], v["registrations"],
+                 ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items(), key=lambda x: -x[1])[:3]))
+                for p, v in pp[:12] if v["indirect"] or v["locators"] or v["reflection"] or v["registrations"]]
+        if rows:
+            out.append("\nPer project (run-time-bound and service-locator calls per KLOC raise the project's complexity factor, section 8):\n")
+            out.append(table(["Project", "Run-time-bound calls", "Service-locator calls", "Reflection", "Registrations", "Main kinds"], rows))
+        out.append("")
+    if not out:
+        return "_Run-time wiring not analysed (no C# resolver output; rerun map_graphs.py with the codebase-documenter installed)._"
+    out.append("_Source: codebase-documenter `csharp_resolve.py` over the graphify graph (regular expressions, not a compiler: "
+               "verify a surprising edge in code). Findings are in category “Dependency injection and run-time wiring”._")
+    return "\n".join(out)
 
 
 def b_dependencies(c):
@@ -456,31 +557,75 @@ def b_database(c):
 
 
 def b_db_inventory(c):
+    import _dbinventory as DBI
     out = []
+    lvl_name = {"auto": "Automatic (tooling / rename, review only)", "rewrite": "Manual rewrite (PostgreSQL equivalent exists)",
+                "redesign": "Redesign (no PostgreSQL equivalent)"}
     for d in c.est.get("databases", []):
         inv = d.get("inventory") or {}
         if not inv:
             continue
+        if inv.get("note"):
+            out.append(f"**{d['repo']}** — {inv['note']}\n")
         k = inv.get("kinds", {})
         rs = inv.get("routine_sizes", {})
-        out.append(f"**{d['repo']}** — {sum(k.values())} database objects, {inv.get('sql_lines', 0):,} lines of T-SQL.\n")
-        out.append(table(["Object type", "Count"], sorted(k.items(), key=lambda x: -x[1])))
-        out.append("\nRoutine size (procedures, functions, triggers, views): " + ", ".join(f"{s} {rs.get(s, 0)}" for s in ("small", "medium", "large")) + " (small ≤ 50 lines, large > 200).\n")
+        eng = {"scriptdom": "Microsoft's T-SQL parser (ScriptDom)",
+               "sqlglot": "sqlglot (fallback parser: procedural T-SQL may be partly unparsed)"}.get(inv.get("engine"), "no parser")
+        errs = inv.get("parse_errors") or []
+        out.append(f"**{d['repo']}** — {sum(k.values())} database objects, {inv.get('sql_lines', 0):,} lines of T-SQL, parsed with {eng}"
+                   + (f"; {len(errs)} syntax errors (finding DB-SQL-SYNTAX)" if errs else "; no syntax errors") + ".\n")
+        if k:
+            out.append(table(["Object type", "Count"], sorted(k.items(), key=lambda x: -x[1])))
+            out.append("\nRoutine size (procedures, functions, triggers, views): " + ", ".join(f"{s} {rs.get(s, 0)}" for s in ("small", "medium", "large"))
+                       + " (small ≤ 50 lines, large > 200).\n")
+        conv = inv.get("conversion") or {}
+        opt = d["options"].get("dual") or d["options"].get("postgresql") or {}
+        bk = (opt.get("breakdown_manual_hours") or {}).get("construct_levels", {})
+        if conv:
+            out.append("**PostgreSQL conversion of the SQL constructs** (every construct the parser found, classified by data/pg_conversion.json):\n")
+            out.append(table(["Level", "In database objects", "In SQL embedded in code", "Manual-equivalent hours"],
+                             [(lvl_name[lv], (conv.get("database") or {}).get(lv, 0), (conv.get("code") or {}).get(lv, 0), rng(bk[lv]) if bk.get(lv) else "-")
+                              for lv in ("auto", "rewrite", "redesign")]))
+        red = inv.get("redesign_items") or []
+        if red:
+            groups = {}
+            for it in red:
+                g = groups.setdefault(it["construct"], {"n": 0, "where": [], "pg": it["pg"]})
+                g["n"] += it["count"]
+                g["where"].append(f"{it['object'] or it['kind']} (`{it['file']}:{it['line']}`)")
+            out.append("\n**Cannot be converted as written: no PostgreSQL equivalent** (a design decision is needed before the port):\n")
+            out.append(table(["Construct", "Occurrences", "Where", "Replacement approach"],
+                             [(kk, g["n"], ", ".join(g["where"][:4]) + (f" +{len(g['where']) - 4} more" if len(g["where"]) > 4 else ""), g["pg"])
+                              for kk, g in sorted(groups.items(), key=lambda x: -x[1]["n"])]))
         cons = inv.get("constructs", {})
         if cons:
-            out.append(table(["T-SQL construct needing rework for PostgreSQL", "Occurrences"], sorted(cons.items(), key=lambda x: -x[1])))
+            rows = [(kk, n, DBI.conversion(kk)["level"], DBI.conversion(kk)["pg"]) for kk, n in sorted(cons.items(), key=lambda x: -x[1])[:40]]
+            out.append("\n" + table(["T-SQL construct (database objects)", "Occurrences", "Level", "PostgreSQL approach"], rows)
+                       + (f"\n_{len(cons) - 40} rarer constructs are in assessment/scan/{d['repo']}.json (db_inventory.constructs)._" if len(cons) > 40 else ""))
+        st = inv.get("code_sql_stats") or {}
         code = dict(inv.get("code", {}))
+        if st.get("candidates"):
+            code_cons = inv.get("code_constructs") or {}
+            out.append(f"\n**SQL embedded in application code**: {st.get('accepted', 0)} statements parsed from string literals across {st.get('files', 0)} C# files "
+                       f"({code.get('dynamic_sql_in_code', 0)} built at run time; {st.get('parse_errors', 0)} SQL-looking literals are fragments or text and are not counted).\n")
+            if code_cons:
+                out.append(table(["T-SQL construct (embedded SQL)", "Occurrences", "Level", "PostgreSQL approach"],
+                                 [(kk, n, DBI.conversion(kk)["level"], DBI.conversion(kk)["pg"]) for kk, n in sorted(code_cons.items(), key=lambda x: -x[1])[:20]]))
         code["EDMX function imports"] = inv.get("edmx_function_imports", 0)
-        names = {"stored_procedure_calls": "Stored-procedure calls in code", "inline_sql_strings": "Inline SQL strings in code", "tsql_in_strings": "T-SQL-specific syntax in code strings",
+        names = {"stored_procedure_calls": "Stored-procedure calls in code", "inline_sql_strings": "SQL statements embedded in code (parsed)",
+                 "tsql_in_strings": "Embedded statements needing a rewrite or redesign", "dynamic_sql_in_code": "Embedded statements built at run time",
                  "sqlclient_usage": "SqlClient usage (provider swap to Npgsql)", "dapper_calls": "Dapper calls", "ef6_contexts": "Entity Framework contexts"}
         out.append("\n" + table(["Data-access code (changes for PostgreSQL / dual)", "Count"], [(names.get(a, a), b) for a, b in code.items() if b]))
+        if errs:
+            out.append("\nSyntax errors reported by the parser (first 10): " + "; ".join(f"`{e['file']}:{e['line']}` {e['message']}" for e in errs[:10]) + "\n")
         for t in ("postgresql", "dual"):
             o = d["options"].get(t)
             if o and o.get("breakdown_manual_hours"):
-                bk = o["breakdown_manual_hours"]
-                out.append(f"\n**{DB_LABEL[t]}** — manual-equivalent hours: objects {rng(bk['objects'])}, T-SQL constructs {rng(bk['constructs'])}, data-access code {rng(bk['code'])}, "
-                           f"findings without a PostgreSQL equivalent {rng(bk['findings'])}" + (f", provider-neutral data layer {rng(bk['dual_extra'])}" if t == "dual" else "") +
-                           f". AI-assisted total: {hd(o['days'], o['hours'])}. Data migration, tooling set-up and database testing are not included.\n")
+                bkk = o["breakdown_manual_hours"]
+                out.append(f"\n**{DB_LABEL[t]}** — manual-equivalent hours: objects {rng(bkk['objects'])}, T-SQL constructs {rng(bkk['constructs'])}, "
+                           f"data-access code {rng(bkk['code'])}, findings without a PostgreSQL equivalent {rng(bkk['findings'])}"
+                           + (f", provider-neutral data layer {rng(bkk['dual_extra'])}" if t == "dual" else "")
+                           + f". AI-assisted total: {hd(o['days'], o['hours'])}. Data migration, tooling set-up and database testing are not included.\n")
     return "\n".join(out) or "_No database code in the repositories._"
 
 
@@ -572,8 +717,15 @@ def b_multipliers(c):
             ("Scenario", (c.est.get("scenario") or {}).get("hosting_label", "-"), "database: " + ((c.est.get("scenario") or {}).get("database_label") or "-")),
             ("AI-assisted code work", pc(f.get("code", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off (manual estimate)", "coding agents / AWS Transform for .NET / GitHub Copilot app modernization do the mechanical part; engineers direct, review and fix"),
             ("AI-assisted database conversion", pc(f.get("db", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off", "AWS DMS Schema Conversion (generative AI) + review for T-SQL to PL/pgSQL"),
-            ("Port rate per KLOC (manual)", ", ".join(f"{k} {v[0]:g}–{v[1]:g} h" for k, v in rate.items() if k in ("class-library", "aspnet-core", "aspnet-mvc", "aspnet-webapi", "wcf-service", "aspnet-webforms")), "hand-written lines; generated code excluded; markup has its own rate"),
-            ("Complexity factor", f"{cx['min']}–{cx['max']}x", "decision density (" + ", ".join(f"≤{lim:g}/KLOC {fac}x" for lim, fac in cx["decisions_per_kloc_bands"][:-1]) + f", above {cx['decisions_per_kloc_bands'][-2][0]:g}/KLOC {cx['decisions_per_kloc_bands'][-1][1]}x) + {cx['fan_in_extra']}x for projects with {cx['fan_in_threshold']}+ dependents + {cx['big_file_extra']}x per file over 800 lines")]
+            ("AI-assisted redesign work", pc(f.get("redesign", [1, 1])) + " of manual effort" if c.est.get("ai_assisted") else "off",
+             "work with no mechanical path: Web Forms UI rewrite, medium / large findings, constructs with no PostgreSQL equivalent, dual-database abstraction (published AI gains are for mechanical changes)"),
+            ("Size factor", ", ".join(f"{r} {v:.2f}x" for r, v in (c.est.get("scale") or {}).items()) or "1.00x",
+             f"project conversion hours x max(1, (repository KLOC / {est['scale']['reference_kloc']}) ^ {est['scale']['exponent']}) (COCOMO II diseconomy of scale); 'likely' at {int(est['likely_position_large'] * 100)}% of the range for repositories of {est['scale']['large_kloc']}+ KLOC" if est.get("scale") else "-"),
+            ("Port rate per KLOC (manual)", ", ".join(f"{k} {v[0]:g}–{v[1]:g} h" for k, v in rate.items() if k in ("class-library", "web-library", "aspnet-core", "aspnet-mvc", "aspnet-webapi", "wcf-service", "aspnet-webforms")), "hand-written lines; generated code excluded; markup has its own rate"),
+            ("Complexity factor", f"{cx['min']}–{cx['max']}x", "decision density (" + ", ".join(f"≤{lim:g}/KLOC {fac}x" for lim, fac in cx["decisions_per_kloc_bands"][:-1]) + f", above {cx['decisions_per_kloc_bands'][-2][0]:g}/KLOC {cx['decisions_per_kloc_bands'][-1][1]}x) + {cx['fan_in_extra']}x for projects with {cx['fan_in_threshold']}+ dependents + {cx['big_file_extra']}x per file over 800 lines"
+             + (" + " + ", ".join(f"{e:g}x at >{lim:g}" for (lim, _), (_, e) in zip(cx["indirection_per_kloc_bands"], cx["indirection_per_kloc_bands"][1:]))
+                + " run-time-bound calls/KLOC (DI dispatch, overrides, messages, events, delegates, jobs, service locator: C# resolver)"
+                + f" + {cx.get('reflection_extra', 0)}x per reflection site (cap {cx.get('reflection_cap', 0)}x)" if cx.get("indirection_per_kloc_bands") else ""))]
     return table(["Factor", "Value", "How it is used"], rows)
 
 
@@ -673,8 +825,13 @@ def b_appendix_packages(c):
     rows = []
     for r in c.repos:
         for p in c.scan[r].get("packages", []):
-            rows.append((p["id"], ", ".join(p["versions"]), p.get("latest", ""), p["status"], p.get("vulnerable", ""), F.short(p.get("note"), 140), F.short(p.get("replacement"), 100), len(p["projects"]), r))
-    return table(["Package", "Version(s)", "Latest", "Status", "Advisories", "Note", "Replacement", "Projects", "Repository"], rows)
+            rec = p.get("recommendation") or {}
+            reco = (f"{rec['action']} {rec.get('version') or ''}".strip() + (" ⚠ " + "; ".join(rec["risks"]) if rec.get("risks") else "")) if rec else ""
+            rows.append((p["id"], ", ".join(p["versions"]), p.get("latest", ""), p["status"], F.short(reco, 160), p.get("vulnerable", ""), F.short(p.get("note"), 140), F.short(p.get("replacement"), 100), len(p["projects"]), r))
+    return ("Recommendation (online scan): **keep** the version in use when it runs on the target framework, has no advisories, is "
+            "not deprecated and its licence has not changed; otherwise **upgrade** to the lowest version that fixes it (not "
+            "automatically the latest), with the risks that brings (major version jump, licence change, Windows-only build).\n\n"
+            + table(["Package", "Version(s)", "Latest", "Status", "Recommendation", "Advisories", "Note", "Replacement", "Projects", "Repository"], rows))
 
 
 def b_appendix_winapi(c):
@@ -711,7 +868,7 @@ def b_appendix_projects(c):
 
 
 BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
-          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "optional": b_optional, "dependencies": b_dependencies,
+          "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
@@ -755,10 +912,13 @@ def exports(c, rdir):
                         (wp.get("total_days") or ["", ""])[0], (wp.get("total_days") or ["", ""])[1], wp.get("likely_days", ""), wp.get("complexity", ""), a.get("decision_source")])
     with open(os.path.join(rdir, "packages.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
-        w.writerow(["repo", "package", "versions", "latest", "status", "severity", "vulnerable", "note", "replacement", "projects"])
+        w.writerow(["repo", "package", "versions", "latest", "status", "severity", "vulnerable", "note", "replacement", "projects",
+                    "recommendation", "recommended_version", "recommendation_why", "risks"])
         for r in c.repos:
             for p in c.scan[r].get("packages", []):
-                w.writerow([r, p["id"], "; ".join(p["versions"]), p.get("latest", ""), p["status"], p["severity"], p.get("vulnerable", ""), p.get("note"), p.get("replacement"), "; ".join(p["projects"])])
+                rec = p.get("recommendation") or {}
+                w.writerow([r, p["id"], "; ".join(p["versions"]), p.get("latest", ""), p["status"], p["severity"], p.get("vulnerable", ""), p.get("note"), p.get("replacement"), "; ".join(p["projects"]),
+                            rec.get("action", ""), rec.get("version") or "", rec.get("why", ""), "; ".join(rec.get("risks", []))])
     with open(os.path.join(rdir, "open-questions.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["#", "area", "question", "raised_by", "answer"])

@@ -17,6 +17,13 @@ Adapters (codebase-docs.json "adapters", run in order; generic-areas always last
                    (ADO.NET, Dapper, EF Core / EF6 LINQ or raw SQL, NHibernate, JPA, JDBC ...)
   generic-trace    UI map (what each button / link / form / script calls, down to the database) and entry points
                    (endpoints, UI events, jobs) with everything each reaches; reverse indexes method -> entry points
+  generic-di       C# dependency injection and indirect calls: registrations per host, services, constructor dependencies,
+                   message handlers, request pipeline, jobs, events, options, wiring findings; first re-applies the resolved
+                   calls (DI, overrides, messages, events, method groups, jobs, redirects, filters) to graph.json
+  generic-views    every view, page and screen (MVC, Razor Pages, Blazor, Web Forms, ASMX / ASHX, WinForms, WPF / MAUI XAML)
+                   with route, model, layout, code-behind, lines and totals per kind and project
+  generic-portability  Windows-to-Linux / modern .NET portability flags (the migration-assessment portability rules only),
+                   file:line per rule, plus the Windows-only packages from generic-deps
   generic-flows    business-flow pages + interactive viewer from docs/_src/workflows/flows/*.flow.json (runs late)
   generic-sql      tables and routines from .sql DDL (SSDT, migrations, schema folders)
   generic-config   configuration key names per config file (never values)
@@ -48,6 +55,9 @@ ADAPTER_SCRIPTS = {
     "generic-sql": ["generic/sql_reference.py"],
     "generic-config": ["generic/config_reference.py"],
     "generic-areas": ["generic/area_map.py"],
+    "generic-di": ["generic/di_reference.py"],
+    "generic-views": ["generic/view_reference.py"],
+    "generic-portability": ["generic/portability_reference.py"],
     "aspnet-mvc-ssdt": ["aspnet-mvc-ssdt/gen_reference.py", "aspnet-mvc-ssdt/gen_seeds.py",
                         "aspnet-mvc-ssdt/gen_inventory.py", "aspnet-mvc-ssdt/gen_ssrs.py"],
 }
@@ -72,9 +82,15 @@ def main():
     failed = False
     if not a.skip_adapters:
         # these read the method map / finished reference, so they run after the others, in this order
-        late = ["generic-api", "generic-errors", "generic-tests", "generic-dbaccess", "generic-trace", "generic-flows", "generic-areas"]
+        late = ["generic-api", "generic-errors", "generic-di", "generic-tests", "generic-dbaccess", "generic-trace", "generic-views",
+                "generic-portability", "generic-flows", "generic-areas"]
         names = [n for n in cfg["adapters"] if n not in late] + [n for n in late if n in cfg["adapters"]]
         done = set()
+        if "generic-di" in cfg["adapters"]:
+            # graphify update / an older graph may lack the resolved C# calls; every adapter below reads graph.json
+            code, out = run([sys.executable, os.path.join(SKILL_DIR, "scripts", "csharp_resolve.py")])
+            print(f"{'ok  ' if code == 0 else 'FAIL'} csharp-resolve: {' | '.join(l.strip() for l in out.strip().splitlines()[-2:])[:300]}")
+            failed |= code != 0
         for name in names:
             scripts = ([name.split(":", 1)[1]] if name.startswith("custom:") else ADAPTER_SCRIPTS.get(name))
             if not scripts:

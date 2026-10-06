@@ -17,6 +17,7 @@ Scanners find patterns; the reviewer decides what they mean. Review is required 
    - `graphify path "<Controller>" "<ClassUsingApi>" --graph …` tells you whether a user-facing entry point reaches it.
    - `graphify explain "<Class>" --graph …` gives a one-paragraph orientation.
    - `graphify query "where are files written to disk" --graph … --budget 600` finds the related code.
+   - For C#, `assessment/graphs/<repo>/graphify-out/csharp-resolve.json` lists every DI registration (service, implementation, lifetime, host, file:line), constructor consumers, messages and handlers, pipeline, jobs, events and reflection sites. Use it to review `di-wiring` findings: a `DI-MISSING-REG` is dismissed when the registration is found elsewhere (another repository, configuration, a convention), a `DI-CAPTIVE` is confirmed when the singleton really holds the scoped instance.
 4. **Record verdicts** in `assessment/reviews/<repo>.json`:
 
    ```json

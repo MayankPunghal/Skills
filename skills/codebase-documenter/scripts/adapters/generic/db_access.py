@@ -6,8 +6,10 @@ Needs docs/agent/db.json (generic-sql) and, for method names, docs/agent/methods
   how           ADO.NET, Dapper, EF Core LINQ / raw SQL / mapping, EF6, NHibernate, LINQ to SQL, JDBC / JPA, Node SQL
                 clients, Python DB-API / SQLAlchemy, Go database/sql, name constant (followed to its usages), view text
   operation     read / insert / update / delete / merge / exec / call, from the SQL text or the ORM call
-Tables are matched only inside SQL text (string literals that look like SQL) and through ORM mappings (DbSet / Set<T>,
-ToTable / [Table], NHibernate ClassMap), so a class that happens to share a table's name is not counted.
+Tables are matched only from PARSED SQL (generic-sql parses every SQL statement embedded in string literals with Microsoft's
+T-SQL parser: tables read, tables written with the operation, procedures and functions called), from object names passed
+as whole string literals (CommandType.StoredProcedure, name constants), and through ORM mappings (DbSet / Set<T>,
+ToTable / [Table], NHibernate ClassMap), so a class or a word that happens to share a table's name is not counted.
 Static analysis: SQL built at run time, stored in config or reached through generic repositories may be missed.
 Options (adapter_options.generic-dbaccess): skip_regex, max_sites (default 80 per object).
 """
@@ -24,7 +26,6 @@ CODE = {".cs", ".vb", ".fs", ".java", ".kt", ".scala", ".js", ".mjs", ".cjs", ".
         ".cshtml", ".razor", ".aspx", ".ascx", ".xml", ".hbm"}
 VIEW_EXT = {".cshtml", ".razor", ".aspx", ".ascx"}
 STRING = re.compile(r'@"(?:[^"]|"")*"|\$?"""[\s\S]*?"""|\$?@?"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`[^`]*`')
-SQLISH = re.compile(r"(?i)\b(select|insert|update|delete|merge|exec|execute|call|from|join|truncate|into|values|where)\b")
 TECH = [
     ("EF raw SQL", re.compile(r"FromSql(Raw|Interpolated)?\s*[<(]|ExecuteSql(Raw|Interpolated)?(Async)?\s*\(|SqlQuery(Raw)?\s*<|Database\.SqlQuery|ExecuteSqlCommand")),
     ("EF mapping", re.compile(r"HasDbFunction|\[DbFunction|DbFunction\(|ToFunction\(|ToView\(|ToSqlQuery\(|UsingStoredProcedure|MapToStoredProcedures|EdmFunction|ExecuteFunction")),
@@ -39,22 +40,6 @@ TECH = [
     ("Go database/sql", re.compile(r"\.(Query|QueryRow|Exec)(Context)?\s*\(")),
 ]
 CONST = re.compile(r"(?:\bconst\s+\w+|\bstatic\s+readonly\s+\w+|\bstatic\s+final\s+\w+|\bfinal\s+static\s+\w+|\bConst)\s+(\w+)\s*(?:As\s+\w+\s*)?=\s*(?:[\w.]+\s*[+&]\s*)*$")
-
-
-def op_for(kind, before, stmt):
-    b = before[-80:]
-    if kind in ("procedure",):
-        return "exec"
-    if kind in ("function",):
-        return "call"
-    for rx, op in ((r"INSERT\s+(INTO\s+)?$", "insert"), (r"UPDATE\s+$", "update"), (r"DELETE\s+(FROM\s+)?$", "delete"),
-                   (r"MERGE\s+(INTO\s+)?$", "merge"), (r"TRUNCATE\s+TABLE\s+$", "delete"), (r"EXEC(UTE)?\s+$", "exec")):
-        if re.search(rx, b, re.I):
-            return op
-    head = re.match(r"\s*(\w+)", stmt or "")
-    if head and head.group(1).upper() in ("UPDATE", "DELETE", "MERGE"):
-        return head.group(1).lower() + " (join)"
-    return "read"
 
 
 def classify(window, ext, file_text):
@@ -81,11 +66,11 @@ def main():
         objs.setdefault(r["name"].lower(), dict(r, type=r["kind"]))
     for t in db.get("tables", []):
         objs.setdefault(t["name"].lower(), dict(t, type="table", kind="table"))
+    for o in db.get("objects", []):
+        objs.setdefault(o["name"].lower(), dict(o, type=o["kind"]))
     if not objs:
         print("db-access: no database objects")
         return
-    names = sorted(objs, key=len, reverse=True)
-    obj_rx = re.compile(r"(?<![\w@#$])(?:[\[\"`]?\w+[\]\"`]?\.)?[\[\"`]?(" + "|".join(re.escape(n) for n in names) + r")[\]\"`]?(?![\w(]?\w)", re.I)
     skip = re.compile(OPT["skip_regex"]) if OPT.get("skip_regex") else None
     M = Methods()
     files = [(p, f) for p, f in walk(exts=CODE) if not (skip and skip.search(p)) and not re.search(r"(^|/)migrations?/|\.designer\.\w+$", p, re.I)]
@@ -112,39 +97,59 @@ def main():
             t = classify(whole, ext, text)
         sites[obj].append({"method": a, "file": path, "line": line, "tech": t, "op": op, "via": via})
 
+    # SQL statements in code: parsed by generic-sql (Microsoft's T-SQL parser), one site per object the statement touches
+    def key_of(name):
+        k = name.split(".")[-1].lower()
+        return k if k in objs and len(name.split(".")) < 3 else None
+    for site in db.get("code_sql", []):
+        path, line = site["file"], site["line"]
+        text = texts.get(path)
+        if text is None:
+            continue
+        seen = set()
+        dyn = " (dynamic SQL)" if site.get("dynamic") else ""
+        for w in site.get("writes", []):
+            k = key_of(w["name"])
+            if k and (k, w["op"]) not in seen:
+                seen.add((k, w["op"]))
+                record(k, path, line, text, w["op"] + dyn)
+        for t in site.get("reads", []):
+            k = key_of(t)
+            if k and (k, "read") not in seen:
+                seen.add((k, "read"))
+                record(k, path, line, text, "read" + dyn)
+        for c in site.get("calls", []) + site.get("functions", []):
+            k = key_of(c)
+            if k and k not in seen:
+                seen.add(k)
+                record(k, path, line, text, "exec" if objs[k]["type"] == "procedure" else "call")
+    # object NAMES as whole string literals: procedures run with CommandType.StoredProcedure, name constants
     for path, text in texts.items():
         ext = os.path.splitext(path)[1].lower()
         for s in STRING.finditer(text):
             lit = s.group(0)
-            for m in obj_rx.finditer(lit):
-                obj = m.group(1).lower()
-                o = objs[obj]
-                inner = lit.strip("@$\"'`")
-                whole_name = inner.strip().strip("[]").lower().split(".")[-1].strip("[]\"") == obj
-                if o["type"] == "table" and not SQLISH.search(lit):
-                    continue
-                if o["type"] != "table" and not (SQLISH.search(lit) or whole_name):
-                    continue
-                pos = s.start() + m.start()
-                line = line_at(text, pos)
-                before = lit[:m.start()]
-                stmt = re.split(r";", before)[-1]
-                op = op_for(o["type"], before, stmt.strip(" \"'@$`"))
-                head = text[text.rfind("\n", 0, s.start()) + 1:s.start()]
-                c = CONST.search(head)
-                if c and whole_name:
-                    constants[c.group(1)] = (obj, path, line)
-                    record(obj, path, line, text, op, tech="name constant")
-                    continue
-                record(obj, path, line, text, op)
+            inner = lit.lstrip("@$").strip("\"'`").strip().replace("[", "").replace("]", "")
+            if not inner or " " in inner or len(inner) > 128:
+                continue
+            obj = inner.split(".")[-1].lower()
+            if obj not in objs or (objs[obj]["type"] == "table" and "." not in inner):
+                continue
+            o = objs[obj]
+            line = line_at(text, s.start())
+            op = "exec" if o["type"] == "procedure" else "call" if o["type"] == "function" else "read"
+            head = text[text.rfind("\n", 0, s.start()) + 1:s.start()]
+            c = CONST.search(head)
+            if c:
+                constants[c.group(1)] = (obj, path, line)
+                record(obj, path, line, text, op, tech="name constant")
+                continue
+            record(obj, path, line, text, op)
         # routines referenced as identifiers (EF function imports, DbFunction methods) outside strings
         if ext not in VIEW_EXT:
-            stripped = STRING.sub(lambda x: " " * len(x.group(0)), text)
             for m in re.finditer(r"\[DbFunction\(\s*\"(\w+)\"|HasDbFunction\([^)]*?\bnameof\((\w+)\)", text):
                 obj = (m.group(1) or m.group(2) or "").lower()
                 if obj in objs:
                     record(obj, path, line_at(text, m.start()), text, "call", tech="EF mapping")
-            del stripped
 
     # follow name constants (ProcNames.PlaceOrder = "dbo.usp_PlaceOrder") to where they are used
     if constants:

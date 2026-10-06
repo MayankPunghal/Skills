@@ -15,6 +15,7 @@ The research note is the source of truth for the pages. Pages are written from n
    - Permissions: claims / roles / attributes; anonymous or unauthenticated entry points (check what a custom "AllowAnonymous" really skips).
    - Defects / risks: file + concrete failure scenario (DEF / SEC candidates). Dead code, TODOs, fake / test endpoints left in production.
    - Open questions: what the repository cannot answer (schedules, servers, external system behaviour).
+   - Run-time wiring (C#, from `docs/reference/dependency-injection.md` / `docs/agent/di.json`, then confirmed in code): for every service the area uses, which class the container injects in which host and with which lifetime; decorators wrapped around it; keyed / named variants and who picks which key; abstract or virtual methods and the overrides that run; messages sent and the handler that receives each; events raised and their subscribers; delegates, method groups and lambdas stored and called later; background jobs enqueued; filters / middleware that run around the area's endpoints; partial classes split across files (read every part); minimal-API handlers (lambdas in Program.cs). Write each as "A calls B through <mechanism>", because a reader cannot see it in the code.
 5. **Cross-check** — direction of integrations (who calls whom), status transitions (which code sets which status), default values, "unused" claims (grep callers before saying something is unused).
 6. **Save** after the area: `research_notes.py done <id>`. If a later area contradicts an earlier note, fix the earlier note at once and log it: `research_notes.py correct "<what was wrong → what is right (evidence: file)>"`; fix any page already written.
 7. **Feed the graph memory** (optional, helps later questions): `graphify save-result --question "<q>" --answer "<a>" --nodes <labels> --outcome useful|dead_end|corrected`; run `graphify reflect` occasionally.
@@ -27,6 +28,7 @@ The research note is the source of truth for the pages. Pages are written from n
 - [ ] Every security observation names the file and the condition that makes it exploitable.
 - [ ] Nothing copied from config values; no secrets in the note.
 - [ ] External behaviour is marked "outside the repository".
+- [ ] Every call through an interface, base class, message, event or delegate names what actually runs (and where it is registered or subscribed), or says that it is decided outside the code (configuration, reflection, another repository).
 
 If any box is unchecked, go back to the research for that area, fix the note, and re-check the whole list before moving on.
 

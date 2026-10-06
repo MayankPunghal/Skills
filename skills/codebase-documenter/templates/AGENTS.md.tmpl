@@ -28,7 +28,7 @@ Kinds: {{kinds}}.
 2. `lookup.py <Name>` for each named item.
 3. Narrative page for behaviour.
 4. Reference entry (`doc:` line) for exact details; `src:` line for the code; `--find` for the exact line to change.
-5. graphify for relationships and impact.
+5. graphify for relationships and impact. For a call through an interface, base class, message, event or delegate, find what actually runs: the method map labels it (`(di registration)`, `(override)`, `(message)`, `(event)` …) and `{{docs_dir}}/reference/dependency-injection.md` (C#, when present) lists registrations per host, lifetimes, decorators, handlers and subscribers. Database objects are graph nodes too (parsed SQL): `graphify affected "<table or procedure>"` lists the routines and C# methods that read, write or run it.
 6. Verify in source before editing.
 
 ## 3. Where to start

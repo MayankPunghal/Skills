@@ -33,13 +33,15 @@
    "conf": "Confirmed",
    "types": [
     "cs",
-    "vb"
+    "vb",
+    "config"
    ],
    "pat": [
     "\\bnew\\s+EventLog\\b",
     "\\bEventLog\\.(WriteEntry|CreateEventSource|SourceExists|DeleteEventSource)\\b",
     "\\bEventLogInstaller\\b",
-    "\\bEventLogEntryType\\b"
+    "\\bEventLogEntryType\\b",
+    "EventLogTraceListener"
    ],
    "why": "The Windows Event Log does not exist on Linux (System.Diagnostics.EventLog is Windows-only).",
    "fix": "Log through Microsoft.Extensions.Logging to stdout and ship to Amazon CloudWatch Logs.",
@@ -930,6 +932,31 @@
    ]
   },
   {
+   "id": "WEB-DI-RESOLVER",
+   "cat": "di-wiring",
+   "title": "System.Web dependency resolver / global service locator",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bDependencyResolver\\.(Current|SetResolver)\\b",
+    "\\bGlobalConfiguration\\.Configuration\\.DependencyResolver\\b",
+    "\\bServiceLocator\\.(Current|SetLocatorProvider)\\b",
+    "\\bGlobalHost\\.DependencyResolver\\b"
+   ],
+   "why": "ASP.NET MVC 5 / Web API 2 / SignalR 2 resolve services through a static resolver set in Global.asax or a container bootstrapper; ASP.NET Core has no DependencyResolver, and code reading DependencyResolver.Current or ServiceLocator.Current gets dependencies the call graph cannot see.",
+   "fix": "Build the container in Program.cs (Microsoft DI, or the container's ASP.NET Core integration) and replace static resolver calls with constructor injection, or IServiceProvider / IServiceScopeFactory inside a scope.",
+   "alt": "Microsoft DI; Autofac / Simple Injector / Lamar ASP.NET Core integration",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S9",
+    "S24"
+   ]
+  },
+  {
    "id": "WEB-ASMX",
    "cat": "wcf-desktop",
    "title": "ASMX web services",
@@ -1286,9 +1313,11 @@
     "vb"
    ],
    "pat": [
-    "\\bnew\\s+TransactionScope\\b",
+    "\\bnew\\s+(System\\.Transactions\\.)?TransactionScope\\b",
     "\\bEnlistDistributedTransaction\\b",
-    "\\bTransactionInterop\\b"
+    "\\bTransactionInterop\\b",
+    "\\bnew\\s+(System\\.Transactions\\.)?CommittableTransaction\\b",
+    "\\bTransactionManager\\.ImplicitDistributedTransactions\\b"
    ],
    "why": "Distributed (MSDTC) transactions are supported on .NET only on Windows; a TransactionScope spanning two connections/resources will fail on Linux.",
    "fix": "Confirm each scope uses one connection; otherwise redesign (outbox pattern, sagas).",
@@ -1376,7 +1405,12 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "CLR"
+    ]
+   }
   },
   {
    "id": "DB-LINKED-SERVER",
@@ -1405,7 +1439,13 @@
     "S12",
     "S14"
    ],
-   "question": "What do the linked servers point at, and will those systems also move to AWS?"
+   "question": "What do the linked servers point at, and will those systems also move to AWS?",
+   "parsed": {
+    "constructs": [
+     "OPENQUERY/OPENROWSET",
+     "linked server"
+    ]
+   }
   },
   {
    "id": "DB-XP-CMDSHELL",
@@ -1431,7 +1471,17 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "calls": [
+     "xp_cmdshell",
+     "xp_fileexist",
+     "xp_dirtree",
+     "xp_subdirs",
+     "xp_regread",
+     "xp_regwrite"
+    ]
+   }
   },
   {
    "id": "DB-FILESTREAM",
@@ -1457,7 +1507,14 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "FILESTREAM",
+     "fn: PATHNAME",
+     "fn: GET_FILESTREAM_TRANSACTION_CONTEXT"
+    ]
+   }
   },
   {
    "id": "DB-SERVICE-BROKER",
@@ -1485,7 +1542,12 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "Service Broker"
+    ]
+   }
   },
   {
    "id": "DB-MSDTC",
@@ -1509,7 +1571,12 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "distributed transaction"
+    ]
+   }
   },
   {
    "id": "DB-SQL-AGENT",
@@ -1537,7 +1604,17 @@
     "S11",
     "S14"
    ],
-   "question": "Which SQL Agent jobs run on the current server (the repository may not contain all of them)?"
+   "question": "Which SQL Agent jobs run on the current server (the repository may not contain all of them)?",
+   "parsed": {
+    "calls": [
+     "sp_add_job",
+     "sp_add_jobstep",
+     "sp_add_jobschedule",
+     "sp_add_schedule",
+     "sp_start_job",
+     "sp_update_job"
+    ]
+   }
   },
   {
    "id": "DB-CROSS-DATABASE",
@@ -1562,7 +1639,12 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "cross-database"
+    ]
+   }
   },
   {
    "id": "DB-BULK-FILE",
@@ -1588,7 +1670,13 @@
    "refs": [
     "S11",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "BULK INSERT",
+     "OPENROWSET BULK"
+    ]
+   }
   },
   {
    "id": "DB-FULLTEXT",
@@ -1612,7 +1700,12 @@
    },
    "refs": [
     "S14"
-   ]
+   ],
+   "parsed": {
+    "constructs": [
+     "full-text"
+    ]
+   }
   },
   {
    "id": "DB-SERVER-CONFIG",
@@ -1641,7 +1734,12 @@
    "refs": [
     "S12",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "calls": [
+     "sp_configure"
+    ]
+   }
   },
   {
    "id": "DB-DATABASE-MAIL",
@@ -1665,7 +1763,12 @@
    "refs": [
     "S11",
     "S14"
-   ]
+   ],
+   "parsed": {
+    "calls": [
+     "sp_send_dbmail"
+    ]
+   }
   },
   {
    "id": "AUTH-WINDOWS",
@@ -3182,6 +3285,1068 @@
    "refs": [
     "S9"
    ]
+  },
+  {
+   "id": "HOST-HTTPSYS-IIS-INPROC",
+   "cat": "linux-readiness",
+   "title": "Http.sys or in-process IIS hosting",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bUseHttpSys\\s*\\(",
+    "\\bHttpSysOptions\\b",
+    "\\bUseIIS\\s*\\(\\s*\\)",
+    "\\bIISServerOptions\\b"
+   ],
+   "why": "Http.sys and the in-process IIS server exist only on Windows; the host fails to start on Linux.",
+   "fix": "Host on Kestrel (behind a load balancer or reverse proxy); move Http.sys settings (URL ACLs, Windows auth, request limits) to Kestrel / the proxy.",
+   "alt": "Kestrel + ALB / NGINX / YARP",
+   "effort": "small-change",
+   "refs": [
+    "S2",
+    "S9"
+   ]
+  },
+  {
+   "id": "HOST-WINDOWS-SERVICE-LIFETIME",
+   "cat": "linux-readiness",
+   "title": "Generic host run as a Windows service",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bUseWindowsService\\s*\\(",
+    "\\bAddWindowsService\\s*\\(",
+    "\\bWindowsServiceLifetime\\b"
+   ],
+   "why": "The Windows service lifetime is Windows-only (it is a no-op elsewhere, so the process is no longer supervised as a service).",
+   "fix": "Run as a container task (ECS) or a systemd unit: UseSystemd(), health checks and restart policy in the orchestrator.",
+   "alt": "Amazon ECS service / systemd (UseSystemd)",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-NAMED-SYNC",
+   "cat": "linux-readiness",
+   "title": "Named EventWaitHandle / Semaphore (cross-process signalling)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bnew\\s+(EventWaitHandle|Semaphore)\\s*\\([^;]*?,\\s*@?\\\"[^\\\"]+\\\"",
+    "\\b(EventWaitHandle|Semaphore)\\.(Try)?OpenExisting\\s*\\(",
+    "\\bnew\\s+Mutex\\s*\\([^;]*\\\"Global\\\\\\\\"
+   ],
+   "why": "Named semaphores and named wait handles throw PlatformNotSupportedException on Linux; named mutexes work but the Global\\ / Local\\ session prefixes have no Windows-session meaning, and none of them coordinate across containers.",
+   "fix": "Use a distributed lock / queue (Redis, DynamoDB conditional write, SQS) for cross-process or cross-instance coordination; a plain lock / SemaphoreSlim inside one process.",
+   "alt": "Redis lock (RedLock.net), DynamoDB lock client, SQS",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-SYSTEMEVENTS",
+   "cat": "linux-readiness",
+   "title": "Microsoft.Win32.SystemEvents (session / power / display events)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystemEvents\\.(SessionEnding|SessionSwitch|PowerModeChanged|DisplaySettingsChanged|TimeChanged|UserPreferenceChanged|SessionEnded|TimerElapsed)\\b"
+   ],
+   "why": "SystemEvents is Windows-only (Windows message loop); it throws or never fires on Linux.",
+   "fix": "Remove from server code; handle shutdown with IHostApplicationLifetime / SIGTERM, time changes with UTC and a clock abstraction.",
+   "alt": "IHostApplicationLifetime, TimeProvider",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-CONSOLE-WINDOW",
+   "cat": "linux-readiness",
+   "title": "Console window / buffer APIs",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bConsole\\.(SetWindowSize|SetWindowPosition|SetBufferSize|MoveBufferArea)\\s*\\(",
+    "\\bConsole\\.(WindowWidth|WindowHeight|BufferWidth|BufferHeight|WindowLeft|WindowTop|CursorSize)\\s*=[^=]",
+    "\\bConsole\\.Beep\\s*\\(\\s*\\d",
+    "\\bConsole\\.(CapsLock|NumberLock)\\b"
+   ],
+   "why": "These Console members throw PlatformNotSupportedException on Linux (and there is no console window in a container).",
+   "fix": "Drop window sizing; log to stdout with structured logging.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-SHELL-ASSOC",
+   "cat": "linux-readiness",
+   "title": "Opening files / URLs through Windows shell associations or verbs",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bVerb\\s*=\\s*\\\"(print|printto|runas|edit|openas)\\\"",
+    "Process\\.Start\\(\\s*@?\\\"[^\\\"]+\\.(pdf|docx?|xlsx?|csv|txt|html?|rtf)\\\"",
+    "UseShellExecute\\s*=\\s*true",
+    "Process\\.Start\\(\\s*@?\\\"(https?://|mailto:|file:)"
+   ],
+   "why": "Shell execution relies on Windows file associations, verbs (print, runas = UAC) and a desktop session; on a Linux server there is no handler (xdg-open is absent in containers). On .NET, Process.Start(\"https://…\" or a document) throws: UseShellExecute defaults to false.",
+   "fix": "Generate the file and return or upload it (S3, download response); print through a print service; no elevation in containers.",
+   "alt": "",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-SMTP-PICKUP-IIS",
+   "cat": "linux-readiness",
+   "title": "SMTP pickup directory from IIS",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "PickupDirectoryFromIis"
+   ],
+   "why": "PickupDirectoryFromIis reads the IIS SMTP service metabase: Windows + IIS 6 SMTP only.",
+   "fix": "Send through SMTP (Amazon SES SMTP interface) or the SES API.",
+   "alt": "Amazon SES",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-REG-FILE",
+   "cat": "linux-readiness",
+   "title": "Registry import files (.reg)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "script"
+   ],
+   "pat": [
+    "^\\s*Windows Registry Editor Version",
+    "^\\s*REGEDIT4\\b"
+   ],
+   "why": "The deployment writes settings into the Windows registry; nothing on Linux reads them.",
+   "fix": "Move the settings to configuration (appsettings / environment / Parameter Store).",
+   "alt": "AWS Systems Manager Parameter Store",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "BUILD-GAC-REFERENCE",
+   "cat": "linux-readiness",
+   "title": "Assembly referenced from the GAC (strong-named, no HintPath)",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "proj"
+   ],
+   "pat": [
+    "<Reference\\s+Include=\\\"(?!System[,.\\\"]|System\\.|Microsoft\\.CSharp|Microsoft\\.VisualBasic|mscorlib|WindowsBase|PresentationCore|PresentationFramework)[^\\\"]+,\\s*Version=[^\\\"]+PublicKeyToken=[0-9a-fA-F]{16}[^\\\"]*\\\"\\s*/>"
+   ],
+   "why": "A strong-named reference with no HintPath is resolved from the Global Assembly Cache of the build machine (vendor SDKs, report viewers, Office PIAs). There is no GAC on .NET 10 or Linux; the build fails until the assembly comes from a package or a lib folder.",
+   "fix": "Find the NuGet package (or a .NET-compatible version) for each GAC assembly; otherwise replace the component.",
+   "alt": "",
+   "effort": "small-change",
+   "refs": [
+    "S1",
+    "S3"
+   ],
+   "question": "Which installer put these assemblies in the GAC of the build / web servers, and is a .NET (Core) version available?"
+  },
+  {
+   "id": "FILE-LOCKING",
+   "cat": "file-handling",
+   "title": "File locking relied on for coordination",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bFileShare\\.None\\b",
+    "\\.Lock\\s*\\(\\s*\\d+\\s*,",
+    "\\bLockFileEx?\\b"
+   ],
+   "why": "On Linux file locks are advisory: another process (or another container on shared storage such as EFS) is not stopped from opening the file, so code that relies on an exclusive open to coordinate work can race.",
+   "fix": "Coordinate through a database row, a queue or a distributed lock, not file locks; keep files per instance.",
+   "alt": "",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "LIN-FONTS",
+   "cat": "linux-readiness",
+   "title": "Windows fonts named in server-side rendering",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\\"(Arial|Calibri|Cambria|Segoe UI|Tahoma|Verdana|Times New Roman|Courier New|Microsoft Sans Serif|Consolas|Wingdings|MS Gothic|SimSun)\\\""
+   ],
+   "why": "PDF, image and Excel generation on the server looks fonts up on the host; Linux container images ship none of the Windows fonts, so output silently falls back to another font (layout and widths change) or throws.",
+   "fix": "Install the fonts (licence permitting) or open equivalents in the image and embed them in generated documents.",
+   "alt": "Liberation / DejaVu / Noto fonts in the container image",
+   "effort": "trivial",
+   "refs": [
+    "S6"
+   ]
+  },
+  {
+   "id": "LIN-OS-BRANCH",
+   "cat": "linux-readiness",
+   "title": "Code that branches on the operating system",
+   "sev": "Info",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bRuntimeInformation\\.IsOSPlatform\\s*\\(",
+    "\\bOperatingSystem\\.IsWindows\\w*\\s*\\(",
+    "\\bEnvironment\\.OSVersion\\b",
+    "\\bPlatformID\\.Win32NT\\b"
+   ],
+   "why": "OS checks mark code with platform-specific paths: confirm the non-Windows branch exists and is tested.",
+   "fix": "Review each branch; test it on Linux.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-DELEGATE-ASYNC",
+   "cat": "api-portability",
+   "title": "Asynchronous delegate calls (BeginInvoke / EndInvoke)",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.BeginInvoke\\s*\\([^;]*\\bnull\\s*,\\s*null\\s*\\)",
+    "\\.BeginInvoke\\s*\\([^;]*\\b(AsyncCallback|ar\\s*=>|iar\\s*=>)",
+    "\\.EndInvoke\\s*\\(\\s*\\w*(ar|result|asyncResult|iar)\\w*\\s*\\)"
+   ],
+   "why": "Delegate.BeginInvoke / EndInvoke throw PlatformNotSupportedException on .NET Core and .NET 5+ (any OS). Control.BeginInvoke and Dispatcher.BeginInvoke are not affected.",
+   "fix": "Replace with Task.Run(() => handler()) and await the task (or ContinueWith for the callback).",
+   "alt": "Task.Run / async-await",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ],
+   "not": "(Dispatcher|this|Control|form\\w*|ctl\\w*|Invoke\\s*\\(\\s*\\(MethodInvoker)\\s*\\.?BeginInvoke"
+  },
+  {
+   "id": "API-CRYPTO-FACTORY",
+   "cat": "api-portability",
+   "title": "Cryptography factory methods by name (HashAlgorithm.Create …)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(HashAlgorithm|SymmetricAlgorithm|AsymmetricAlgorithm|KeyedHashAlgorithm|HMAC)\\.Create\\s*\\(",
+    "\\bCryptoConfig\\.CreateFromName\\s*\\("
+   ],
+   "why": "The parameterless Create() throws PlatformNotSupportedException on .NET Core / .NET 5+; Create(string name) is obsolete (SYSLIB0045) and returns null for names that are not mapped.",
+   "fix": "Call the concrete factory (SHA256.Create(), Aes.Create(), new HMACSHA256(key)).",
+   "alt": "SHA256.Create(), Aes.Create()",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-REMOVED-RUNTIME",
+   "cat": "api-portability",
+   "title": "Runtime APIs removed from .NET (dynamic assembly save, strong-name key pair, SecurityContext …)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bRegex\\.CompileToAssembly\\s*\\(",
+    "\\bAssemblyBuilderAccess\\.(RunAndSave|Save)\\b",
+    "\\bnew\\s+(System\\.Reflection\\.)?StrongNameKeyPair\\s*\\(",
+    "\\bWebProxy\\.GetDefaultProxy\\s*\\(",
+    "\\bSecurityContext\\.(Capture|Run|SuppressFlow)\\s*\\(",
+    "\\bAppDomain\\.CurrentDomain\\.(SetShadowCopyPath|SetCachePath|SetDynamicBase)\\s*\\(",
+    "\\bMarshal\\.(GetActiveObject|BindToMoniker)\\s*\\(",
+    "\\bThread\\.(VolatileRead|VolatileWrite)\\s*\\(\\s*ref\\b"
+   ],
+   "why": "These members throw PlatformNotSupportedException (or do not exist) on .NET Core / .NET 5+ on every operating system.",
+   "fix": "Regex: source-generated regex ([GeneratedRegex]); dynamic assemblies: AssemblyBuilder.DefineDynamicAssembly(Run) or PersistedAssemblyBuilder (.NET 9+); proxies: HttpClient.DefaultProxy; SecurityContext: ExecutionContext.",
+   "alt": "[GeneratedRegex], PersistedAssemblyBuilder, HttpClient.DefaultProxy",
+   "effort": "small-change",
+   "refs": [
+    "S2",
+    "S1"
+   ]
+  },
+  {
+   "id": "API-PLUGIN-LOADING",
+   "cat": "api-portability",
+   "title": "Plug-in loading through private paths, shadow copy or Assembly.LoadFile / LoadFrom",
+   "sev": "Low",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bAppDomain\\.CurrentDomain\\.(AppendPrivatePath|ClearPrivatePath|ClearShadowCopyPath)\\s*\\(",
+    "\\bShadowCopyFiles\\b",
+    "\\bAssembly\\.(LoadFile|LoadFrom|UnsafeLoadFrom)\\s*\\("
+   ],
+   "why": "Private bin paths and shadow copying are no-ops on .NET; assemblies loaded with LoadFile / LoadFrom share the default context, so a plug-in's own dependencies may not resolve and it cannot be unloaded.",
+   "fix": "Load plug-ins through a custom AssemblyLoadContext with AssemblyDependencyResolver (isCollectible: true to unload).",
+   "alt": "AssemblyLoadContext + AssemblyDependencyResolver",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "WIN-PROCESS-USER",
+   "cat": "linux-readiness",
+   "title": "Starts a process as another Windows user",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(LoadUserProfile|PasswordInClearText)\\s*=",
+    "\\.StartInfo\\.(UserName|Password|Domain|LoadUserProfile)\\b",
+    "ProcessStartInfo[^;]*\\b(UserName|Domain)\\s*="
+   ],
+   "why": "ProcessStartInfo.UserName / Password / Domain / LoadUserProfile are Windows-only; on Linux the process starts as the current user or throws.",
+   "fix": "Run the work in a container or task with its own IAM role / Linux user, or call the tool through an API instead of impersonating a user.",
+   "alt": "Separate container / ECS task role",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-PROCESS-WINDOW",
+   "cat": "linux-readiness",
+   "title": "Process window handles and titles",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.(MainWindowHandle|MainWindowTitle)\\b",
+    "\\.CloseMainWindow\\s*\\("
+   ],
+   "why": "Windows-only concepts: on Linux MainWindowHandle is always zero and CloseMainWindow does nothing.",
+   "fix": "Signal the process (Process.Kill(entireProcessTree) or a stop file / IPC) instead.",
+   "alt": "IPC / signals",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-SOUND",
+   "cat": "linux-readiness",
+   "title": "Plays sounds (SoundPlayer, SystemSounds)",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSoundPlayer\\b",
+    "\\bSystemSounds\\.\\w+",
+    "\\bnew\\s+(System\\.Media\\.)?SoundPlayer\\b"
+   ],
+   "why": "System.Media.SoundPlayer and SystemSounds are Windows-only; a server has no audio device.",
+   "fix": "Remove the sound or move it to the client UI.",
+   "alt": "Client-side notification",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-STA",
+   "cat": "linux-readiness",
+   "title": "Single-threaded apartment threads (COM STA)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(Try)?SetApartmentState\\s*\\(\\s*(System\\.Threading\\.)?ApartmentState\\.STA\\b",
+    "\\bApartmentState\\s*=\\s*(System\\.Threading\\.)?ApartmentState\\.STA\\b"
+   ],
+   "why": "Setting a thread to STA throws PlatformNotSupportedException on Linux; STA exists for COM and Windows UI components that will not run there anyway.",
+   "fix": "Remove the COM / UI dependency that needs STA, then the thread setting.",
+   "alt": "Plain threads / Task",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-NAMED-MMF",
+   "cat": "linux-readiness",
+   "title": "Named memory-mapped files (shared memory between processes)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMemoryMappedFile\\.(CreateOrOpen|OpenExisting)\\s*\\(",
+    "\\bMemoryMappedFile\\.CreateNew\\s*\\(\\s*(@?\\\"|[A-Za-z_][\\w.]*\\s*,)(?!\\s*null)"
+   ],
+   "why": "Named memory maps throw PlatformNotSupportedException on Linux (only anonymous or file-backed maps without a name work), and shared memory does not cross containers.",
+   "fix": "Use a file-backed map without a name, or an external cache (ElastiCache Redis) for data shared between processes or instances.",
+   "alt": "File-backed map / Redis",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-DRIVEINFO",
+   "cat": "linux-readiness",
+   "title": "Enumerates drives (DriveInfo, GetLogicalDrives)",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bDriveInfo\\.GetDrives\\s*\\(",
+    "\\bnew\\s+(System\\.IO\\.)?DriveInfo\\s*\\(",
+    "\\b(Environment|Directory)\\.GetLogicalDrives\\s*\\("
+   ],
+   "why": "Linux has mount points, not drive letters: the list contains /, /proc, /sys and similar, and code that looks for C: or D: finds nothing.",
+   "fix": "Use a configured data path (mounted volume / EFS) and check free space on that path only.",
+   "alt": "Configured path on a mounted volume",
+   "effort": "trivial",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "WEB-AMBIENT-PRINCIPAL",
+   "cat": "web-platform",
+   "title": "Ambient user (Thread.CurrentPrincipal, ClaimsPrincipal.Current)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bThread\\.CurrentPrincipal\\b",
+    "\\bClaimsPrincipal\\.Current\\b"
+   ],
+   "why": "ASP.NET Core does not set Thread.CurrentPrincipal or ClaimsPrincipal.Current: they are null / anonymous, so authorisation checks that read them silently fail open or closed.",
+   "fix": "Pass the user explicitly: HttpContext.User in controllers, IHttpContextAccessor or a scoped ICurrentUser service elsewhere.",
+   "alt": "IHttpContextAccessor / ICurrentUser service",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-REQUEST-VALIDATION",
+   "cat": "web-platform",
+   "title": "Request validation switched off (ValidateInput(false), AllowHtml, validateRequest)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "markup"
+   ],
+   "pat": [
+    "\\[\\s*(System\\.Web\\.Mvc\\.)?ValidateInput\\s*\\(\\s*false",
+    "\\[\\s*(System\\.Web\\.Mvc\\.)?AllowHtml\\s*\\]",
+    "(?i)validateRequest\\s*=\\s*\\\"false\\\"",
+    "(?i)requestValidationMode\\s*="
+   ],
+   "why": "ASP.NET Core has no request validation at all: every endpoint now accepts markup that ASP.NET used to block, not only the ones that switched it off. These are the inputs known to carry HTML.",
+   "fix": "Encode all output (Razor does by default), sanitise stored HTML (HtmlSanitizer) and add input validation where HTML is not expected.",
+   "alt": "HtmlSanitizer + output encoding",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-OUTPUT-CACHE",
+   "cat": "web-platform",
+   "title": "Output caching (OutputCache attribute / directive)",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "markup"
+   ],
+   "pat": [
+    "\\[\\s*(System\\.Web\\.Mvc\\.)?OutputCache\\b",
+    "<%@\\s*OutputCache\\b",
+    "<outputCache(Settings|Profiles)?\\b"
+   ],
+   "why": "System.Web output caching does not exist in ASP.NET Core; profiles in web.config are ignored and VaryByCustom needs rewriting.",
+   "fix": "Use Output Caching middleware ([OutputCache] in .NET 7+, Redis store for several instances) or ResponseCache headers + CloudFront.",
+   "alt": "Output Caching middleware / CloudFront",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-RESPONSE-END",
+   "cat": "web-platform",
+   "title": "Ends or transfers the request (Response.End, Server.Transfer / Execute)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bResponse\\.End\\s*\\(\\s*\\)",
+    "\\bServer\\.(Transfer|Execute)\\s*\\(",
+    "\\bResponse\\.Redirect\\s*\\([^;]*,\\s*true\\s*\\)",
+    "\\bHttpContext\\.Current\\.ApplicationInstance\\.CompleteRequest\\s*\\("
+   ],
+   "why": "Response.End (ThreadAbortException), Server.Transfer and Server.Execute have no ASP.NET Core equivalent; code after them relied on the request stopping.",
+   "fix": "Return a result (Redirect, View, StatusCode) from the action and restructure the code path that followed.",
+   "alt": "Action results / middleware short-circuit",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "WEB-WEBAPI2",
+   "cat": "web-platform",
+   "title": "ASP.NET Web API 2 controllers and configuration",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    ":\\s*(System\\.Web\\.Http\\.)?ApiController\\b",
+    "^\\s*using\\s+System\\.Web\\.Http(\\.\\w+)*\\s*;",
+    "\\bHttpConfiguration\\b",
+    "\\.MapHttpRoute\\s*\\(",
+    "\\bIHttpActionResult\\b"
+   ],
+   "why": "Web API 2 (System.Web.Http) is not on .NET: controllers, filters, message handlers, formatters and route configuration move to ASP.NET Core MVC.",
+   "fix": "Port to ASP.NET Core controllers ([ApiController] attribute, ControllerBase); WebApiCompatShim is not available for .NET 10.",
+   "alt": "ASP.NET Core controllers",
+   "effort": "per-file-web",
+   "refs": [
+    "S9",
+    "S3"
+   ],
+   "baseline": true
+  },
+  {
+   "id": "SEC-TYPENAMEHANDLING",
+   "cat": "security",
+   "title": "Json.NET TypeNameHandling other than None (deserialisation of attacker-chosen types)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "TypeNameHandling\\s*=\\s*(Newtonsoft\\.Json\\.)?TypeNameHandling\\.(All|Auto|Objects|Arrays)\\b",
+    "new\\s+JavaScriptSerializer\\s*\\(\\s*new\\s+SimpleTypeResolver"
+   ],
+   "why": "Lets the JSON payload choose the .NET type to create: a known remote-code-execution vector when the input is not fully trusted (same class of issue as BinaryFormatter).",
+   "fix": "Use TypeNameHandling.None, or a SerializationBinder that allows only known types; prefer System.Text.Json polymorphism with [JsonDerivedType].",
+   "alt": "System.Text.Json [JsonDerivedType] / allow-list binder",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "DATA-PROVIDER-FACTORIES",
+   "cat": "data-access",
+   "title": "DbProviderFactories (provider chosen from configuration)",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bDbProviderFactories\\.GetFactory\\s*\\(",
+    "<DbProviderFactories\\b"
+   ],
+   "why": "On .NET, providers are not registered from machine.config / web.config: GetFactory throws until DbProviderFactories.RegisterFactory is called. Useful for a dual-database design once registered.",
+   "fix": "Register the SQL Server and Npgsql factories at start-up (DbProviderFactories.RegisterFactory), or inject DbDataSource / DbProviderFactory.",
+   "alt": "RegisterFactory / DbDataSource",
+   "effort": "trivial",
+   "refs": [
+    "S13",
+    "S15"
+   ]
+  },
+  {
+   "id": "DATA-LINQ-TO-SQL",
+   "cat": "data-access",
+   "title": "LINQ to SQL (DataContext, .dbml)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bSystem\\.Data\\.Linq\\b",
+    "\\[\\s*Table\\s*\\(\\s*Name\\s*=",
+    "\\[\\s*Column\\s*\\([^)]*\\b(IsPrimaryKey|DbType|IsDbGenerated)\\s*=",
+    "(?i)Include=\\\"[^\\\"]+\\.dbml\\\""
+   ],
+   "why": "LINQ to SQL is not available on .NET; its mapping and DataContext must be replaced, and it only ever supported SQL Server.",
+   "fix": "Port to EF Core (scaffold from the database, then move queries) or Dapper; EF Core also gives the PostgreSQL provider.",
+   "alt": "EF Core / Dapper",
+   "effort": "large-change",
+   "refs": [
+    "S1",
+    "S15"
+   ]
+  },
+  {
+   "id": "DATA-ENTLIB",
+   "cat": "data-access",
+   "title": "Enterprise Library Data Access Application Block",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Practices\\.EnterpriseLibrary\\.Data\\b",
+    "\\bDatabaseFactory\\.CreateDatabase\\s*\\(",
+    "\\bnew\\s+SqlDatabase\\s*\\(",
+    "<dataConfiguration\\b"
+   ],
+   "why": "Enterprise Library 6 is retired and built for .NET Framework; its Database / SqlDatabase types wrap SqlClient and stored procedures.",
+   "fix": "Replace with ADO.NET (DbDataSource) or Dapper behind a repository; keep parameter and procedure calls provider-neutral for the dual database.",
+   "alt": "Dapper / ADO.NET DbDataSource",
+   "effort": "medium-change",
+   "refs": [
+    "S1"
+   ]
+  },
+  {
+   "id": "DATA-TVP",
+   "cat": "data-access",
+   "title": "Table-valued parameters (SqlDbType.Structured)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSqlDbType\\.Structured\\b",
+    "\\.AsTableValuedParameter\\s*\\(",
+    "\\.TypeName\\s*=\\s*\\\"[\\w.\\[\\]]+\\\""
+   ],
+   "why": "PostgreSQL has no table-valued parameters: the call and the procedure both change (arrays of a composite type, unnest(), or a JSON parameter).",
+   "fix": "Pass an array of a composite type (Npgsql maps arrays) or JSON, and rewrite the routine to read it with unnest() / jsonb_to_recordset().",
+   "alt": "Composite-type arrays / JSON parameter",
+   "effort": "small-change",
+   "refs": [
+    "S12",
+    "S13"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-MULTI-RESULTSET",
+   "cat": "data-access",
+   "title": "Several result sets from one command (NextResult, QueryMultiple)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.NextResult(Async)?\\s*\\(",
+    "\\.QueryMultiple(Async)?\\s*\\("
+   ],
+   "why": "A PostgreSQL function returns one result set; procedures return none. Code that reads several result sets from one stored procedure must change.",
+   "fix": "Return refcursors and FETCH them in one transaction, split into several functions, or batch several SELECTs in one NpgsqlBatch.",
+   "alt": "NpgsqlBatch / refcursors",
+   "effort": "small-change",
+   "refs": [
+    "S12",
+    "S13"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true,
+   "requires": "\\b(ExecuteReader(Async)?|QueryMultiple(Async)?|SqlDataReader|DbDataReader|NpgsqlDataReader)\\b",
+   "not": "\\bbool\\s+(IDataReader\\.)?NextResult\\s*\\(|_reader\\.NextResult\\s*\\(\\s*\\)\\s*;\\s*$"
+  },
+  {
+   "id": "DATA-RETURN-VALUE",
+   "cat": "data-access",
+   "title": "Stored-procedure RETURN value read by code",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bParameterDirection\\.ReturnValue\\b",
+    "\\bdirection\\s*:\\s*ParameterDirection\\.ReturnValue\\b"
+   ],
+   "why": "PostgreSQL routines have no integer RETURN status separate from their result: status codes must become an OUT parameter or the function's return value.",
+   "fix": "Return the status as the function result or an OUT parameter and read it the same way on both engines.",
+   "alt": "OUT parameter / function result",
+   "effort": "trivial",
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-BULKCOPY",
+   "cat": "data-access",
+   "title": "SqlBulkCopy bulk loads",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSqlBulkCopy\\b"
+   ],
+   "why": "SqlBulkCopy is SQL Server only; PostgreSQL bulk loads use COPY.",
+   "fix": "Use Npgsql binary COPY (BeginBinaryImport) behind an interface with one implementation per engine.",
+   "alt": "Npgsql BeginBinaryImport (COPY)",
+   "effort": "small-change",
+   "refs": [
+    "S13"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-SQL-ERROR-NUMBERS",
+   "cat": "data-access",
+   "title": "Logic on SQL Server error numbers (SqlException.Number)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.Number\\s*(==|!=|is)\\s*-?\\d{1,6}\\b",
+    "\\bcase\\s+(2627|2601|1205|547|-2|4060|18456|53|233|10053|10054|40613|40197|49918)\\s*:",
+    "\\.Errors\\s*\\[\\s*\\d+\\s*\\]\\.Number\\b"
+   ],
+   "why": "PostgreSQL reports errors as SQLSTATE codes (PostgresException.SqlState, e.g. 23505 unique violation, 40P01 deadlock); duplicate-key, deadlock-retry and timeout handling keyed on SQL Server numbers stops working.",
+   "fix": "Map both engines to one internal error type (duplicate key, deadlock, timeout, FK violation) in the data layer.",
+   "alt": "Provider-neutral error mapping",
+   "effort": "small-change",
+   "refs": [
+    "S13",
+    "S14"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true,
+   "requires": "\\bSqlException\\b|\\bSqlError\\b"
+  },
+  {
+   "id": "DATA-MARS",
+   "cat": "data-access",
+   "title": "Multiple Active Result Sets (MARS)",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "any"
+   ],
+   "pat": [
+    "(?i)MultipleActiveResultSets\\s*=\\s*(true|yes)"
+   ],
+   "why": "Npgsql has no MARS: one open data reader per connection. Code that runs a command while iterating another reader on the same connection fails.",
+   "fix": "Materialise the first result (ToList) or use a second connection; check EF lazy loading inside loops.",
+   "alt": "Materialise first / second connection",
+   "effort": "small-change",
+   "refs": [
+    "S13"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-ISOLATION",
+   "cat": "data-access",
+   "title": "Isolation levels without a PostgreSQL equal (Snapshot, ReadUncommitted)",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bIsolationLevel\\.(Snapshot|ReadUncommitted|Chaos)\\b"
+   ],
+   "why": "PostgreSQL treats READ UNCOMMITTED as READ COMMITTED and has no SNAPSHOT level (its REPEATABLE READ is snapshot isolation); NOLOCK-style dirty reads disappear and serialisation failures (40001) must be retried.",
+   "fix": "Map Snapshot to RepeatableRead and ReadUncommitted to ReadCommitted, and add retry on serialization failure.",
+   "alt": "RepeatableRead + retry",
+   "effort": "trivial",
+   "refs": [
+    "S14"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-XML-READER",
+   "cat": "data-access",
+   "title": "ExecuteXmlReader (FOR XML results)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.ExecuteXmlReader(Async)?\\s*\\("
+   ],
+   "why": "ExecuteXmlReader consumes FOR XML output, which PostgreSQL does not produce; the query and the reading code both change.",
+   "fix": "Build the document in the application, or use PostgreSQL xmlagg / json_agg and read a scalar.",
+   "alt": "json_agg / build in code",
+   "effort": "small-change",
+   "refs": [
+    "S12"
+   ],
+   "db": {
+    "pg": "redesign"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-EF-PROVIDER-SPECIFIC",
+   "cat": "data-access",
+   "title": "EF configuration specific to SQL Server",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.UseSqlServer\\s*\\(",
+    "\\.IsRowVersion\\s*\\(",
+    "(?i)HasDefaultValueSql\\s*\\(\\s*\\\"\\s*\\(?\\s*(getdate|getutcdate|sysdatetime|sysutcdatetime|newid|newsequentialid)",
+    "\\bSqlServerValueGenerationStrategy\\b",
+    "\\.IsMemoryOptimized\\s*\\(",
+    "\\.IsClustered\\s*\\(",
+    "\\.UseHiLo\\s*\\(",
+    "\\bEF\\.Functions\\.(Contains|FreeText|DateDiff\\w+|IsDate|AtTimeZone)\\s*\\(",
+    "\\.HasComputedColumnSql\\s*\\(",
+    "\\.EnableRetryOnFailure\\s*\\(",
+    "\\.ToTable\\s*\\([^)]*IsTemporal"
+   ],
+   "why": "These model settings and functions only exist in the SQL Server provider (rowversion, SQL Server default functions, clustered / memory-optimized, temporal tables, full-text, DateDiff); the PostgreSQL model needs equivalents.",
+   "fix": "Keep provider-specific configuration in one place (per-provider model configuration or separate migrations assemblies): xmin for concurrency, now() / gen_random_uuid() defaults, tsvector for full-text.",
+   "alt": "Per-provider model configuration (Npgsql: xmin, now(), tsvector)",
+   "effort": "small-change",
+   "refs": [
+    "S13",
+    "S15"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-NHIBERNATE-DIALECT",
+   "cat": "data-access",
+   "title": "NHibernate configured for SQL Server",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bMsSql\\d*\\w*Dialect\\b",
+    "\\bSql2008ClientDriver\\b|\\bSqlClientDriver\\b|\\bMicrosoftDataSqlClientDriver\\b",
+    "\\bMsSqlConfiguration\\.\\w+"
+   ],
+   "why": "The dialect and driver choose SQL Server SQL; HQL is portable but named SQL queries and mappings with SQL Server types are not.",
+   "fix": "Configure PostgreSQL83Dialect / NpgsqlDriver per environment and review native SQL queries and type mappings.",
+   "alt": "PostgreSQL dialect + NpgsqlDriver",
+   "effort": "trivial",
+   "refs": [
+    "S13"
+   ],
+   "db": {
+    "pg": "rework"
+   },
+   "db_only": true
+  },
+  {
+   "id": "DATA-SQLSERVER-TYPES",
+   "cat": "data-access",
+   "title": "SQL Server CLR types in code (SqlGeography, SqlGeometry, SqlHierarchyId)",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "proj",
+    "config"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.SqlServer\\.Types\\b",
+    "\\bSql(Geography|Geometry|HierarchyId)\\b"
+   ],
+   "why": "Microsoft.SqlServer.Types loads a native Windows library (SqlServerSpatial) in most versions, so it fails on Linux; PostgreSQL has no hierarchyid and keeps spatial data in PostGIS.",
+   "fix": "Use NetTopologySuite (EF Core / Npgsql PostGIS plug-in) for spatial and ltree or a path column for hierarchies; check whether the version in use has a cross-platform build.",
+   "alt": "NetTopologySuite + PostGIS, ltree",
+   "effort": "medium-change",
+   "refs": [
+    "S13",
+    "S2"
+   ],
+   "db": {
+    "pg": "redesign"
+   },
+   "question": "Which version of Microsoft.SqlServer.Types is deployed, and is spatial / hierarchyid data part of the PostgreSQL scope?"
+  },
+  {
+   "id": "BUILD-INSTALLER",
+   "cat": "build-delivery",
+   "title": "Windows installers (InstallUtil installers, setup / WiX projects)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\[\\s*(System\\.ComponentModel\\.)?RunInstaller\\s*\\(\\s*true",
+    ":\\s*(System\\.Configuration\\.Install\\.)?Installer\\b",
+    "\\b(ServiceProcessInstaller|ServiceInstaller)\\b",
+    "(?i)Include=\"[^\"]+\\.(vdproj|wixproj|wxs|isproj)\""
+   ],
+   "why": "System.Configuration.Install (InstallUtil) does not exist on .NET, and MSI / setup projects install onto Windows servers; containers replace both.",
+   "fix": "Deliver as a container image built in CI; replace installer custom actions with start-up configuration or infrastructure as code.",
+   "alt": "Container image + IaC",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ]
   }
- ]
+ ],
+ "_doc_parsed": "parsed: for rules on SQL, the T-SQL parser facts that raise the finding instead of the regular expressions (construct labels from sqlscan, or called procedure names by prefix). When a parser is available the rule's patterns are not run on .sql files; the parser also applies the rule to SQL embedded in C#."
 }

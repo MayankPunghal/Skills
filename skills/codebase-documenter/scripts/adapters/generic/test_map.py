@@ -3,8 +3,9 @@
 Writes docs/reference/test-map.md from docs/agent/methods.json (the method map; run after generic-graph / generic-methods).
 A test method is any method in a test file or folder (adapter_options.generic-tests.test_regex). From every test the
 call graph is followed (up to max_depth calls, default 8, INFERRED edges included); every production method on the way
-is "reached". This is static reachability, not run-time coverage: calls through dependency injection, interfaces,
-reflection, HTTP or SQL are not followed, so "not reached" means "no test calls it in a way the graph can see".
+is "reached". This is static reachability, not run-time coverage. For C# with generic-di, calls through DI registrations,
+interfaces, overrides, messages, events and stored delegates are followed; reflection, HTTP and SQL are not, so
+"not reached" means "no test calls it in a way the graph can see".
 """
 import os
 import re
@@ -51,8 +52,9 @@ def main():
     hit = len(reached)
     out = ["# Test map", "",
            f"{len(tests)} test methods reach {hit} of {total} production methods ({(100 * hit // total) if total else 0}%) through the "
-           "call graph. This is static reachability, not run-time coverage: calls through dependency injection, interfaces, "
-           "reflection, HTTP or SQL are not followed. Treat \"not reached\" as \"no test calls it in a way the code shows\" and "
+           "call graph. This is static reachability, not run-time coverage: calls resolved from the code (including, for C#, "
+           "dependency injection, interfaces, overrides, messages and events) are followed; reflection, HTTP calls to the "
+           "application and SQL are not. Treat \"not reached\" as \"no test calls it in a way the code shows\" and "
            "check before reporting a gap. **Bold** tests call the method directly.", "", '<a id="index"></a>', "",
            "| Project | Methods | Reached by tests | Share |", "| --- | ---: | ---: | ---: |"]
     for p in sorted(by_proj):

@@ -56,7 +56,15 @@ def main():
             "| `TEST-LOW-COVERAGE`, `LOG-NO-HEALTHCHECK`, `MOD-ON-WINDOWS`, `DEV-ACTIVITY` | Test density, health endpoint, modern .NET on Windows hosting, repository activity |", ""]
     write_text(os.path.join(SKILL_DIR, "references", "windows-api-catalog.md"), "\n".join(out))
     pm = data("package_map.json")["packages"]
-    out = ["# NuGet package map (generated)", "", "Generated from `scripts/data/package_map.json`. Matching is case-insensitive on the package id (regex, anchored), first match wins.",
+    out = ["# NuGet package map (generated)", "", "Generated from `scripts/data/package_map.json`. Matching is case-insensitive on the package id (regex, anchored), first match wins. "
+                 "This map is offline knowledge only: with `--online`, every package (listed here or not) is also checked against nuget.org "
+                 "for deprecation, advisories, modern targets and its licence history (a version whose licence is more restrictive than an "
+                 "earlier one, e.g. MIT / Apache-2.0 to a custom or commercial licence, becomes a licence finding naming the last open version). "
+                 "Each package also gets a version recommendation: keep the version in use when it runs on the target framework, has no "
+                 "advisories, is not deprecated and its licence has not changed; otherwise upgrade to the lowest version that fixes it, "
+                 "with risks (major version jump, licence change); a cheaper open version is suggested, never enforced. Windows-only "
+                 "packages are detected from their files (native binaries only under runtimes/win-*, net*-windows builds only) and from "
+                 "dependencies on Windows-only packages; unmaintained packages (no release in four years) are flagged.",
            "With `online_package_lookup` the scanner also reads api.nuget.org: the latest version's target frameworks, deprecation (with alternative), published",
            "advisories for the versions in use, and the licence expression. Unknown packages that support .NET Standard / .NET in their latest version are marked ok.", "",
            "| Package id (regex) | Status | Severity | Note | Replacement | Known-vulnerable below |", "| --- | --- | --- | --- | --- | --- |"]

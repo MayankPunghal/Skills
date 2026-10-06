@@ -1,9 +1,9 @@
-# Estimation model (v4: coding effort only)
+# Estimation model (v5: coding effort only)
 
 `estimate_effort.py` is parametric and transparent:
 - every number lives in `scripts/data/estimation.json` (`version`);
 - the working unit is **hours**, with person-days = hours ÷ 8;
-- ranges are low–high, and "likely" = low + 40 % of the range (effort is right-skewed);
+- ranges are low–high, and "likely" = low + 40 % of the range (effort is right-skewed), or 50 % in a repository of 100 KLOC or more;
 - **scope is developer hours for code and SQL only.** QA, DevOps, infrastructure, project management, parallel-development drift and contingency are not estimated.
 
 ## Contents
@@ -29,16 +29,19 @@ Earlier versions added QA, operations, project management, drift and contingency
 ## Formula
 
 ```
-conversion(project) = (fixed[type] + hand-written KLOC × rate[type] + markup KLOC × markup_rate[type]) × complexity_factor
+conversion(project) = (fixed[type] + hand-written KLOC × rate[type] + markup KLOC × markup_rate[type]) × complexity_factor × size_factor
+size_factor         = max(1, (repository hand-written KLOC / 10) ^ 0.10)   COCOMO II diseconomy of scale (360 KLOC → 1.4)
 remediation(finding) = min(fixed + per × (occurrences − 1), cap)          by the rule's effort key
 code_manual = Σ conversion + Σ remediation
-code        = code_manual × ai_assistance.code_factor (0.30–0.50)         set enabled=false for manual-only
-database    = Σ object, construct and data-access hours × db_factor (0.35–0.55)   only in a database scenario
+code        = mechanical part × ai_assistance.code_factor (0.30–0.50)
+            + redesign part   × ai_assistance.redesign_factor (0.70–1.0)   set enabled=false for manual-only
+database    = mechanical part × db_factor (0.35–0.55) + redesign part × redesign_factor   only in a database scenario
 ```
 
 - Generated code is excluded; a project shared by several apps is ported once.
 - **Baseline findings** (System.Web usage, Global.asax, legacy project format …) describe work inside the conversion rate. They show in the report but add no hours.
 - **Retain, Retire, Repurchase and desktop clients** pay small fixed code costs (`other_r_hours`): repointing connection strings and endpoints, integration code.
+- **Redesign part** (no mechanical path, so AI tools help little): Web Forms projects, findings with effort `medium-change`, `large-change`, `db-object-large` or `package-blocker`, constructs and findings at the PostgreSQL `redesign` level, and the dual-database abstraction. Lists in `ai_assistance.redesign_*`.
 - **Manual equivalent:** every total also carries the hours without AI assistance, so the saving is explicit and auditable.
 - **Timeline:** coding only. Shared libraries first, then waves of 3 applications (low risk first) with 30 % overlap, database code in parallel with the last waves. Wave length = likely hours ÷ (engineers × 5 × 8 × efficiency).
 
@@ -51,9 +54,13 @@ Multiplier on a project's conversion hours (findings already count the hard part
 | Decision density (branches, loops, `case`, `catch`, `&&`/`||` per KLOC): ≤ 40 / ≤ 90 / ≤ 150 / above | 0.85 / 1.0 / 1.2 / 1.4 |
 | Fan-in: three or more projects depend on it | +0.10 |
 | Each file over 800 lines | +0.05 (capped at +0.20) |
+| Run-time-bound calls per KLOC (`analysis.json` `wiring.per_project`: DI dispatch to a registered implementation, decorators, keyed services, overrides, MediatR / bus messages, events, method groups, stored delegates, dispatch tables, Hangfire / Quartz jobs, redirects, filters, plus service-locator calls): ≤ 5 / ≤ 15 / ≤ 40 / above | +0 / +0.05 / +0.10 / +0.15 |
+| Each reflection site (`GetMethod`, `Activator.CreateInstance`, `Type.GetType` …) | +0.02 (capped at +0.10) |
 | Projects under 0.3 KLOC | not scaled (density of a few lines is noise) |
 
 The result is clamped to 0.8–1.6.
+
+Why indirection counts: a call bound at run time cannot be followed by reading the code, so porting it means finding the registration, decorator, override or handler first, and testing it needs the composition root running. Calls through local variables that graphify missed are static and do not count. The registrations themselves (legacy container, captive dependencies, missing registrations) are costed as findings in category `di-wiring`, not through this factor. Without the codebase-documenter (no `csharp-resolve.json`), the indirection signals are 0 and the factor falls back to the first three rows.
 
 ## Reference points
 
@@ -62,6 +69,7 @@ Manual-equivalent hours per KLOC of hand-written code (`conversion_hours_per_klo
 | Project type | Hours/KLOC | Fixed hours |
 | --- | --- | --- |
 | Class library | 1–3 | 1–3 |
+| Web library (references ASP.NET MVC / Web API, but no web.config, Global.asax or Web Application project type: framework extensions, base controllers, services with filters) | 3–7 | 2–4 |
 | Console | 1.5–4 | 1–3 |
 | Test project | 0.5–1.5 | 0.5–1.5 |
 | ASP.NET MVC 5 | 3–7 | 4–8 |
@@ -70,6 +78,8 @@ Manual-equivalent hours per KLOC of hand-written code (`conversion_hours_per_klo
 | WCF → CoreWCF | 4–9 | 4–8 |
 | Windows service → Worker | 2–5 | 1–3 |
 | Already ASP.NET Core / .NET 5+ | 0.3–1.2 | 1–3 |
+
+**What counts as an application.** A deployable project: a web application (Web Application project type, or a web.config / Global.asax beside the project file), a WCF service, a Windows service, a console / desktop executable, an ASP.NET Core project or a Web Site folder. A library that only references System.Web.Mvc is a *web library*: it is ported (inside every application that references it, once) at the web rate, but it is not an application of its own and gets no 7R decision. Two applications with the same project name (a legacy and a modernised copy) are told apart by the first folder that differs, e.g. `eShopWCFService (eShopLegacyNTier)`.
 
 ## Scenarios
 
@@ -96,6 +106,9 @@ The report states these:
 - the real productivity of the tools on this code base. Measure it on the first wave and recalibrate `ai_assistance.code_factor`.
 
 ## Calibration from actuals
+
+Before changing a rate, read [estimation-validation.md](estimation-validation.md): how the model compares with AWS, QSM, COCOMO II, Google and METR evidence and with the real Smartstore port, and the open suggested changes.
+
 
 After each engagement:
 1. Compare actual coding hours per project with the estimate.

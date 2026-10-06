@@ -19,7 +19,7 @@ import os
 import re
 from collections import defaultdict, deque
 
-from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, line_at, options, read, slug, walk, write_page
 
 OPT = options("generic-trace")
 DEPTH = OPT.get("max_depth", 8)
@@ -300,6 +300,20 @@ def main():
             # only methods nothing in the code calls: the host / scheduler / broker invokes them
             if JOB_METHOD.search(M.data[a]["name"]) and not M.data[a].get("callers") and not re.search(r"(^|/)tests?/|Tests?\.\w+$", p):
                 entries.append({"kind": "job / handler", "label": M.data[a]["name"], "handler": a, "file": p, "line": M.data[a]["line"], "link": ""})
+    # framework-invoked code from the C# resolver (middleware, filters, behaviours, hosted services, hubs ...): no caller in code
+    di = load("di.json") or {}
+    hook = re.compile(r"\.(Invoke|InvokeAsync|On[A-Z]\w*|Handle|HandleAsync|ExecuteAsync|StartAsync|StopAsync|Configure|Validate\w*|"
+                      r"BindModelAsync|SendAsync|\w+Executing\w*|\w+Executed\w*)$")
+    pipe_types = {}
+    for p in di.get("pipeline", []):
+        pipe_types.setdefault(p["type"], p["kind"])
+    hubs = {p["type"] for p in di.get("pipeline", []) if p["kind"] == "SignalR hub"}
+    known = {e["handler"] for e in entries}
+    for a, x in M.data.items():
+        owner = x["name"].split(".", 1)[0] if "." in x["name"] else ""
+        if owner in pipe_types and a not in known and not x.get("callers") and (hook.search(x["name"]) or owner in hubs):
+            entries.append({"kind": pipe_types[owner], "label": x["name"], "handler": a, "file": x["file"], "line": x["line"],
+                            "link": "dependency-injection.md#di-pipeline"})
     seen_e, uniq = set(), []
     for e in entries:
         k = (e["kind"], e["label"], e["handler"])
@@ -376,8 +390,9 @@ def main():
            f"Where work starts ({len(entries)}: endpoints, UI event handlers, background jobs and message handlers) and everything "
            "each one reaches through the call graph: methods, database objects, errors a user can see, and documented flows. "
            "The reverse indexes answer debugging questions: which screens and endpoints run a method, who changes a table, "
-           "where users meet an error. Static reachability: dependency injection, reflection and dynamic dispatch are not "
-           "followed, so treat absences as \"not shown by the code\".", "", '<a id="index"></a>', "",
+           "where users meet an error. Static reachability: calls resolved from the code are followed (for C#, also dependency "
+           "injection, overrides, messages, events, stored delegates, jobs and filters, see the dependency-injection reference); "
+           "reflection and dispatch built at run time are not, so treat absences as \"not shown by the code\".", "", '<a id="index"></a>', "",
            "- [Entry points](#entries) · [Method → entry points](#by-method) · [Who changes each table](#by-table) · [Where users meet each error](#by-error)", "",
            '<a id="entries"></a>', "", "## Entry points", "", BACK, "",
            "| Entry point | Handler | Reaches | Database | Errors it can raise | Flows |", "| --- | --- | ---: | --- | --- | --- |"]

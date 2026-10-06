@@ -131,7 +131,11 @@ def collect(c, cfg):
             packages.append({"id": p["id"], "versions": ", ".join(p["versions"]), "latest": p.get("latest", "") or "", "group": A.package_group(p), "status": p["status"],
                              "severity": p["severity"], "advisories": p.get("vulnerable", "") or "", "vulnerable": "yes" if p.get("vulnerable") else "no",
                              "note": p.get("note", ""), "replacement": p.get("replacement", ""), "projects": len(p["projects"]), "repo": r,
-                             "licence": ((p.get("nuget") or {}).get("licence") or "")})
+                             "licence": ((p.get("nuget") or {}).get("licence") or ""),
+                             "licence_change": (((p.get("nuget") or {}).get("licence_info") or {}).get("text") or ""),
+                             "rec": (p.get("recommendation") or {}).get("action", "") + (" (optional)" if (p.get("recommendation") or {}).get("optional") else ""),
+                             "rec_version": (p.get("recommendation") or {}).get("version") or "",
+                             "rec_why": (p.get("recommendation") or {}).get("why", ""), "rec_risks": "; ".join((p.get("recommendation") or {}).get("risks", []))})
     deps, projects = [], []
     for r in c.repos:
         for e in c.scan[r].get("endpoints", []):

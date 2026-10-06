@@ -18,6 +18,16 @@ def prereqs():
         miss.append("graphify")
     if not documenter_dir():
         miss.append("codebase-documenter skill (sibling install)")
+    else:
+        sys.path.insert(0, os.path.join(documenter_dir(), "scripts"))
+        try:
+            import sql_parse
+            if not sql_parse.has_sqlglot():
+                miss.append("sqlglot")
+            if sql_parse.dotnet_major() < sql_parse.MIN_DOTNET:
+                miss.append(".NET SDK 8+ (T-SQL parser)")
+        except ImportError:
+            miss.append("codebase-documenter sql_parse.py (update the codebase-documenter skill)")
     dotnet = run(["dotnet", "--list-sdks"])
     return miss, (dotnet[1].strip().splitlines() if dotnet[0] == 0 else [])
 

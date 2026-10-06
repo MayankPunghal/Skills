@@ -10,7 +10,7 @@ Writes docs/agent/cards.jsonl, one JSON object per line:
   doc         page#anchor in the docs site; source: file:line in the code
   related     ids of linked cards (calls, callers, tables, endpoints ...) for one-hop expansion at query time
 
-Entity cards come from docs/agent/*.json (methods, endpoints, db, db-access, errors, entry-points, dependencies)
+Entity cards come from docs/agent/*.json (methods, endpoints, db, db-access, errors, entry-points, dependencies, di)
 and the flow specs; reference entities with no export (config keys, seed rows, classes, views ...) get a card from
 entities.jsonl. Narrative pages are split at headings, then at paragraph / table-row boundaries above MAX_CHARS
 with one block of overlap; code fences and tables are never cut mid-block, Mermaid source is dropped (captions stay).
@@ -90,6 +90,7 @@ def main():
     ERRS = load("errors.json", [])
     TR = load("entry-points.json", {"entries": [], "ui": []})
     DEPS = load("dependencies.json", {"projects": []})
+    DI = load("di.json", {})
     name = lambda a: (M.get(a) or {}).get("name", "")
     ref = "reference/"
 
@@ -133,7 +134,7 @@ def main():
             f"Declaration: {x['decl']}" if x.get("decl") else "",
             f"Parameters: {'; '.join(x['params'])}" if x.get("params") else "Parameters: none" if x.get("params") == [] else "",
             f"Returns: {x['returns']}" if x.get("returns") else "",
-            f"Calls: {cap([name(b) for b in x.get('calls', [])])}" if x.get("calls") else "Calls: no other documented method",
+            f"Calls: {cap([name(b) + (' [' + x['via'][b] + ']' if b in (x.get('via') or {}) else '') for b in x.get('calls', [])])}" if x.get("calls") else "Calls: no other documented method",
             f"Called by: {cap([name(b) for b in x.get('callers', [])])}" if x.get("callers") else "Called by: nothing in the code (entry point, framework callback, or dead code)",
             f"Entry point itself: {cap([e['kind'] + ' ' + e['label'] for e in own])}" if own else "",
             f"Started by: {cap(x.get('entry_points', []))}" if x.get("entry_points") else "",
@@ -192,7 +193,13 @@ def main():
             f"Defined in {r['file']}:{r.get('line', '')}",
             f"Parameters: {'; '.join(r['params'])}" if r.get("params") else "Parameters: none",
             f"Returns: {r['returns']}" if r.get("returns") else "",
-            f"Tables it touches: {', '.join(r['touches'])}" if r.get("touches") else "",
+            f"Reads: {', '.join(sorted(set(r['reads'])))}" if r.get("reads") else "",
+            f"Writes: {', '.join(w['name'] + ' (' + w['op'] + ')' for w in r['writes'])}" if r.get("writes") else "",
+            f"Calls: {', '.join(r['calls'])}" if r.get("calls") else "",
+            f"Called by (SQL): {', '.join(r['called_by'])}" if r.get("called_by") else "",
+            f"Tables it touches: {', '.join(r['touches'])}" if r.get("touches") and not (r.get("reads") or r.get("writes")) else "",
+            f"PostgreSQL: {', '.join(f'{k} {v}' for k, v in sorted((r.get('conversion') or {}).items()))}"
+            + (f"; no PostgreSQL equivalent: {', '.join(r['no_pg_equivalent'])}" if r.get("no_pg_equivalent") else "") if r.get("conversion") else "",
             f"Called from code: {cap(site_lines(r['name']), 10)}" if site_lines(r["name"]) else "Called from code: no call site found",
         ], doc=f"{ref}{r.get('page', 'db-routines.md')}#{r['anchor']}", source=f"{r['file']}:{r.get('line', '')}",
             related=[s.get("anchor") for s in sites_of_obj.get(r["name"].lower(), [])], key_names=(r["name"],))
@@ -200,8 +207,13 @@ def main():
         full = f"{t['schema']}.{t['name']}" if t.get("schema") else t["name"]
         used_by = [r["name"] for r in DB.get("routines", []) if t["name"].lower() in (x.lower() for x in r.get("touches", []))]
         card(t["anchor"], "db-table", full, [
-            f"Defined in {t['file']}", f"Columns: {', '.join(c.strip() for c in t.get('columns', []))}" if t.get("columns") else "",
-            f"Used by routines: {cap(used_by)}" if used_by else "",
+            f"Defined in {t['file']}" + (f":{t['line']}" if t.get("line") else ""),
+            f"Columns: {', '.join(c.strip() for c in t.get('columns', []))}" if t.get("columns") else "",
+            f"Primary key: {', '.join(t['primary_key'])}" if t.get("primary_key") else "",
+            f"Foreign keys: {'; '.join(', '.join(fk.get('columns') or []) + ' -> ' + (fk.get('references') or '') for fk in t['foreign_keys'])}" if t.get("foreign_keys") else "",
+            f"Read by routines: {cap(t['read_by'])}" if t.get("read_by") else "",
+            f"Written by routines: {cap(t['written_by'])}" if t.get("written_by") else "",
+            f"Used by routines: {cap(used_by)}" if used_by and not (t.get("read_by") or t.get("written_by")) else "",
             f"Accessed from code: {cap(site_lines(t['name']), 10)}" if site_lines(t["name"]) else "Accessed from code: no direct access found",
             f"Changed by (entry points): {cap(sorted(writers_of.get(t['name'].lower(), [])), 10)}" if writers_of.get(t["name"].lower()) else "",
         ], doc=f"{ref}{t.get('page', 'db-tables.md')}#{t['anchor']}", source=t["file"],
@@ -230,8 +242,14 @@ def main():
         vs = sorted({v for _, v in uses if v})
         card("pkg-" + re.sub(r"[^a-z0-9]+", "-", k.lower()).strip("-"), "package", k, [
             f"Versions: {', '.join(vs)}" + (" (version drift between projects)" if len(vs) > 1 else ""),
-            f"Used by projects: {cap([f'{p} ({v})' for p, v in uses], 20)}"],
+            f"Used by projects: {cap([f'{p} ({v})' for p, v in uses], 20)}"]
+            + [f"Version {v}: licence {i.get('licence') or 'not declared'}; builds for {', '.join(i.get('frameworks') or []) or 'unknown'}"
+               + (f"; WINDOWS-ONLY ({i['why']}): blocks Linux hosting" if i.get("windows_only") else f"; {i['why']}" if i.get("why") else "")
+               for v, i in sorted((DEPS.get("package_info") or {}).get(k, {}).items())],
             doc=f"{ref}dependencies.md#pkg-{re.sub(r'[^a-z0-9]+', '-', k.lower()).strip('-')}")
+
+    di_cards(DI, ref)
+    ui_cards(load("views.json", {}), load("portability.json", {}), ref)
 
     fdir = os.path.join(DOCS, "_src", "workflows", "flows")
     for f in sorted(os.listdir(fdir)) if os.path.isdir(fdir) else []:
@@ -276,6 +294,98 @@ def main():
         kinds[c["kind"]] += 1
     big = sum(1 for c in CARDS if len(c["text"]) >= MAX_CHARS - 60)
     print(f"cards: {len(CARDS)} ({dict(sorted(kinds.items(), key=lambda kv: -kv[1]))}); {big} at the size cap")
+
+
+def di_cards(DI, ref):
+    """Dependency injection and run-time wiring (C#, generic-di adapter): one card per service, message, host, finding,
+    plus the pipeline / jobs / events as one card each, so "what runs behind IOrderService" retrieves a self-contained answer."""
+    if not DI:
+        return
+    page = f"{ref}dependency-injection.md"
+    loc = lambda x: f"{x.get('file')}:{x.get('line')}"
+    for s in DI.get("services", []):
+        regs = s.get("registrations", [])
+        card(s["anchor"], "di-service", s["service"], [
+            f"{(s.get('kind') or 'type').capitalize()} defined in {s['file']}" if s.get("file") else "",
+            *(f"Registered: {s['service']} -> {r['impl'] or '?'} ({r['lifetime']}" + (f", key {r['key']}" if r.get("key") else "")
+              + f", {r['how']}, {r['container']}) in {', '.join(r.get('hosts') or ['?'])} at {loc(r)}"
+              + (f" via module {r['module']}" if r.get("module") else "") for r in regs[:10]),
+            "Not registered anywhere in this repository (registered elsewhere, by convention, or a missing registration)" if not regs else "",
+            f"Also implemented by (never registered): {cap(s.get('unregistered_implementers', []))}" if s.get("unregistered_implementers") else "",
+            f"Injected into: {cap(s.get('consumers', []), 20)}" if s.get("consumers") else "Injected into: no constructor found",
+        ], doc=f"{page}#{s['anchor']}", source=s.get("file") or "", key_names=[r.get("impl") for r in regs])
+    hosts = DI.get("anchors", {}).get("hosts", {})
+    by_host = defaultdict(list)
+    for r in DI.get("registrations", []):
+        for h in r.get("hosts") or []:
+            by_host[h].append(r)
+    for h, a in hosts.items():
+        feats = [n["kind"] for n in DI.get("notes", []) if n.get("host") == h]
+        card(a, "di-host", f"Composition root of {h}", [
+            f"{len(by_host[h])} registrations: " + cap([f"{r['service']} -> {r['impl']} ({r['lifetime']})" for r in by_host[h]], 30),
+            f"Framework features switched on: {cap(feats, 20)}" if feats else ""], doc=f"{page}#{a}", key_names=(h,))
+    for n, m in DI.get("messages", {}).items():
+        a = DI.get("anchors", {}).get("messages", {}).get(n)
+        if not a:
+            continue
+        card(a, "di-message", n, [
+            f"Kind: {m.get('kind') or 'message'}",
+            "Handled by: " + cap([f"{x['class']}.{x['method']} ({loc(x)})" for x in m.get("handlers", [])]),
+            "Sent / published from: " + (cap([f"{(x.get('cls') or '')}.{x['method']} ({x['verb']}, {loc(x)})" for x in m.get("senders", [])])
+                                         or "not found in the code (sent from outside, by reflection, or dead)")],
+            doc=f"{page}#{a}", key_names=[x["class"] for x in m.get("handlers", [])])
+    for f in DI.get("findings", []):
+        if f.get("anchor"):
+            card(f["anchor"], "di-finding", f"{f['kind']} ({f['severity']})", [f["text"], f"Where: {loc(f)}"],
+                 doc=f"{page}#{f['anchor']}", source=loc(f), key_names=(f.get("class"), f.get("type")))
+    groups = [("di-pipeline", "Request pipeline and implicit calls", [f"{p['kind']}: {p['type']} ({p.get('applies_to') or 'all'}) at {loc(p)}" for p in DI.get("pipeline", [])]),
+              ("di-jobs", "Background jobs", [f"{j['type']}.{j['method']} via {j['api']}, scheduled from {(j.get('cls') or '')}.{j.get('caller') or '?'} at {loc(j)}" for j in DI.get("jobs", [])]),
+              ("di-events", "Events and delegates", [f"{e['member']} {e['op']} {e['cls']}.{e['handler']} at {loc(e)}" for e in DI.get("events", [])]
+               + [f"stored delegate {x['type']}.{x['member']}: built in {x.get('builder')} ({x.get('builder_file')}:{x.get('builder_line')}), invoked by {x.get('invoker_cls')}.{x.get('invoker')}" for x in DI.get("stored_delegates", [])]),
+              ("di-options", "Options bindings", [f"{o['type']} bound to section {o.get('section') or '?'} ({o['how']}) at {loc(o)}" for o in DI.get("options", [])]),
+              ("di-limits", "Run-time lookups static analysis cannot follow", [f"{r['text']} at {loc(r)}" for r in DI.get("reflection", [])])]
+    for a, title, lines in groups:
+        if lines:
+            card(a, "di-wiring", title, lines[:60], doc=f"{page}#{a}")
+    for n, parts in DI.get("partials", {}).items():
+        a = re.sub(r"[^a-z0-9]+", "-", f"di-partial-{n}".lower()).strip("-")
+        card(a, "partial-type", n, [f"Partial {parts[0]['kind']} split over {len(parts)} files:"]
+             + [f"{p['file']}:{p['line']} declares " + (", ".join(p.get("methods", [])[:20]) or "no methods")
+                + (f"; bases {', '.join(p['bases'])}" if p.get("bases") else "") for p in parts],
+             doc=f"{page}#{a}", source=f"{parts[0]['file']}:{parts[0]['line']}", key_names=[p["file"].rsplit("/", 1)[-1] for p in parts])
+
+
+def ui_cards(V, P, ref):
+    """Views / pages (generic-views) and portability flags (generic-portability): one card per screen-like item and per
+    rule, plus a totals card each, so "how many pages are there" and "what breaks on Linux" retrieve a direct answer."""
+    if V.get("items"):
+        page = f"{ref}views-and-pages.md"
+        card("ui-totals", "ui-summary", "Views and pages: totals", [
+            f"{len(V['items'])} UI files, {V.get('screens', 0)} screens a user can open",
+            "By kind: " + ", ".join(f"{k} {n}" for k, n in sorted(V.get("totals", {}).items(), key=lambda kv: -kv[1]))],
+            doc=f"{page}#ui-totals", key_names=("views", "pages", "screens"))
+        for i in V["items"]:
+            card(i["anchor"], "ui-view", f"{i['kind']} {i['name']}", [
+                f"File: {i['file']} ({i['lines']} lines" + (f", code-behind {i['code_behind']} {i['code_lines']} lines" if i.get("code_behind") else "") + ")",
+                f"Project: {i['project']}", f"Route: {i['route']}" if i.get("route") else "",
+                f"Model / class: {i['model']}" if i.get("model") else "", f"Layout / master / base: {i['layout']}" if i.get("layout") else "",
+                f"Handlers: {', '.join(i['handlers'])}" if i.get("handlers") else "", f"Title: {i['title']}" if i.get("title") else ""],
+                doc=f"{page}#{i['anchor']}", source=i["file"], related=[i["action"]] if i.get("action") else [],
+                key_names=(i["file"].rsplit("/", 1)[-1], i.get("route"), i.get("model")))
+    if P.get("rules") is not None:
+        page = f"{ref}platform-portability.md"
+        card("port-summary", "portability-summary", "Platform portability (Windows to Linux): summary", [
+            f"{sum(len(r['sites']) for r in P['rules'])} occurrences of {len(P['rules'])} of {P.get('rules_checked', 0)} portability rules",
+            *(f"{r['severity']}: {r['title']} ({r['id']}), {len(r['sites'])} occurrences" for r in P["rules"][:40]),
+            "Windows-only packages: " + (", ".join(f"{x['name']} {x['version']}" for x in P.get("windows_only_packages", [])) or "none found")],
+            doc=f"{page}#port-summary", key_names=("linux", "portability", "windows-only"))
+        for r in P["rules"]:
+            card(r["anchor"], "portability-rule", f"{r['title']} ({r['id']})", [
+                f"Severity {r['severity']}, category {r['category']}", f"Why: {r['why']}", f"Suggested fix: {r['fix']}",
+                f"Replacement: {r['alt']}" if r.get("alt") else "",
+                "Where: " + cap([f"{x['file']}:{x['line']}" for x in r["sites"]], 25)],
+                doc=f"{page}#{r['anchor']}", source=f"{r['sites'][0]['file']}:{r['sites'][0]['line']}" if r["sites"] else "",
+                related=[x["method"] for x in r["sites"] if x.get("method")][:20], key_names=(r["id"],))
 
 
 def blocks(text):

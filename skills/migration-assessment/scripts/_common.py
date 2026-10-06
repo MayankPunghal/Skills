@@ -25,7 +25,7 @@ DEFAULTS = {
     "compliance": [],                # e.g. ["HIPAA", "PCI DSS", "SOC 2"]: drives security findings and questions
     "data_residency": "",           # e.g. "EU only"
     "current_hosting": "",          # what the client told us: "on-prem VMware", "Proxmox", "Hyper-V", "colo"
-    "online_package_lookup": False,  # query api.nuget.org for TFMs / deprecation / vulnerabilities / licence
+    "online_package_lookup": True,   # default on (owner's decision 2026-10-06); --offline / false for confidential estates. query api.nuget.org for TFMs / deprecation / vulnerabilities / licence
     "git_activity_days": 180,
     "exclude_dirs": ["bin", "obj", "packages", "node_modules", ".git", ".vs", "TestResults", "dist", "wwwroot/lib", "bower_components"],
     "skip_repos": [],

@@ -11,10 +11,13 @@ Database code scenarios (scenario.database):
   dual | postgresql | none   SQL Server + PostgreSQL | PostgreSQL only | keep SQL Server (no database code change)
 
 Per project:   conversion = (fixed + hand-written KLOC x rate[type] + markup KLOC x markup rate) x complexity factor
-               complexity factor = decision density band + fan-in + big files, clamped (estimation.json "complexity")
+               complexity factor = decision density band + fan-in + big files + run-time indirection band + reflection,
+               clamped (estimation.json "complexity"; indirection from assessment/graphs/<repo>/analysis.json "wiring")
 Per finding:   remediation = min(fixed + per x (occurrences - 1), cap) by effort key; baseline findings add nothing
 Per package:   hours = (conversion + remediation) x ai.code_factor   (manual-equivalent kept beside it)
-Database:      object conversion (kind and size) + T-SQL constructs + data-access code + redesign findings, x ai.db_factor;
+Database:      object conversion (kind and size) + parsed T-SQL constructs priced by PostgreSQL conversion level
+               (data/pg_conversion.json: auto / rewrite / redesign) + data-access code (parsed embedded SQL, API usage)
+               + redesign findings, x ai.db_factor. Findings flagged db_only are priced here only, never in app packages;
                dual adds a provider-neutral data layer per data-using application.
 Writes assessment/estimate.json: the selected scenario in full, a comparison of every scenario, and optional modernizations
 (shown beside the estimate, never in its total). --explain prints the per-project arithmetic.
@@ -25,6 +28,7 @@ import math
 import os
 
 from _common import OUT, data, load_config, mark_step, read_json, utf8_stdout, write_json
+import _dbinventory as DBI
 import _findings as F
 import _optional as O
 
@@ -60,8 +64,8 @@ def finding_hours(f, est):
     return [min(m["fixed"][i] + m["per"][i] * (n - 1), max(m["cap"][i], m["fixed"][i])) for i in (0, 1)]
 
 
-def complexity_factor(p, fan_in, est):
-    """Multiplier from decision density, fan-in and big files; 1.0 when the project is too small to measure."""
+def complexity_factor(p, fan_in, est, wire=None):
+    """Multiplier from decision density, fan-in, big files and run-time indirection; 1.0 when the project is too small to measure."""
     c = est["complexity"]
     cx = p.get("complexity") or {}
     kloc = (p.get("loc_handwritten") or 0) / 1000.0
@@ -70,12 +74,17 @@ def complexity_factor(p, fan_in, est):
     dens = cx.get("decisions_per_kloc", 0)
     base = next(f for lim, f in c["decisions_per_kloc_bands"] if dens <= lim)
     extra = min(cx.get("big_files", 0) * c["big_file_extra"], c["big_file_cap"]) + (c["fan_in_extra"] if fan_in >= c["fan_in_threshold"] else 0)
-    f = max(c["min"], min(c["max"], base + extra))
-    why = f"{dens:g} decisions/KLOC" + (f", {cx['big_files']} big file(s)" if cx.get("big_files") else "") + (f", {fan_in} dependents" if fan_in >= c["fan_in_threshold"] else "")
+    wire = wire or {}
+    ind = round((wire.get("indirect", 0) + wire.get("locators", 0)) / kloc, 1)
+    ind_extra = next((f for lim, f in c.get("indirection_per_kloc_bands", []) if ind <= lim), 0.0)
+    refl_extra = min(wire.get("reflection", 0) * c.get("reflection_extra", 0), c.get("reflection_cap", 0))
+    f = max(c["min"], min(c["max"], base + extra + ind_extra + refl_extra))
+    why = f"{dens:g} decisions/KLOC" + (f", {cx['big_files']} big file(s)" if cx.get("big_files") else "") + (f", {fan_in} dependents" if fan_in >= c["fan_in_threshold"] else "") \
+        + (f", {ind:g} run-time-bound calls/KLOC" if ind_extra else "") + (f", {wire['reflection']} reflection site(s)" if refl_extra else "")
     return round(f, 2), why
 
 
-def conversion_hours(p, fan_in, est):
+def conversion_hours(p, fan_in, est, wire=None):
     t = p.get("type", "unknown")
     rate = est["conversion_hours_per_kloc"].get(t, est["conversion_hours_per_kloc"]["unknown"])
     fixed = est["conversion_fixed_hours"].get(t, est["conversion_fixed_hours"]["default"])
@@ -83,23 +92,33 @@ def conversion_hours(p, fan_in, est):
     mrate = mr.get(t, mr.get("default", rate))
     code_k = (p.get("loc_handwritten", p.get("loc_code")) or 0) / 1000.0
     mark_k = (p.get("loc_markup") or 0) / 1000.0
-    cf, why = complexity_factor(p, fan_in, est)
+    cf, why = complexity_factor(p, fan_in, est, wire)
     base = [fixed[i] + rate[i] * code_k + mrate[i] * mark_k for i in (0, 1)]
     return scale(base, cf), cf, why, code_k
 
 
-def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False):
+def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f=None):
     """Manual-equivalent and AI-assisted hours to convert one database group (and its data-access code) to PostgreSQL."""
     pg = est["postgres"]
-    objs, cons, code, fnd = [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]
+    red_f = red_f or db_f
+    objs, cons, code, fnd, fnd_red = [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]
     redesign, rework = [], []
     for o in dbi.get("objects", []):
         oh = pg["object_hours"].get(o["kind"], [0.25, 0.75])
         if isinstance(oh, dict):
             oh = oh["small" if o["lines"] <= 50 else ("medium" if o["lines"] <= 200 else "large")]
         objs = add(objs, oh)
-    for k, n in (dbi.get("constructs") or {}).items():
-        cons = add(cons, pg["construct_hours"].get(k, [0, 0]), n)
+    levels = {"auto": [0.0, 0.0], "rewrite": [0.0, 0.0], "redesign": [0.0, 0.0]}
+    for k, n in (dbi.get("constructs") or {}).items():  # parsed construct census, priced by its PostgreSQL conversion level
+        c = DBI.conversion(k)
+        h = c.get("hours") or pg["construct_hours"].get(k, [0, 0])
+        cons = add(cons, h, n)
+        levels[c["level"]] = add(levels[c["level"]], h, n)
+    for k, n in (dbi.get("code_constructs") or {}).items():  # embedded SQL: statement rewrite is in code_hours; add what has no equivalent
+        c = DBI.conversion(k)
+        if c["level"] == "redesign":
+            cons = add(cons, c["hours"], n)
+            levels["redesign"] = add(levels["redesign"], c["hours"], n)
     facts = dict(dbi.get("code") or {})
     facts["edmx_function_imports"] = dbi.get("edmx_function_imports", 0)
     for k, n in facts.items():
@@ -107,13 +126,21 @@ def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False):
     for f in findings:
         impact = (f.get("db") or {}).get("pg")
         if impact in ("redesign", "rework"):
+            (redesign if impact == "redesign" else rework).append(f["rule"])
+            if (f.get("db") or {}).get("priced_by_inventory"):  # already in the construct hours above
+                continue
             fh = finding_hours(dict(f, baseline=False, severity="Medium"), est)
             fnd = add(fnd, fh, 1.0 if impact == "redesign" else 0.5)
-            (redesign if impact == "redesign" else rework).append(f["rule"])
+            if impact == "redesign":
+                fnd_red = add(fnd_red, fh)
     extra = [pg["dual"]["abstraction_per_app"][i] * max(n_apps_with_data, 1) for i in (0, 1)] if dual else [0.0, 0.0]
     manual = add(add(add(objs, cons), add(code, fnd)), extra)
-    return {"objects": r1(objs), "constructs": r1(cons), "code": r1(code), "findings": r1(fnd), "dual_extra": r1(extra), "manual": r1(manual),
-            "hours": r1(mul(manual, db_f)), "redesign": sorted(set(redesign)), "rework": sorted(set(rework))}
+    red = add(add(levels["redesign"], fnd_red), extra)  # no mechanical path: the redesign AI factor applies
+    mech = [max(manual[i] - red[i], 0.0) for i in (0, 1)]
+    hours = add(mul(mech, db_f), mul(red, red_f))
+    return {"objects": r1(objs), "constructs": r1(cons), "construct_levels": {k: r1(v) for k, v in levels.items()},
+            "code": r1(code), "findings": r1(fnd), "dual_extra": r1(extra), "manual": r1(manual), "manual_redesign": r1(red),
+            "hours": r1(hours), "redesign": sorted(set(redesign)), "rework": sorted(set(rework))}
 
 
 def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, explain=False):
@@ -122,6 +149,10 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
     ai = est["ai_assistance"]
     one = [1.0, 1.0]
     code_f, db_f = (ai["code_factor"], ai["db_factor"]) if ai_on else (one, one)
+    red_f = ai.get("redesign_factor", code_f) if ai_on else one
+    red_keys, red_types = set(ai.get("redesign_effort_keys", [])), set(ai.get("redesign_project_types", []))
+    sc = est.get("scale") or {}
+    pos_by_repo, scale_by_repo = {}, {}
     hs = est["hosting_scenarios"][hosting]
     apps = {x["id"]: x for x in cls["applications"]}
     packages, costed, db_packages, optional = [], set(), [], []
@@ -136,6 +167,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         by_path = {p["path"]: p for p in inv["projects"]}
         shared_paths = {s["path"] for s in inv.get("shared_libraries", [])}
         fan_in = {p["path"]: 0 for p in inv["projects"]}
+        wiring = ((read_json(os.path.join(OUT, "graphs", repo, "analysis.json"), {}) or {}).get("wiring") or {}).get("per_project", {})
         norm = {k.replace("\\", "/").lower(): k for k in by_path}
         for p in inv["projects"]:
             if p.get("type") == "test":
@@ -145,6 +177,13 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 if t:
                     fan_in[t] += 1
         repo_apps = [x for x in cls["applications"] if x["repo"] == repo]
+        repo_kloc = sum((p.get("loc_handwritten") or 0) for p in inv["projects"] if p.get("type") not in ("test", "database")) / 1000.0
+        rscale = max(1.0, (repo_kloc / sc["reference_kloc"]) ** sc["exponent"]) if sc and repo_kloc else 1.0
+        rpos = est.get("likely_position_large", pos) if sc and repo_kloc >= sc.get("large_kloc", 10 ** 9) else pos
+        scale_by_repo[repo], pos_by_repo[repo] = round(rscale, 3), rpos
+        if rscale > 1.0:
+            notes.append(f"{repo}: {repo_kloc:,.0f} KLOC, so project conversion hours are scaled by {rscale:.2f} (diseconomy of scale, COCOMO II)"
+                         + (f" and 'likely' sits {int(rpos * 100)}% of the way from low to high." if rpos != pos else "."))
         if repo not in OPTIONAL_CACHE:  # the scan does not depend on the scenario; compute() runs once per scenario
             OPTIONAL_CACHE[repo] = O.scan_repo(inv["root"], inv)
         optional += [dict(o, repo=repo) for o in OPTIONAL_CACHE[repo]]
@@ -161,13 +200,17 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
 
         def work_package(wp_id, name, kind, app=None, proj_list=(), findings=(), mode="port", desktop=False):
             code_manual, lines, fl, excluded = [0.0, 0.0], [], [], []
+            red_manual = [0.0, 0.0]  # part of code_manual with no mechanical path (redesign AI factor)
             for pp in proj_list:
                 p = by_path.get(pp)
                 if not p or p["type"] == "database" or pp in converted:
                     continue
                 converted.add(pp)  # a project referenced by several applications is ported once
-                h, cf, why, kloc = conversion_hours(p, fan_in.get(pp, 0), est)
+                h, cf, why, kloc = conversion_hours(p, fan_in.get(pp, 0), est, wiring.get(pp))
+                h = scale(h, rscale)
                 code_manual = add(code_manual, h)
+                if p["type"] in red_types:
+                    red_manual = add(red_manual, h)
                 lines.append({"item": f"Port {p['name']} ({p['type']}, {p.get('loc_code', 0):,} lines) to {cfg.get('target_dotnet')}", "manual_hours": r1(h),
                               "kloc": round(kloc, 2), "complexity_factor": cf, "complexity_why": why})
                 explain_rows.append((name, p["name"], p["type"], round(kloc, 2), cf, why, r1(h)))
@@ -190,15 +233,20 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 if h[1] <= 0:
                     continue
                 code_manual = add(code_manual, h)
+                is_red = f.get("effort_key") in red_keys or (f.get("db") or {}).get("pg") == "redesign"
+                if is_red:
+                    red_manual = add(red_manual, h)
                 fl.append({"id": f["id"], "rule": f["rule"], "title": f["title"], "severity": f["severity"], "occurrences": f.get("occurrences", 1),
-                           "manual_hours": r1(h), "hours": r1(mul(h, code_f))})
+                           "manual_hours": r1(h), "hours": r1(mul(h, red_f if is_red else code_f)), "redesign": is_red})
             manual = add(code_manual, fixed_other)
-            code = add(mul(code_manual, code_f), fixed_other)  # fixed config work is not accelerated
-            likely_h = lk(code, pos)
+            mech_manual = [max(code_manual[i] - red_manual[i], 0.0) for i in (0, 1)]
+            code = add(add(mul(mech_manual, code_f), mul(red_manual, red_f)), fixed_other)  # fixed config work is not accelerated
+            likely_h = lk(code, rpos)
             band = next(b for b, lim in sorted(((k, v) for k, v in est["complexity_bands"].items() if k != "_doc"), key=lambda x: x[1]) if likely_h / HPD <= lim)
             return {"id": wp_id, "name": name, "kind": kind, "repo": repo, "r7": (app or {}).get("r7"), "mode": mode,
                     "breakdown_hours": {"code": r1(code), "code_manual_equivalent": r1(manual)},
                     "total_hours": [round(x) for x in code], "likely_hours": round(likely_h), "manual_hours": [round(x) for x in manual],
+                    "manual_likely_hours": round(lk(manual, rpos)), "redesign_manual_hours": [round(x) for x in red_manual],
                     "total_days": r1([x / HPD for x in code]), "likely_days": round(likely_h / HPD, 1), "manual_days": r1([x / HPD for x in manual]),
                     "complexity": band, "confidence": (app or {}).get("confidence", "Medium"),
                     "conversion": lines, "findings": sorted(fl, key=lambda x: -x["hours"][1]), "excluded_findings": excluded,
@@ -218,10 +266,10 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             packages.append(work_package(f"{repo}-shared-libraries", f"{repo}: shared libraries", "shared", None, sl, sf))
         for x in repo_apps:
             own = [p for p in x["projects"] if p not in shared_paths]
-            af = [f for f in fs if x["id"] in f.get("apps", []) and f["category"] != "database"]
+            af = [f for f in fs if x["id"] in f.get("apps", []) and f["category"] != "database" and not f.get("db_only")]
             mode = modes[x["id"]]
             packages.append(work_package(x["id"], x["name"], "application", x, own if mode == "port" else [], af, mode, x["type"] in rules["desktop_types"]))
-        rest = [f for f in fs if f["id"] not in costed and f["category"] != "database"]
+        rest = [f for f in fs if f["id"] not in costed and f["category"] != "database" and not f.get("db_only")]
         if rest:
             packages.append(work_package(f"{repo}-repository", f"{repo}: repository-wide items", "repository", None, [], rest, "rehost" if hs["mode"] == "rehost" else "port"))
         # database code: every scenario, then the selected one
@@ -235,9 +283,10 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         n_data_apps = sum(1 for x in repo_apps if x["r7"] != "Retire" and x["type"] not in rules["desktop_types"])
         opts = {}
         for target, dual in (("postgresql", False), ("dual", True)):
-            pgh = postgres_hours(dbi, dbf, n_data_apps, est, db_f, dual)
+            pgh = postgres_hours(dbi, dbf, n_data_apps, est, db_f, dual, red_f)
             h = pgh["hours"]
-            opts[target] = {"hours": [round(v) for v in h], "days": r1([v / HPD for v in h]), "likely_hours": round(lk(h, pos)), "likely": round(lk(h, pos) / HPD, 1),
+            opts[target] = {"hours": [round(v) for v in h], "days": r1([v / HPD for v in h]), "likely_hours": round(lk(h, rpos)), "likely": round(lk(h, rpos) / HPD, 1),
+                            "manual_likely_hours": round(lk(pgh["manual"], rpos)),
                             "manual_hours": [round(v) for v in pgh["manual"]], "redesign": pgh["redesign"], "rework": pgh["rework"], "breakdown_manual_hours": pgh}
         chosen = database if database in ("postgresql", "dual", "none") else "dual"
         note = {"postgresql": "PostgreSQL only: every object and SQL statement is converted (AWS DMS Schema Conversion + review) and SQL Server is removed.",
@@ -245,7 +294,10 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         db_packages.append({"repo": repo, "databases": names, "connections": sorted(f"{h}/{d}" for h, d in conns), "options": opts,
                             "recommended": "dual", "selected": chosen, "note": note, "finding_ids": [f["id"] for f in dbf],
                             "inventory": {"kinds": dbi.get("kinds", {}), "routine_sizes": dbi.get("routine_sizes", {}), "sql_lines": dbi.get("sql_lines", 0),
-                                          "constructs": dbi.get("constructs", {}), "code": dbi.get("code", {}), "edmx_function_imports": dbi.get("edmx_function_imports", 0)}})
+                                          "constructs": dbi.get("constructs", {}), "code": dbi.get("code", {}), "edmx_function_imports": dbi.get("edmx_function_imports", 0),
+                                          "engine": dbi.get("engine"), "conversion": dbi.get("conversion", {}), "code_constructs": dbi.get("code_constructs", {}),
+                                          "redesign_items": dbi.get("redesign_items", []), "parse_errors": dbi.get("parse_errors", []),
+                                          "code_sql_stats": dbi.get("code_sql_stats", {}), "note": dbi.get("note")}})
     team = est["team"]
     tot_h = [sum(p["total_hours"][i] for p in packages) for i in (0, 1)]
     man_h = [sum(p["manual_hours"][i] for p in packages) for i in (0, 1)]
@@ -255,7 +307,9 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
     db_h = [sum(sel(d, "hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
     db_man = [sum(sel(d, "manual_hours", [0, 0])[i] for d in db_packages) for i in (0, 1)]
     grand_h, grand_man = add(tot_h, db_h), add(man_h, db_man)
-    likely_h = lk(grand_h, pos)
+    db_likely = sum(sel(d, "likely_hours", 0) for d in db_packages)
+    likely_h = sum(p["likely_hours"] for p in packages) + db_likely
+    manual_likely = sum(p.get("manual_likely_hours", 0) for p in packages) + sum(sel(d, "manual_likely_hours", 0) for d in db_packages)
     per_week_h = engineers * team["days_per_week"] * team["efficiency"] * HPD
     tl = est["timeline"]
     phases, week = [], 0
@@ -276,8 +330,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         what = "port and fix" if any(p["mode"] == "port" for p in wave) else "repoint"
         phases.append({"phase": f"Wave {i // size + 1}: " + ", ".join(p["name"] for p in wave) + f" ({what})", "start": week, "weeks": w})
         week += max(1, math.ceil(w * (1 - tl["wave_overlap"])))
-    if any(d["selected"] != "none" for d in db_packages) and lk(db_h, pos) > 0:
-        w = max(1, math.ceil(lk(db_h, pos) / per_week_h))
+    if any(d["selected"] != "none" for d in db_packages) and db_likely > 0:
+        w = max(1, math.ceil(db_likely / per_week_h))
         sel_names = ", ".join(sorted({d["selected"] for d in db_packages if d["selected"] != "none"}))
         phases.append({"phase": f"Database code conversion ({sel_names})", "start": max(0, week - w), "weeks": w})
         week = max(week, max(0, week - w) + w)
@@ -292,13 +346,13 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
     opt_tot = [round(sum(o["hours"][i] for o in opt_rows)) for i in (0, 1)]
     totals = {"total_hours": [round(x) for x in grand_h], "likely_hours": round(likely_h), "total_days": [round(x / HPD, 1) for x in grand_h],
               "likely_days": round(likely_h / HPD, 1), "manual_equivalent_hours": [round(x) for x in grand_man],
-              "manual_equivalent_days": [round(x / HPD, 1) for x in grand_man], "manual_likely_hours": round(lk(grand_man, pos)),
+              "manual_equivalent_days": [round(x / HPD, 1) for x in grand_man], "manual_likely_hours": round(manual_likely),
               "applications_days": [round(x / HPD, 1) for x in tot_h], "databases_days": [round(x / HPD, 1) for x in db_h],
               "duration_weeks": end, "person_months_likely": round(likely_h / HPD / 20.0, 1),
               "kloc": round(kloc_all, 1), "likely_hours_per_kloc": round(likely_h / kloc_all, 2) if kloc_all else 0,
               "optional_hours": opt_tot}
     return {"packages": packages, "databases": db_packages, "totals": totals, "timeline": phases, "notes": notes, "optional": opt_rows,
-            "factors": {"code": code_f, "db": db_f}, "explain": explain_rows}
+            "factors": {"code": code_f, "db": db_f, "redesign": red_f}, "scale": scale_by_repo, "likely_position": pos_by_repo, "explain": explain_rows}
 
 
 def main():
@@ -344,12 +398,15 @@ def main():
            "scenario": {"hosting": hosting, "hosting_label": est["hosting_scenarios"][hosting]["label"], "database": database, "database_label": est["database_scenarios"][database]},
            "work_packages": main_r["packages"], "databases": main_r["databases"], "totals": main_r["totals"], "timeline": main_r["timeline"],
            "scenario_notes": main_r["notes"], "comparisons": comparisons, "optional": main_r["optional"],
+           "scale": main_r["scale"], "likely_position": main_r["likely_position"],
            "assumptions": [f"Scenario: {est['hosting_scenarios'][hosting]['label']}; database: {est['database_scenarios'][database]}.",
                            "Scope: coding effort only (code and SQL conversion, fixing findings, unit tests written with the code). QA and regression testing, DevOps and infrastructure, project management, parallel-development drift, contingency and data migration are not included.",
                            (f"AI-assisted delivery: code work at {int(f['code'][0] * 100)}-{int(f['code'][1] * 100)}% of manual effort (AWS Transform for .NET / GitHub Copilot app modernization / coding agents; "
-                            f"AWS cites up to 4x on mechanical porting), database conversion at {int(f['db'][0] * 100)}-{int(f['db'][1] * 100)}% (AWS DMS Schema Conversion + review). The manual-equivalent figure is shown beside every total.") if ai_on else "Manual delivery (no AI assistance).",
-                           "Project hours = (fixed + hand-written KLOC x rate for the project type) x a complexity factor from decision density, fan-in and file size; generated code is excluded and a project shared by several applications is ported once.",
-                           f"Team of {engineers} engineers at {int(est['team']['efficiency'] * 100)}% efficiency; 1 day = {HPD} hours; 'likely' sits {int(est['likely_position'] * 100)}% of the way from low to high.",
+                            f"AWS cites up to 4x on mechanical porting), database conversion at {int(f['db'][0] * 100)}-{int(f['db'][1] * 100)}% (AWS DMS Schema Conversion + review); "
+                            f"redesign work with no mechanical path (Web Forms UI, medium / large findings, constructs with no PostgreSQL equivalent, the dual-database abstraction) at {int(f['redesign'][0] * 100)}-{int(f['redesign'][1] * 100)}%. "
+                            "The manual-equivalent figure is shown beside every total.") if ai_on else "Manual delivery (no AI assistance).",
+                           "Project hours = (fixed + hand-written KLOC x rate for the project type) x a complexity factor from decision density, fan-in, file size and run-time indirection (calls bound by DI, overrides, messages, events or delegates, found by the C# resolver) x a size factor for large repositories (COCOMO II diseconomy of scale); generated code is excluded and a project shared by several applications is ported once.",
+                           f"Team of {engineers} engineers at {int(est['team']['efficiency'] * 100)}% efficiency; 1 day = {HPD} hours; 'likely' sits {int(est['likely_position'] * 100)}% of the way from low to high ({int(est.get('likely_position_large', est['likely_position']) * 100)}% for repositories of {(est.get('scale') or {}).get('large_kloc', '-')} KLOC or more).",
                            "Needs-verification findings are assumed real until reviewed. Optional modernizations are listed separately and are not in the total."] + main_r["notes"]}
     write_json(os.path.join(OUT, "estimate.json"), out)
     mark_step(root, "estimate")

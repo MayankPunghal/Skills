@@ -6,7 +6,8 @@ Two views, both derived from the client's code only:
                      cycles, which applications each project serves, and the blast radius of changing a project.
   workflows(c)       entry points (HTTP endpoints, MVC actions, Web Forms pages, hosted/background services, console jobs)
                      -> the projects, database objects, external systems and findings each one reaches.
-  db_dependencies(c) database object -> objects it calls, and database object -> workflows that depend on it.
+  db_dependencies(c) database object -> objects it reads / writes / calls (T-SQL parser facts), and database object ->
+                     workflows that depend on it (parsed SQL in code and object names passed as string literals).
 
 Reachability uses the graphify code graph (assessment/graphs/<repo>/graphify-out/graph.json): calls / references /
 inherits / implements edges, with interface -> implementation edges added so DI-style calls resolve. When no graph exists
@@ -20,7 +21,7 @@ from collections import defaultdict, deque
 from _common import OUT, SOURCE_DIR_SKIP, read_json, read_text
 import _findings as F
 
-REACH_RELATIONS = {"calls", "inherits", "implements"}
+REACH_RELATIONS = {"calls", "inherits", "implements", "dispatches_to", "indirect_call"}  # dispatches_to: DI / override / message edges from csharp_resolve
 MAX_DEPTH = 5
 HUB_DEGREE = 40  # nodes with more outgoing edges are reached but not expanded (service locators, runners, base classes)
 MAX_NODES = 4000
@@ -35,6 +36,10 @@ RX_JOBCLASS = re.compile(r"(?m)class\s+(\w*(?:Job|Jobs|Worker|Batch|Task|Tasks|S
 RX_PUBLIC_METHOD = re.compile(r"(?m)^\s*public\s+(?:static\s+)?(?:async\s+)?(?:Task(?:<[^>]+>)?|void|int|bool)\s+(\w+)\s*\(")
 RX_MAIN = re.compile(r"(?m)static\s+(?:async\s+)?(?:Task(?:<int>)?|void|int)\s+Main\s*\(")
 RX_CALL = re.compile(r"\.(\w+)\s*\(")
+RX_CONTRACT = re.compile(r"\[\s*(?:System\.ServiceModel\.)?ServiceContract\b[^\]]*\]\s*(?:\[[^\]]*\]\s*)*(?:public\s+|internal\s+)?(?:partial\s+)?interface\s+(\w+)")
+RX_PAGEMODEL = re.compile(r"(?m)class\s+(\w+)\s*:\s*[^{;]*\bPageModel\b")
+RX_HANDLER = re.compile(r"(?m)^\s*public\s+(?:virtual\s+|override\s+)?(?:async\s+)?[\w<>\[\],.? ]+?\s+(On(Get|Post|Put|Delete|Patch)\w*)\s*\(")
+RX_RAZOR_PAGE = re.compile(r'(?m)^\s*@page\s+"([^"]*)"')
 RX_STRING = re.compile(r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"')
 ACTION_RET = re.compile(r"(?i)Result|Task<?|ViewResult|IActionResult|ActionResult|Json|string")
 SKIP_ACTIONS = {"Dispose", "OnActionExecuting", "OnActionExecuted", "OnException", "OnResultExecuting", "OnResultExecuted", "Initialize"}
@@ -124,7 +129,7 @@ def _load_graph(r):
         by_file[(n.get("source_file") or "").replace("\\", "/")].append(n)
     sites = defaultdict(list)  # file -> (line, target): call sites, so lambdas and top-level statements get seeds too
     for l in g.get("links", g.get("edges", [])):
-        if l.get("relation") == "calls" and l.get("source") in nodes and l.get("target") in nodes:
+        if l.get("relation") in ("calls", "indirect_call") and l.get("source") in nodes and l.get("target") in nodes:
             m = re.search(r"\d+", str(l.get("source_location") or ""))
             if m:
                 sites[(l.get("source_file") or "").replace("\\", "/")].append((int(m.group()), l["target"]))
@@ -185,8 +190,17 @@ def _skip(path):
 
 def _entry_points(root, inv):
     """Entry points found in source: dicts with kind, name, file, line, end (exclusive), project."""
-    pidx = F.project_index(inv)
     eps = []
+    contracts = set()  # WCF service contracts anywhere in the repository (often in a shared contracts project)
+    for p in inv["projects"]:
+        for d, dirs, files in os.walk(os.path.join(root, os.path.dirname(p["path"]))):
+            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and x.lower() not in ("bin", "obj") and not x.startswith(".")]
+            for fn in files:
+                if fn.lower().endswith(".cs") and os.path.getsize(os.path.join(d, fn)) < 2_000_000:
+                    t = read_text(os.path.join(d, fn))
+                    if "ServiceContract" in t:
+                        contracts.update(RX_CONTRACT.findall(t))
+    rx_service = re.compile(r"(?m)class\s+(\w+)\s*:\s*[^{;]*\b(" + "|".join(map(re.escape, sorted(contracts))) + r")\b") if contracts else None
     for p in inv["projects"]:
         pdir = os.path.join(root, os.path.dirname(p["path"]))
         is_exe = (p.get("output_type") or "").lower() in ("exe", "winexe") or p["type"] in ("aspnet-core", "netcore-other")
@@ -199,10 +213,18 @@ def _entry_points(root, inv):
                 if low.endswith(".aspx.cs") or low.endswith(".ashx.cs") or low.endswith(".asmx.cs"):
                     eps.append({"kind": "Web Forms page / handler", "name": fn[:-3], "file": rp, "line": 1, "end": 10 ** 9, "project": p["path"]})
                     continue
+                if low.endswith(".razor"):  # Blazor routable component: the whole file (markup + @code) is the entry
+                    pm = RX_RAZOR_PAGE.search(read_text(full)) if os.path.getsize(full) < 2_000_000 else None
+                    if pm:
+                        eps.append({"kind": "Blazor page", "name": pm.group(1) or fn[:-6], "file": rp, "line": 1, "end": 10 ** 9, "project": p["path"]})
+                        cb = full + ".cs"
+                        if os.path.exists(cb):
+                            eps.append({"kind": "Blazor page", "name": (pm.group(1) or fn[:-6]) + " (code-behind)", "file": rp + ".cs", "line": 1,
+                                        "end": 10 ** 9, "project": p["path"]})
+                    continue
                 if not low.endswith((".cs", ".vb")) or low.endswith(".designer.cs") or os.path.getsize(full) > 2_000_000:
                     continue
                 text = read_text(full)
-                lines = text.split("\n")
 
                 def ln(pos):
                     return text.count("\n", 0, pos) + 1
@@ -218,6 +240,21 @@ def _entry_points(root, inv):
                             continue
                         verb = re.search(r"\[Http(Get|Post|Put|Delete|Patch)", m.group("attrs") or "")
                         found.append({"kind": "MVC / API action", "name": (verb.group(1).upper() + " " if verb else "") + f"{cname}/{nm}", "line": ln(m.start("name"))})
+                if rx_service:
+                    for sm in rx_service.finditer(text):
+                        body_end = len(text)
+                        for m in RX_PUBLIC_METHOD.finditer(text, sm.end()):
+                            if m.start() < body_end:
+                                found.append({"kind": "WCF service operation", "name": f"{sm.group(1)}.{m.group(1)}", "line": ln(m.start())})
+                        for m in RX_ACTION.finditer(text, sm.end()):
+                            nm = m.group("name")
+                            if nm != sm.group(1) and not any(x["name"] == f"{sm.group(1)}.{nm}" for x in found):
+                                found.append({"kind": "WCF service operation", "name": f"{sm.group(1)}.{nm}", "line": ln(m.start("name"))})
+                pmm = RX_PAGEMODEL.search(text)
+                if pmm:
+                    page = re.sub(r"Model$", "", pmm.group(1))
+                    for m in RX_HANDLER.finditer(text):
+                        found.append({"kind": "Razor Pages handler", "name": f"{page}.{m.group(1)}", "line": ln(m.start(1))})
                 for m in RX_HOSTED.finditer(text):
                     found.append({"kind": "Background service", "name": m.group(1), "line": ln(m.start())})
                 if is_exe and RX_MAIN.search(text) is None and not found:
@@ -241,48 +278,61 @@ def _db_objects(c, r):
     return [o for o in inv.get("objects", []) if o["kind"] in OBJ_KINDS and len(o["name"].split(".")[-1]) >= MIN_NAME]
 
 
-def _obj_rx(name):
-    """A database object is 'used' in a string literal only when it is clearly a table / routine reference: schema-qualified,
-    after a SQL keyword that takes an object (FROM, JOIN, INTO, UPDATE, EXEC, ...), or the whole literal. Bare words such as
-    ORDER in 'ORDER BY' do not count."""
-    parts = name.split(".")
-    short = re.escape(parts[-1])
-    sch = re.escape(parts[0]) if len(parts) > 1 else r"[\w]+"
-    q = r"\[?" + short + r"\]?"
-    return re.compile(r"(?i)(?:(?<![\w@#])\[?" + sch + r"\]?\." + q + r"(?![\w])"
-                      r"|(?:FROM|JOIN|INTO|UPDATE|EXEC(?:UTE)?|TABLE|MERGE|TRUNCATE\s+TABLE|CALL)\s+" + q + r"(?![\w.])"
-                      r'|"\s*' + q + r'\s*")')
+def _resolver(objs):
+    full = {o["name"].lower(): o["name"] for o in objs}
+    short = defaultdict(set)
+    for o in objs:
+        short[o["name"].split(".")[-1].lower()].add(o["name"])
 
-
-def _strings_in(text):
-    return " ".join(m.group()[:2000] for m in RX_STRING.finditer(text))
+    def get(name):
+        n = (name or "").lower()
+        if n in full:
+            return full[n]
+        if len(n.split(".")) >= 3:
+            return None
+        if "dbo." + n in full:
+            return full["dbo." + n]
+        c = short.get(n.split(".")[-1], set())
+        return next(iter(c)) if len(c) == 1 else None
+    return get
 
 
 def db_dependencies(c):
-    """Object -> objects it references (by name, inside the SQL body) and the reverse; per repository."""
+    """Object -> objects it reads, writes, calls or is defined on (T-SQL parser facts); per repository."""
     out = {}
     for r in c.repos:
         objs = _db_objects(c, r)
         if not objs:
             continue
-        root = c.inv[r]["root"]
-        names = {o["name"].split(".")[-1].lower(): o for o in objs}
-        texts = {}
-        edges = []
+        get = _resolver(objs)
+        edges = set()
         for o in objs:
-            if o["file"] not in texts:
-                try:
-                    texts[o["file"]] = read_text(os.path.join(root, o["file"])).split("\n")
-                except OSError:
-                    texts[o["file"]] = []
-            body = "\n".join(texts[o["file"]][o["line"] - 1:o["line"] - 1 + max(o["lines"], 1)])
-            body = re.sub(r"--[^\n]*|/\*.*?\*/", " ", body, flags=re.S)
-            me = o["name"].split(".")[-1].lower()
-            for nm, tgt in names.items():
-                if nm != me and re.search(r"(?i)(?<![\w@#])\[?" + re.escape(nm) + r"\]?(?![\w])", body):
-                    edges.append((o["name"], tgt["name"]))
-        out[r] = {"objects": objs, "edges": sorted(set(edges))}
+            refs = list(o.get("reads", [])) + [w["name"] for w in o.get("writes", [])] + list(o.get("calls", [])) + list(o.get("functions", []))
+            refs += [o["on_object"]] if o.get("on_object") else []
+            refs += [fk.get("references") for fk in o.get("foreign_keys") or [] if fk.get("references")]
+            for t in refs:
+                tgt = get(t)
+                if tgt and tgt != o["name"]:
+                    edges.add((o["name"], tgt))
+        out[r] = {"objects": objs, "edges": sorted(edges)}
     return out
+
+
+def _db_sites(c, r, objs):
+    """file -> [(line, object)]: SQL embedded in code (parsed) and object names passed as whole string literals."""
+    inv = (c.scan[r] or {}).get("db_inventory") or {}
+    get = _resolver(objs)
+    sites = defaultdict(list)
+    for s in inv.get("code_sql", []):
+        for t in s.get("reads", []) + [w["name"] for w in s.get("writes", [])] + s.get("calls", []) + s.get("functions", []):
+            o = get(t)
+            if o:
+                sites[s["file"]].append((s["line"], o))
+    for s in inv.get("name_sites", []):
+        o = get(s["object"])
+        if o:
+            sites[s["file"]].append((s["line"], o))
+    return sites
 
 
 # ------------------------------------------------------------------ workflows
@@ -314,20 +364,10 @@ def workflows(c):
             if f["repo"] == r and f["severity"] in ("Blocker", "High", "Medium"):
                 for ev in f.get("evidence", []):
                     fnd[ev["file"].replace("\\", "/")].append(f)
-        text_cache = {}
-        obj_rx = {o["name"]: _obj_rx(o["name"]) for o in objs}
-
-        def strings_of(path, lo=None, hi=None):
-            key = (path, lo, hi)
-            if key not in text_cache:
-                try:
-                    txt = read_text(os.path.join(root, path))
-                    if lo is not None:  # the entry file itself: only the entry point's own lines, not its siblings
-                        txt = "\n".join(txt.split("\n")[max(lo - 1, 0):hi - 1 if hi < 10 ** 9 else None])
-                    text_cache[key] = _strings_in(txt)
-                except OSError:
-                    text_cache[key] = ""
-            return text_cache[key]
+        sites = _db_sites(c, r, objs)
+        deps = defaultdict(set)  # routine -> the objects it reads / writes / calls (one level behind what code reaches)
+        for a_, b_ in (db_dependencies(c).get(r) or {}).get("edges", []):
+            deps[a_].add(b_)
         for e in _entry_points(root, inv):
             spans = [(e["file"], e["line"], e["end"])]  # (file, first line, last line exclusive) of code this workflow runs
             whole = e["kind"].startswith("Web Forms")
@@ -359,8 +399,8 @@ def workflows(c):
             if not graph or basis.startswith("project references"):
                 projects |= {p for p in pname if pname[p] in trans.get(e["project"], [])} | {e["project"]}
             projects.add(e["project"])
-            corpus = [strings_of(f, lo, hi) for f, lo, hi in spans]
-            dbobj = sorted({o["name"] for o in objs if any(obj_rx[o["name"]].search(t) for t in corpus)})
+            direct = {o for f, lo, hi in spans for ln_, o in sites.get(f, ()) if lo <= ln_ < hi}
+            dbobj = sorted(direct | {t for o in direct for t in deps.get(o, ())})
 
             def inside(f, ln_):
                 return any(f == sf and lo <= ln_ < hi for sf, lo, hi in spans)
@@ -370,7 +410,9 @@ def workflows(c):
                 for x in fnd.get(f, ()):
                     if any(ev["file"].replace("\\", "/") == f and inside(f, ev.get("line") or 0) for ev in x.get("evidence", [])):
                         fs[x["ref"]] = x
-            apps = sorted({a["name"] for a in c.cls["applications"] if a["repo"] == r and e["project"] in a["projects"]})
+            # the application whose own (entry) project holds the entry point; otherwise every application that includes it
+            own = sorted({a["name"] for a in c.cls["applications"] if a["repo"] == r and a["projects"] and a["projects"][0] == e["project"]})
+            apps = own or sorted({a["name"] for a in c.cls["applications"] if a["repo"] == r and e["project"] in a["projects"]})
             rows.append({"repo": r, "kind": e["kind"], "name": e["name"], "app": ", ".join(apps) or pname.get(e["project"], ""), "entry": f"{e['file']}:{e['line']}",
                          "entry_project": pname.get(e["project"], ""), "projects": sorted(pname[p] for p in projects if p in pname), "db_objects": dbobj,
                          "databases": sorted({d for p in projects for d in dbs.get(p, ())}), "external": hosts,

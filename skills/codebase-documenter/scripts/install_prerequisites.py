@@ -1,23 +1,37 @@
-"""Check and install everything codebase-documenter needs, at user level (no admin rights, no system changes).
+"""Check and install everything codebase-documenter (and migration-assessment, which builds on it) needs, at user level
+(no admin rights, no system changes).
 
-    python <skill>/scripts/install_prerequisites.py            # check, then install what is missing
-    python <skill>/scripts/install_prerequisites.py --check    # report only; exit 1 if something required is missing
+    python <skill>/scripts/install_prerequisites.py              # check, then install what is missing
+    python <skill>/scripts/install_prerequisites.py --check      # report only; exit 1 if something required is missing
+    python <skill>/scripts/install_prerequisites.py --no-dotnet  # never download the .NET SDK (SQL falls back to sqlglot)
 
 Python itself cannot be installed from here (this script needs it): reference/install-prerequisites.md gives the
 per-OS commands for that step. Runs from any folder; does not need codebase-docs.json.
 
-Required:  Python 3.10+, pip, MkDocs Material (site), graphify (code graph; installed with uv, else pip --user)
-Optional:  git (change detection, graphify hooks), an LLM key in the environment (community naming)
+Required:  Python 3.10+, pip, MkDocs Material (site), graphify (code graph; uv, else pip --user),
+           sqlglot (SQL parser fallback + PostgreSQL preview; pip --user),
+           .NET SDK 8+ (Microsoft's T-SQL parser for .sql files and SQL in C#; also Linux build checks in the
+           assessment; installed per user with Microsoft's dotnet-install script), the ScriptDom helper (built once
+           from scripts/sqlscan, restores one NuGet package from nuget.org)
+Optional:  git (change detection, merge-risk analysis), Docker or WSL (assessment: real Linux builds), network access to
+           api.nuget.org (assessment --online package facts), an LLM key in the environment (community naming)
 """
 import argparse
 import os
+import platform
+import shutil
 import sys
+import tempfile
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import run, tool_exe, utf8_stdout  # noqa: E402
 
 GRAPHIFY_PKG = "graphifyy[sql,openai]"
+SQLGLOT_PKG = "sqlglot"
 KEY_VARS = ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")
+DOTNET_SCRIPT = {"nt": "https://dot.net/v1/dotnet-install.ps1", "posix": "https://dot.net/v1/dotnet-install.sh"}
+REQUIRED = ("pip", "mkdocs-material", "graphify", "sqlglot", ".NET SDK 8+", "ScriptDom helper")
 PY = [sys.executable]
 
 
@@ -25,12 +39,17 @@ def has_pip():
     return run(PY + ["-m", "pip", "--version"])[0] == 0
 
 
-def has_mkdocs():
-    return run(PY + ["-c", "import mkdocs, material"])[0] == 0
+def has_module(*mods):
+    return run(PY + ["-c", "import " + ", ".join(mods)])[0] == 0
 
 
 def has_graphify():
     return run(["graphify", "--help"])[0] == 0
+
+
+def sql_parse():
+    import sql_parse as sp
+    return sp
 
 
 def pip_install(*pkgs):
@@ -61,17 +80,70 @@ def install_graphify():
     return pip_install(GRAPHIFY_PKG)
 
 
-def report():
+def install_dotnet():
+    """Current LTS .NET SDK for this user only, with Microsoft's official dotnet-install script (no admin, no MSI)."""
+    url = DOTNET_SCRIPT["nt" if os.name == "nt" else "posix"]
+    # a private folder (mkdtemp is readable by this user only): a fixed name in the shared temp folder could be swapped
+    # by another local user between the download and the run
+    tmp = os.path.join(tempfile.mkdtemp(prefix="dotnet-install-"), os.path.basename(url))
+    print(f"  downloading {url} ...")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as fh:
+            shutil.copyfileobj(r, fh)
+    except OSError as ex:
+        print(f"  download failed ({ex}); install the .NET SDK yourself: https://dotnet.microsoft.com/download")
+        return False
+    if os.name == "nt":
+        target = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Microsoft", "dotnet")
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp, "-Channel", "LTS", "-InstallDir", target]
+    else:
+        target = os.path.join(os.path.expanduser("~"), ".dotnet")
+        cmd = ["bash", tmp, "--channel", "LTS", "--install-dir", target]
+    print(f"  installing the .NET SDK (LTS) into {target} (a few minutes) ...", flush=True)
+    code, out = run(cmd, timeout=3600)
+    if code:
+        print(out[-1500:])
+        return False
+    if os.name == "nt":  # make it visible to new terminals: add the folder to the user PATH once
+        cur = run(["powershell", "-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"])[1].strip()
+        if target.lower() not in cur.lower():
+            quoted = target.replace("'", "''")  # PowerShell single-quoted string (a profile path may hold an apostrophe)
+            run(["powershell", "-NoProfile", "-Command",
+                 f"[Environment]::SetEnvironmentVariable('Path', '{quoted};' + [Environment]::GetEnvironmentVariable('Path','User'), 'User')"])
+    else:
+        print(f"  add to your shell profile:  export DOTNET_ROOT={target}; export PATH=$PATH:{target}")
+    return True
+
+
+def nuget_reachable():
+    try:
+        with urllib.request.urlopen("https://api.nuget.org/v3/index.json", timeout=8):
+            return True
+    except OSError:
+        return False
+
+
+def report(verbose=True):
+    sp = sql_parse()
+    dm = sp.dotnet_major()
     ok_py = sys.version_info >= (3, 10)
+    docker = tool_exe("docker") or tool_exe("podman")
+    wsl = os.name == "nt" and run(["wsl", "--status"])[0] == 0
     rows = [("python 3.10+", ok_py, f"{sys.version.split()[0]} at {sys.executable}", True),
             ("pip", has_pip(), "", True),
-            ("mkdocs-material", has_mkdocs(), "", True),
-            ("graphify", has_graphify(), tool_exe("graphify") or "", True),
-            ("git", bool(tool_exe("git")), "optional: change detection, graphify hooks", False)]
+            ("mkdocs-material", has_module("mkdocs", "material"), "documentation site", True),
+            ("graphify", has_graphify(), tool_exe("graphify") or "code graph", True),
+            ("sqlglot", sp.has_sqlglot() or has_module("sqlglot"), "SQL parser fallback, PostgreSQL preview", True),
+            (".NET SDK 8+", dm >= sp.MIN_DOTNET, f"found {dm}" if dm else "Microsoft T-SQL parser; Linux build checks", True),
+            ("ScriptDom helper", bool(sp.helper_dll()), sp.helper_dll() or "built from scripts/sqlscan on first use", True),
+            ("git", bool(tool_exe("git")), "optional: change detection, merge-risk analysis", False),
+            ("docker / WSL", bool(docker or wsl), "optional: real Linux builds in the assessment", False),
+            ("api.nuget.org", nuget_reachable(), "optional: online package facts (assessment, on by default; --offline to skip)", False)]
     keys = [k for k in KEY_VARS if os.environ.get(k)]
-    for name, ok, detail, required in rows:
-        print(f"{'ok     ' if ok else ('MISSING' if required else 'absent ')}  {name:<16} {detail}")
-    print(f"{'ok     ' if keys else 'absent '}  {'LLM key':<16} {', '.join(keys) if keys else 'optional: none set, communities keep default names'}")
+    if verbose:
+        for name, ok, detail, required in rows:
+            print(f"{'ok     ' if ok else ('MISSING' if required else 'absent ')}  {name:<17} {detail}")
+        print(f"{'ok     ' if keys else 'absent '}  {'LLM key':<17} {', '.join(keys) if keys else 'optional: none set, communities keep generated names'}")
     return {name: ok for name, ok, _, _ in rows}
 
 
@@ -102,11 +174,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="report only")
     ap.add_argument("--no-key-prompt", action="store_true", help="never ask for an LLM key")
+    ap.add_argument("--no-dotnet", action="store_true", help="do not download the .NET SDK (SQL parsing falls back to sqlglot)")
     a = ap.parse_args()
+    print(f"platform: {platform.system()} {platform.release()} ({platform.machine()})")
     state = report()
     if not state["python 3.10+"]:
         sys.exit("\nPython 3.10 or newer is required. Install it (reference/install-prerequisites.md), then rerun this script with it.")
-    missing = [k for k in ("pip", "mkdocs-material", "graphify") if not state[k]]
+    missing = [k for k in REQUIRED if not state[k]]
     if a.check or not missing:
         if not missing:
             print("\nREADY: all required prerequisites are installed.")
@@ -122,14 +196,26 @@ def main():
     if "graphify" in missing:
         print("  graphify ...")
         install_graphify()
+    if "sqlglot" in missing:
+        print("  sqlglot ...")
+        pip_install(SQLGLOT_PKG)
+    if ".NET SDK 8+" in missing:
+        if a.no_dotnet:
+            print("  .NET SDK: skipped (--no-dotnet); SQL is parsed with sqlglot only (procedural T-SQL partly unparsed)")
+        else:
+            install_dotnet()
+    sp = sql_parse()
+    if not sp.helper_dll() and sp.dotnet_major() >= sp.MIN_DOTNET:
+        print("  ScriptDom helper ...")
+        sp.build(verbose=True)
     print()
     state = report()
-    still = [k for k in ("pip", "mkdocs-material", "graphify") if not state[k]]
+    still = [k for k in REQUIRED if not state[k] and not (a.no_dotnet and k in (".NET SDK 8+", "ScriptDom helper"))]
     if still:
         sys.exit(f"\nNOT READY: {', '.join(still)} still missing; see the output above and reference/install-prerequisites.md.")
     offer_llm_key(a.no_key_prompt)
     print("\nREADY: all required prerequisites are installed."
-          + ("" if __import__("shutil").which("graphify") else
+          + ("" if shutil.which("graphify") else
              f"\nNote: graphify is installed at {tool_exe('graphify')} but not on this shell's PATH; the skill's scripts find it anyway. "
              "New terminals will see it after a restart."))
 

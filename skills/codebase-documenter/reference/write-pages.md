@@ -14,7 +14,7 @@ Load [quality-standards.md](quality-standards.md) and [page-patterns.md](page-pa
 ## Section order that works
 
 1. Getting started (overview, users & roles, navigation) — sets vocabulary.
-2. Architecture (C4 context → containers → components; request lifecycle; data access; configuration; jobs). Projects, layers and packages come from the generated `dependencies.md`: summarise and link, don't retype.
+2. Architecture (C4 context → containers → components; request lifecycle; composition and run-time wiring; data access; configuration; jobs). Projects, layers and packages come from the generated `dependencies.md`: summarise and link, don't retype. Write `architecture/dependency-injection.md` from the generated `dependency-injection.md` and the notes (pattern in [page-patterns.md](page-patterns.md#composition-and-run-time-wiring-architecturedependency-injectionmd)); every module page then says, for its own services, what runs behind each interface, message and event.
 3. Business modules (one page per module; sub-pages for engines, approvals, imports, outputs).
 4. Workflows (end-to-end sequence diagram, state machines for every status set, approval flow, fulfilment) and one business-flow spec per important journey ([flows.md](flows.md)).
 5. Integrations (one page per external system; inbound API from `endpoints.md`; machine endpoints + complete anonymous list).
@@ -24,4 +24,4 @@ Load [quality-standards.md](quality-standards.md) and [page-patterns.md](page-pa
 9. Security (authentication, authorisation, findings register SEC-nn).
 10. Appendices (glossary, defects DEF-nn / TD-nn, document control incl. agent access; coverage and code map are generated).
 
-Write the security findings and defects registers **from the defect lists in the notes**, each verified once more in code before it gets an id.
+Write the security findings and defects registers **from the defect lists in the notes**, each verified once more in code before it gets an id. High-severity wiring findings (captive dependency, missing registration) from `dependency-injection.md#di-findings` are checked in code and, when real, become DEF-nn entries linked with `[[di:find-N]]`.

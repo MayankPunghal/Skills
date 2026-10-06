@@ -28,7 +28,8 @@ def main():
     ap.add_argument("--target", help="target framework moniker (default net10.0)")
     ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost"], help="client hosting preference (default modernize)")
     ap.add_argument("--target-database", dest="scen_db", choices=["dual", "postgresql", "none"], help="database code scenario (default dual)")
-    ap.add_argument("--online", action="store_true", help="allow api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences")
+    ap.add_argument("--online", action="store_true", help="api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences (the default)")
+    ap.add_argument("--offline", action="store_true", help="no api.nuget.org lookups (package ids, private ones too, stay on this machine)")
     a = ap.parse_args()
     root = os.getcwd()
     path = os.path.join(root, CONFIG_NAME)
@@ -51,6 +52,8 @@ def main():
         cfg["target_dotnet"] = a.target
     if a.online:
         cfg["online_package_lookup"] = True
+    if a.offline:
+        cfg["online_package_lookup"] = False
     cfg.setdefault("scenario", {"hosting": "modernize", "database": "auto"})
     if a.scen_hosting:
         cfg["scenario"]["hosting"] = a.scen_hosting
