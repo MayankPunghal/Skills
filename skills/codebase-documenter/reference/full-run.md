@@ -24,7 +24,7 @@ Save non-default answers to `codebase-docs.json` and memory.
 | 3 | Survey | `survey-codebase` | `00-survey.md`, `areas.json` reviewed and edited, `research_notes.py plan` run |
 | 4 | Research | `research-area <id>` for every area | every area ticked in PROGRESS, notes verified |
 | 5 | Reference | `generate-reference` | adapters configured; `build_site.py` runs clean |
-| 6 | Narrative | `write-pages <section>` for every section (C#: `architecture/dependency-injection.md` from the generic-di reference; module pages say what runs behind each interface, message and event) | 0 TODO markers, 0 unresolved tags |
+| 6 | Narrative | `write-pages <section>` for every section (C#: `architecture/dependency-injection.md` from the generic-di reference; module pages say what runs behind each interface, message and event); one business-flow spec per important journey (`trace_flow.py <Class.Method> --draft <id>`, [flows.md](flows.md)), which becomes an interactive flow chart | 0 TODO markers, 0 unresolved tags; verify-docs notes a site with no flows |
 | 7 | Site | `build-site` | 0 MkDocs warnings |
 | 8 | Quality | `verify-docs` | all gates PASS |
 | 9 | Agent layer | `make-agent-skill` | AGENTS.md, project skill, llms.txt, index; lookup smoke test ok |

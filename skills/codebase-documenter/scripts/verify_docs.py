@@ -209,8 +209,14 @@ def main():
         yml = open("mkdocs.yml", encoding="utf-8").read() if os.path.exists("mkdocs.yml") else ""
         if blocks and "mermaid.min.js" not in yml:
             print(f"NOTE  {blocks} diagrams load Mermaid from the internet at view time (Material fetches it from unpkg.com): "
-                  "offline, they show as text. Fix: offline_mermaid.py --from <mermaid.min.js>, or --install after the user "
-                  "approves the ~3 MB download")
+                  "offline, they show as text. Fix: install_prerequisites.py (caches it once, ~3 MB) then build_site.py, or "
+                  "offline_mermaid.py --from <mermaid.min.js>")
+    # interactive business flows exist only when someone writes their specs: flag their absence, never fail on it
+    wf = os.path.join(docs, "_src", "workflows")
+    if os.path.isdir(wf) and not glob.glob(os.path.join(wf, "flows", "*.flow.json")):
+        print("NOTE  no business flows: the site has no interactive flow charts (Workflows > Business flows). Write one "
+              "docs/_src/workflows/flows/<id>.flow.json per important journey (trace_flow.py <Class.Method> --draft <id>, "
+              "reference/flows.md), then build_site.py")
 
     # typed counts that equal a generated headline number go stale on the next build: suggest the [[n:...]] tag
     sp = os.path.join(docs, "agent", "stats.json")
