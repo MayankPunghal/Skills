@@ -244,8 +244,9 @@ function skillsWithSetup(names) {
   return names.filter((n) => fs.existsSync(path.join(skillDir(n), ...SETUP_SCRIPT)));
 }
 
-/** Runs each skill's install_prerequisites.py once (user-level installs, idempotent). Returns true if all succeeded. */
-function runSetup(names, installedPathFor) {
+/** Runs each skill's install_prerequisites.py once (user-level installs, idempotent). Returns true if all succeeded.
+ *  quiet (--yes): a script that offers optional prompts gets --no-key-prompt, so an unattended install never waits for input. */
+function runSetup(names, installedPathFor, { quiet = false } = {}) {
   if (!names.length) return true;
   const py = findPython();
   if (!py) {
@@ -257,7 +258,8 @@ function runSetup(names, installedPathFor) {
   for (const name of names) {
     const script = path.join(installedPathFor(name) || skillDir(name), ...SETUP_SCRIPT);
     say(bold(`\n▸ Prerequisites for ${name}`) + dim(`  (${py.join(" ")} ${script})`));
-    const r = spawnSync(py[0], [...py.slice(1), script], { stdio: "inherit" });
+    const extra = quiet && fs.existsSync(script) && /add_argument\(\s*["']--no-key-prompt["']/.test(fs.readFileSync(script, "utf8")) ? ["--no-key-prompt"] : [];
+    const r = spawnSync(py[0], [...py.slice(1), script, ...extra], { stdio: "inherit" });
     if (r.status === 0) say(green(`✔ ${name} prerequisites ready`));
     else { ok = false; say(yellow(`! ${name} prerequisites reported a problem (exit ${r.status}). Fix it, then run: … setup`)); }
   }
@@ -392,7 +394,7 @@ async function cmdInstall(flags) {
   const n = install({ skills, agents, scope, projectDir, link });
   if (doSetup) {
     const installs = loadManifest().installs;
-    runSetup(needSetup, (name) => installs.find((i) => i.skill === name && !i.link)?.path);
+    runSetup(needSetup, (name) => installs.find((i) => i.skill === name && !i.link)?.path, { quiet: yes });
   }
   say("");
   say(green(bold(`Done — ${n} skill install(s).`)) + " Claude Code picks them up automatically (or run /reload-skills).");
@@ -448,7 +450,7 @@ async function cmdUpdate(flags) {
   if (needSetup.length && !flags["no-setup"]) {
     const go = yes || (await choose(`Install prerequisites for ${needSetup.join(", ")}?`, [
       { value: "yes", label: "Yes, install now" }, { value: "no", label: "Skip" }])) === "yes";
-    if (go) runSetup(needSetup, (name) => manifest.installs.find((i) => i.skill === name && !i.link)?.path);
+    if (go) runSetup(needSetup, (name) => manifest.installs.find((i) => i.skill === name && !i.link)?.path, { quiet: yes });
   }
   say(green(`\nInstalled ${picks.length} new skill(s) into ${targets.length} folder(s).`));
 }
