@@ -116,6 +116,37 @@ class Methods:
         return f"[{esc(m['name'])}]({page_prefix}{m.get('page', 'methods.md')}#{a})"
 
 
+def cut(s, n):
+    """Truncate code text to n characters with "…", and never leave an unclosed "<": MkDocs runs an HTML parser over the
+    whole Markdown page, and a dangling `List<Order` or `<asp:TextBox Rows="1"` opens a tag that swallows every
+    <a id> after it on the page (thousands of "does not contain an anchor" warnings)."""
+    s = str(s)
+    if len(s) > n:
+        s = s[:n].rstrip() + "…"
+    if s.rfind("<") > s.rfind(">"):
+        s += " …>"
+    return s
+
+
+GLOBAL_FILTER = re.compile(r"(?:GlobalFilters\.Filters|\bfilters|config\.Filters|options\.Filters|o\.Filters|opts\.Filters)\s*\.\s*Add"
+                           r"(?:<\s*(\w+)\s*>\s*\(|\(\s*new\s+([\w.]+))")
+
+
+def global_filters():
+    """[(filter class, file, line)] registered for every MVC / Web API action (GlobalFilters, FilterConfig, AddMvc options)
+    plus "RequireAuthorization" when controllers are mapped with it (ASP.NET Core). They never apply to Web Forms pages."""
+    out = []
+    for rp, full in walk(exts={".cs", ".vb"}):
+        t = read(full)
+        if "Filters" not in t and "RequireAuthorization" not in t:
+            continue
+        for m in GLOBAL_FILTER.finditer(t):
+            out.append(((m.group(1) or m.group(2)).split(".")[-1], rp, line_at(t, m.start())))
+        for m in re.finditer(r"Map(?:Default)?Controller(?:Route)?s?\s*\([^;]*?\)\s*\.\s*RequireAuthorization\(", t):
+            out.append(("RequireAuthorization", rp, line_at(t, m.start())))
+    return out
+
+
 def write_page(name, lines):
     os.makedirs(OUT, exist_ok=True)
     open(os.path.join(OUT, name), "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")

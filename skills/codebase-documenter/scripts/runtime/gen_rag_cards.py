@@ -132,6 +132,7 @@ def main():
         card(a, "method", x["name"], [
             f"Defined in {x['file']}:{x['line']}",
             f"Declaration: {x['decl']}" if x.get("decl") else "",
+            f"Note: {x['note']}" if x.get("note") else "",
             f"Parameters: {'; '.join(x['params'])}" if x.get("params") else "Parameters: none" if x.get("params") == [] else "",
             f"Returns: {x['returns']}" if x.get("returns") else "",
             f"Calls: {cap([name(b) + (' [' + x['via'][b] + ']' if b in (x.get('via') or {}) else '') for b in x.get('calls', [])])}" if x.get("calls") else "Calls: no other documented method",

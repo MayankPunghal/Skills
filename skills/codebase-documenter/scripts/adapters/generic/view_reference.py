@@ -14,7 +14,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, project_of, read, slug, walk, write_page
+from _scan import BACK, DOCS, ROOT, Methods, esc, esc_text, global_filters, project_of, read, slug, walk, write_page
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 M = Methods()
@@ -154,6 +154,81 @@ def lines(p):
 def anchors(page):
     p = os.path.join(DOCS, "reference", page)
     return set(re.findall(r'<a id="([^"]+)"', open(p, encoding="utf-8").read())) if os.path.exists(p) else set()
+
+
+RX_CB_CHECK = re.compile(r"\b(?:User\.Identity\.IsAuthenticated|Request\.IsAuthenticated|User\.IsInRole|Roles\.IsUserInRole|"
+                         r"Context\.User\.Identity|FormsAuthentication\.RedirectToLoginPage|HttpContext\.Current\.User\.Identity)\b")
+
+
+def auth_rules(project):
+    """[(folder relative to the project, authentication mode, [(allow|deny, users, roles)], where)] from every web.config of a
+    Web Forms project: the root <system.web><authorization>, each <location path> and each sub-folder web.config.
+    Parsed as XML (not pattern-matched)."""
+    import xml.etree.ElementTree as ET
+    out, base = [], os.path.join(ROOT, project) if project != "." else ROOT
+    for d, dirs, files in os.walk(base):
+        dirs[:] = [x for x in dirs if x.lower() not in ("bin", "obj", "node_modules", "packages") and not x.startswith(".")]
+        for f in files:
+            if f.lower() != "web.config":
+                continue
+            p = os.path.join(d, f)
+            folder = os.path.relpath(d, base).replace("\\", "/")
+            folder = "" if folder == "." else folder
+            try:
+                root = ET.parse(p).getroot()
+            except (ET.ParseError, OSError):
+                continue
+            rel = os.path.relpath(p, ROOT).replace("\\", "/")
+
+            def rules_of(sw):
+                az = sw.find("authorization") if sw is not None else None
+                return [(r.tag, r.get("users", ""), r.get("roles", "")) for r in (az if az is not None else []) if r.tag in ("allow", "deny")]
+            sw = root.find("system.web")
+            mode = (sw.find("authentication").get("mode") if sw is not None and sw.find("authentication") is not None else None)
+            out.append((folder, mode, rules_of(sw), rel))
+            for loc in root.findall("location"):
+                lp = (loc.get("path") or "").replace("\\", "/").strip("/")
+                out.append(((folder + "/" + lp).strip("/") if lp else folder, None, rules_of(loc.find("system.web")), f"{rel} <location path=\"{lp}\">"))
+    return out
+
+
+def page_auth(item, rules_by_proj):
+    """Effective authentication of a Web Forms page / ASMX / ASHX: the most specific web.config rule set that covers it (first
+    rule naming the anonymous user "?" or everyone "*" decides), then code-behind checks. MVC global filters never apply."""
+    proj = item["project"]
+    rules = rules_by_proj.setdefault(proj, auth_rules(proj))
+    path = item["file"][len(proj) + 1:] if proj != "." else item["file"]
+    mode = next((m for f, m, _, _ in rules if f == "" and m), None)
+    cands = sorted(((f, rs, where) for f, _, rs, where in rules if rs and (f == "" or path == f or path.startswith(f + "/"))),
+                   key=lambda x: -len(x[0]))
+    verdict, where = "anonymous allowed (no authorization rule)", ""
+    for f, rs, w in cands:
+        decided = None
+        for kind, users, roles in rs:
+            us = {u.strip() for u in users.split(",")}
+            if "?" in us or "*" in us:
+                decided = (kind, roles)
+                break
+            if kind == "allow" and roles:
+                decided = decided or ("roles", roles)
+        if decided:
+            verdict = {"deny": "sign-in required", "allow": "anonymous allowed", "roles": "roles"}[decided[0]]
+            roles = [r for k, u, r in rs if k == "allow" and r]
+            if roles and decided[0] != "allow":
+                verdict += " (roles: " + ", ".join(roles) + ")"
+            where = w
+            break
+    check = ""
+    cb = item.get("code_behind")
+    if cb:
+        t = read(os.path.join(ROOT, cb))
+        m = RX_CB_CHECK.search(t)
+        if m:
+            check = f"code-behind checks the user (`{os.path.basename(cb)}:{t.count(chr(10), 0, m.start()) + 1}`)"
+    anon = verdict.startswith("anonymous")
+    return {"auth": verdict + (f" · {where}" if where else "") + (f" · {check}" if check else "")
+            + (f" · authentication mode {mode}" if mode and anon else ""),
+            "anonymous": anon and not check}
 
 
 def side(path, *suffixes):
@@ -305,8 +380,13 @@ def main():
             code_behind=side(os.path.splitext(rp)[0], ".Designer.cs", ".designer.cs", ".Designer.vb"), base=name in derived_from)
         items[-1]["name"] = name
 
+    rules_by_proj = {}
     for i in items:
         i["anchor"] = slug("ui", i["file"])
+        if i["kind"] in ("Web Forms page", "ASMX web service", "ASHX handler"):
+            i.update(page_auth(i, rules_by_proj))
+    anonymous_pages = [i for i in items if i.get("anonymous")]
+    gfilters = global_filters() if anonymous_pages else []
     areas = mvc_areas(items)
     kinds = Counter(i["kind"] for i in items)
     out = ["# Views and pages", "",
@@ -316,6 +396,8 @@ def main():
            + ("[endpoints](endpoints.md) reference." if os.path.exists(os.path.join(DOCS, "reference", "endpoints.md")) else "endpoint reference (generic-api)."), "",
            '<a id="index"></a>', "", "- [Totals](#ui-totals)", "- [By project](#ui-projects)"] + (["- [MVC areas](#ui-areas)"] if areas else [])
     out += [f"- [{t}](#{a})" for t, a, f in GROUPS if any(f(k) for k in kinds)]
+    if anonymous_pages:
+        out.append(f"- [Pages open to anonymous users ({len(anonymous_pages)})](#ui-anonymous)")
     screens = sum(1 for i in items if i["kind"] in ("MVC view", "Razor Page", "Blazor routable component", "Web Forms page",
                                                      "WinForms form", "XAML window", "XAML page") and not i.get("base"))
     out += ["", '<a id="ui-totals"></a>', "", "## Totals", "", BACK, "",
@@ -365,10 +447,23 @@ def main():
                 notes.append(f"title: {esc_text(i['title'])}")
             if i.get("root") and i["kind"] == "XAML other":
                 notes.append(f"root: `{esc(i['root'])}`")
+            if i.get("auth"):
+                notes.append("auth: " + esc_text(i["auth"]))
             model = cls_link(i.get("model"), i.get("code_behind") or i["file"]) if i.get("model") else "—"
             out.append(f'| <a id="{i["anchor"]}"></a>{i["kind"]} | `{esc(i["file"])}` | {esc_text(i.get("route") or "—")} | {model} | '
                        f'{esc_text(i.get("layout") or "—")} | {("`" + esc(os.path.basename(i["code_behind"])) + "`") if i.get("code_behind") else "—"} | '
                        f'{i["lines"]}{" + " + str(i["code_lines"]) if i["code_lines"] else ""} | {"; ".join(notes)} |')
+    if anonymous_pages:
+        out += ["", '<a id="ui-anonymous"></a>', "", "## Pages open to anonymous users", "", BACK, "",
+                "Web Forms pages, ASMX services and ASHX handlers that no `web.config` `<authorization>` rule protects and whose "
+                "code-behind does not check the user. "
+                + (f"The MVC global filters ({', '.join(sorted({g for g, _, _ in gfilters}))}) protect controllers only; they never run "
+                   "for these files. " if gfilters else "")
+                + "Security finding candidates: confirm each in the code (a base page class or an HTTP module may still check).", "",
+                "| File | Route | Rule | Code-behind |", "| --- | --- | --- | --- |"]
+        for i in sorted(anonymous_pages, key=lambda i: i["file"].lower()):
+            out.append(f'| [`{esc(i["file"])}`](#{i["anchor"]}) | {esc_text(i.get("route") or "—")} | {esc_text(i["auth"])} | '
+                       f'{("`" + esc(os.path.basename(i["code_behind"])) + "`") if i.get("code_behind") else "—"} |')
     write_page("views-and-pages.md", out)
 
     agent = os.path.join(DOCS, "agent")
