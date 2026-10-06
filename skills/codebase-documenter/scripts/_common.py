@@ -35,7 +35,7 @@ DEFAULTS = {
         {"title": "Tables", "prefix": "tbl-", "page": "db-tables.md"},
     ],
     "seed_row_tables": [],
-    "site": {"name": "", "accent_hex": "#3f51b5", "language": "en"},
+    "site": {"name": "", "accent_hex": "#0b6e74", "language": "en"},
     "sensitive": ["security/findings.md"],
     "graph": {"label": "auto", "backend": "openai", "model": "", "base_url": "", "api_key_env": "",
               "batch_size": 2},

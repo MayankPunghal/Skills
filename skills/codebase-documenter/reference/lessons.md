@@ -2,6 +2,16 @@
 
 From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tables, 844 routines, 232 controllers, 1,865 actions, 66 reports) to 100 % coverage.
 
+## Contents
+
+- [Research](#research)
+- [Code graph (graphify on C#)](#code-graph-graphify-on-c)
+- [Reference generation](#reference-generation)
+- [Site and links](#site-and-links)
+- [Agent layer](#agent-layer)
+- [Packaging](#packaging)
+- [Working style](#working-style)
+
 ## Research
 
 - The graph speeds orientation by an order of magnitude, but INFERRED edges and community names are hypotheses. Every documented fact was re-read in code.
@@ -78,6 +88,9 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
 - A sticky table header only sticks to its nearest scrolling ancestor. Material wraps every table in a horizontally scrolling box, so `position: sticky` alone never sticks to the page: give that box a max height (`readability.css`) and the header sticks inside it.
 - An offline, confidential site should not load Google Fonts: the requests fail offline and send each reader's IP address and the page address to a third party. Use system fonts (`font: false`).
 - Skill-owned site files (CSS, the reader's guide) are refreshed on every build, so improvements reach existing workspaces; files written once at setup (`extra.css`) never do.
+- To change the look of existing sites, put the theme in a skill-owned file (`site-theme.css`, loaded before `extra.css`) and upgrade a project file only when it is still byte-for-byte the previous template (`templates/legacy/`); an edited copy is the project's and is left alone.
+- Self-hosted fonts keep the site offline and consistent: ship the woff2 files with the skill (`templates/assets/fonts/`, SIL OFL) and point Material at them with `--md-text-font` / `--md-code-font` while `font: false` stays set.
+- Material's default chrome (dark header band, light-grey weight-300 H1, coloured inline code, thick coloured admonition stripes) reads as a template. A light header with hairlines, a weight-600 H1, neutral inline code and 1px admonition frames reads as a product.
 
 ## Agent layer
 

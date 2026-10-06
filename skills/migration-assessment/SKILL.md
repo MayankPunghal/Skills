@@ -2,7 +2,7 @@
 name: migration-assessment
 description: Assesses legacy .NET code bases (one repository or hundreds) for migration and modernization to AWS and Linux, and produces an evidence-backed, client-ready AWS Migration & Modernization Assessment Report with JSON/CSV exports. Inventories the estate, maps each repo with graphify, scans for everything that breaks on Linux or .NET 10 (Windows-only APIs, System.Web, WCF, COM, registry, SQL Server features, config secrets, vulnerable NuGet packages and more), classifies every application with the 7 Rs and estimates effort and timeline. Use when the user mentions migrating, modernizing, porting or assessing .NET Framework / ASP.NET / WCF apps for AWS, Linux, containers, .NET 8/10, the 7 Rs, AWS Transform, MAP or licensing cost reduction, or asks what will break when moving an app off Windows/SQL Server, even if they don't say "assessment".
 metadata:
-  version: 2.8.0
+  version: 2.9.0
 user-invocable: true
 argument-hint: "[help · assess-estate · discover-estate · map-code-graph · scan-repos · review-findings · classify-applications · estimate-effort · validate-linux-build · write-report · verify-report · calibrate-report · resume] [repo]"
 allowed-tools:
@@ -62,7 +62,7 @@ Assess legacy .NET code bases (one repository or hundreds) for migration and mod
 **How to run scripts:**
 - All scripts live in `<skill-base-dir>/scripts/` and run with the current directory set to the assessment workspace (the folder with `assessment.json`).
 - They need Python 3.10+ (standard library only) and graphify for step 2.
-- Narrative stubs for step 8 ([executive-summary](templates/narrative/executive-summary.md), [architecture](templates/narrative/architecture.md), [dependencies](templates/narrative/dependencies.md), [database](templates/narrative/database.md), [application-plans](templates/narrative/application-plans.md), [testing-and-merge](templates/narrative/testing-and-merge.md), [cost](templates/narrative/cost.md), [risks-and-questions](templates/narrative/risks-and-questions.md)) are copied into the workspace automatically; each stub's comment says what to write. A finished example report, for structure and tone only, is in [samples/eshop/](samples/eshop/EshopPublicSample-AWS-Migration-Assessment.md) (HTML: [html](samples/eshop/EshopPublicSample-AWS-Migration-Assessment.html); decisions: [manual review file](samples/eshop/eshopmodernizing.manual.json)).
+- Narrative stubs for step 8 ([executive-summary](templates/narrative/executive-summary.md), [architecture](templates/narrative/architecture.md), [dependencies](templates/narrative/dependencies.md), [database](templates/narrative/database.md), [application-plans](templates/narrative/application-plans.md), [testing-and-merge](templates/narrative/testing-and-merge.md), [cost](templates/narrative/cost.md), [risks-and-questions](templates/narrative/risks-and-questions.md)) are copied into the workspace automatically; each stub's comment says what to write. A finished example report, for structure and tone only, is in [samples/eshop/](samples/eshop/EshopPublicSample-AWS-Migration-Assessment.md) (HTML: [html](samples/eshop/EshopPublicSample-AWS-Migration-Assessment.html), built by an earlier version, so its look predates the current report design; decisions: [manual review file](samples/eshop/eshopmodernizing.manual.json)).
 - Outputs go to `assessment/`. There is one file per repository for inventory, findings, scan, graphs and reviews, so batches and subagents never collide.
 
 ## Judgment you must add (scripts cannot)

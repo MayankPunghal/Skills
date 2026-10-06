@@ -15,7 +15,7 @@ theme:
   language: {{language}}
   logo: assets/logo.svg
   favicon: assets/logo.svg
-  font: false  # system fonts: the offline site loads nothing from the internet
+  font: false  # IBM Plex is served from assets/fonts (site-theme.css): the offline site loads nothing from the internet
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -47,6 +47,7 @@ theme:
     - content.tooltips
 
 extra_css:
+  - assets/site-theme.css
   - assets/extra.css
   - assets/readability.css
 

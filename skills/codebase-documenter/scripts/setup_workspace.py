@@ -48,7 +48,7 @@ def main():
 
     docs = cfg.get("docs_dir", "docs")
     vals = {"product": cfg.get("product") or "the product", "code_name": cfg.get("code_name", ""), "slug": cfg["slug"],
-            "site_name": cfg["site"]["name"], "accent_hex": cfg.get("site", {}).get("accent_hex", "#3f51b5"),
+            "site_name": cfg["site"]["name"], "accent_hex": cfg.get("site", {}).get("accent_hex", "#0b6e74"),
             "language": cfg.get("site", {}).get("language", "en"),
             "docs_dir": docs}
     created = 0

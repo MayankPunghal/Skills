@@ -75,7 +75,7 @@ Effort is **coding hours only** (no QA, DevOps, project management or contingenc
 All in `assessment/report/`:
 - **`<Client>-AWS-Migration-Assessment.html`** — the version for PMs, BAs and the client. It is one self-contained page that combines the report and every export:
   - sidebar navigation and global search;
-  - KPI cards and charts;
+  - a key-facts ledger and severity charts (rows with no findings are listed once instead of drawn empty);
   - findings explorer (filter by severity, category or application; click for evidence and fix);
   - sortable application, package, dependency, project and question tables with Download CSV;
   - Gantt timeline, glossary for non-technical readers, dark mode and print/PDF.

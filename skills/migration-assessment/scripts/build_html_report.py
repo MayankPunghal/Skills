@@ -11,6 +11,7 @@ downloads as CSV. Works offline (no external libraries). Layout and wording: ref
 Output: assessment/report/<Client>-AWS-Migration-Assessment.html
 """
 import argparse
+import base64
 import datetime
 import html
 import json
@@ -24,6 +25,36 @@ import _findings as F
 import build_report as BR
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
+# fixed English month names: strftime("%B") follows the machine's locale and would mix languages in the title block
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+
+# Small line icons (stroke = currentColor), so no Unicode glyph stands in for an icon.
+ICON = {
+    "copy": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>',
+    "menu": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg>',
+    "theme": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>',
+    "print": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2"/><rect x="4.5" y="9.5" width="7" height="4"/></svg>',
+    "up": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M4 7.5l4-4 4 4"/></svg>',
+    "lock": '<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>',
+}
+
+# IBM Plex Sans and Plex Mono (SIL Open Font License, templates_html/fonts/OFL.txt), embedded as data URIs so the
+# single-file report looks the same offline on any machine. Missing files fall back to the system stack.
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates_html", "fonts")
+LATIN = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+LATIN_EXT = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+
+
+def font_faces():
+    out = []
+    for file, family, weight, rng in (("plex-sans-latin.woff2", "Plex Sans", "100 700", LATIN), ("plex-sans-latin-ext.woff2", "Plex Sans", "100 700", LATIN_EXT),
+                                      ("plex-mono-latin-400.woff2", "Plex Mono", "400", LATIN), ("plex-mono-latin-600.woff2", "Plex Mono", "600", LATIN)):
+        p = os.path.join(FONT_DIR, file)
+        if os.path.exists(p):
+            b64 = base64.b64encode(open(p, "rb").read()).decode("ascii")
+            out.append(f'@font-face{{font-family:"{family}";src:url(data:font/woff2;base64,{b64}) format("woff2");font-weight:{weight};font-style:normal;font-display:swap;unicode-range:{rng}}}')
+    return "\n".join(out)
 
 
 # ------------------------------------------------------------------ minimal Markdown -> HTML (narratives and blocks)
@@ -37,6 +68,22 @@ def inline(t):
     t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', t)
     t = re.sub(r"\b(F-\d{3})\b", r'<a class="fref" href="#finding-\1">\1</a>', t)
     return t
+
+
+def md_list(items):
+    """Nested <ul>/<ol> from (indent, ordered, text) items: an item indented deeper than the first is a child of the one above."""
+    if not items:
+        return ""
+    base = items[0][0]
+    tag = "ol" if items[0][1] else "ul"
+    parts, j = [], 0
+    while j < len(items):
+        k = j + 1
+        while k < len(items) and items[k][0] > base:
+            k += 1
+        parts.append(f"<li>{inline(items[j][2])}{md_list(items[j + 1:k])}</li>")
+        j = k
+    return f"<{tag}>" + "".join(parts) + f"</{tag}>"
 
 
 def md_to_html(md):
@@ -53,7 +100,9 @@ def md_to_html(md):
                 i += 1
             i += 1
             if lang != "mermaid":  # diagrams are drawn natively in the HTML report
-                out.append(f"<pre><code>{html.escape(chr(10).join(body), quote=False)}</code></pre>")
+                out.append(f'<figure class="code"><figcaption><span>{html.escape(lang or "text")}</span>'
+                           f'<button type="button" class="btn" data-copy>{ICON["copy"]}<span>Copy</span></button></figcaption>'
+                           f"<pre><code>{html.escape(chr(10).join(body), quote=False)}</code></pre></figure>")
             continue
         if ln.strip().startswith("|") and i + 1 < len(lines) and re.match(r"^\s*\|[\s:\-|]+\|\s*$", lines[i + 1]):
             head = [c.strip() for c in ln.strip().strip("|").split("|")]
@@ -74,16 +123,15 @@ def md_to_html(md):
             i += 1
             continue
         if re.match(r"^\s*([-*]|\d+\.)\s+", ln):
-            ordered = bool(re.match(r"^\s*\d+\.", ln))
-            items = []
+            items = []  # (indent, ordered, text); indented items nest under the item above them
             while i < len(lines) and (re.match(r"^\s*([-*]|\d+\.)\s+", lines[i]) or (lines[i].startswith("   ") and lines[i].strip() and items)):
-                if re.match(r"^\s*([-*]|\d+\.)\s+", lines[i]):
-                    items.append(re.sub(r"^\s*([-*]|\d+\.)\s+", "", lines[i]))
+                m2 = re.match(r"^(\s*)([-*]|\d+\.)\s+(.*)$", lines[i])
+                if m2:
+                    items.append((len(m2.group(1).expandtabs(4)), m2.group(2)[0].isdigit(), m2.group(3)))
                 else:
-                    items[-1] += " " + lines[i].strip()
+                    items[-1] = (items[-1][0], items[-1][1], items[-1][2] + " " + lines[i].strip())
                 i += 1
-            tag = "ol" if ordered else "ul"
-            out.append(f"<{tag}>" + "".join(f"<li>{inline(x)}</li>" for x in items) + f"</{tag}>")
+            out.append(md_list(items))
             continue
         if not ln.strip():
             i += 1
@@ -255,20 +303,24 @@ def main():
         for t in g["tabs"]:
             nav.append(f'<a href="#{t["id"]}" data-tab="{t["id"]}"><span>{html.escape(t["title"])}</span><span class="badge"></span></a>')
             inner = "\n".join(component(i, c) for i in t["items"])
-            cover = ""
-            if t["id"] == "overview":
+            cover, h2cls = "", ""
+            if t["id"] == "overview":  # the report title leads the first tab; its "Overview" heading stays for screen readers only
+                today = datetime.date.today()
+                note = brand.get("confidential_note", "").replace("{client}", client)
                 cover = (f'<div class="cover"><h1>{html.escape(cfg.get("engagement", "AWS Migration & Modernization Assessment"))}</h1>'
-                         f'<div class="meta">Prepared for <b>{html.escape(client)}</b>{" by <b>" + html.escape(company) + "</b>" if company else ""} · {datetime.date.today().isoformat()} · '
-                         f'target {html.escape(BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")))} on AWS</div><div class="conf">{html.escape(brand.get("confidential_note", "").replace("{client}", client))}</div></div>')
-            body.append(f'<section class="tab" id="tab-{t["id"]}">{cover}<h2>{html.escape(t["title"])}</h2>' + (f'<p class="intro">{html.escape(t.get("intro", ""))}</p>' if t.get("intro") else "") + inner + "</section>")
-    css = CSS.replace("ACCENTDARK", brand.get("accent_dark", "#ff8a4c")).replace("ACCENT", brand.get("accent", "#d9480f"))
+                         f'<div class="meta">Prepared for <b>{html.escape(client)}</b>{" by <b>" + html.escape(company) + "</b>" if company else ""} · {today.day} {MONTHS[today.month - 1]} {today.year} · '
+                         f'target {html.escape(BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")))} on AWS</div>'
+                         + (f'<div class="conf">{ICON["lock"]}<span>{html.escape(note)}</span></div>' if note else "") + "</div>")
+                h2cls = ' class="sr"'
+            body.append(f'<section class="tab" id="tab-{t["id"]}">{cover}<h2{h2cls}>{html.escape(t["title"])}</h2>' + (f'<p class="intro">{html.escape(t.get("intro", ""))}</p>' if t.get("intro") else "") + inner + "</section>")
+    css = font_faces() + "\n" + CSS.replace("ACCENTDARK", brand.get("accent_dark", "#5ccfcf")).replace("ACCENT", brand.get("accent", "#0b6e74"))
     title = f"{client} — {cfg.get('engagement', 'AWS Migration & Modernization Assessment')}"
     page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
 <title>{html.escape(client)} AWS Assessment</title><style>{css}</style></head>
-<body><a class="skip" href="#main">Skip to the report</a><header class="top"><button id="menu" title="Menu" aria-label="Open the section menu" aria-expanded="false">☰</button><span class="title">{html.escape(title)}</span><input id="q" type="search" placeholder="Search everything: applications, findings, files, packages, hosts, questions…  ( / )" aria-label="Search the whole report (shortcut: /)">
-<button id="theme" title="Light / dark" aria-label="Switch between light and dark">◐</button><button onclick="window.print()" title="Print or save as PDF (prints every tab)">Print</button></header>
-<div class="layout"><nav class="side" aria-label="Report sections">{''.join(nav)}</nav><main id="main" tabindex="-1">{''.join(body)}</main></div><button id="totop" type="button">↑ Top</button>
+<body><a class="skip" href="#main">Skip to the report</a><header class="top"><button id="menu" class="icon" title="Sections" aria-label="Open the section menu" aria-expanded="false">{ICON["menu"]}</button><span class="title">{html.escape(title)}</span><input id="q" type="search" placeholder="Search applications, findings, files, packages, hosts…   /" aria-label="Search the whole report (shortcut: /)">
+<button id="theme" class="icon" title="Light or dark theme" aria-label="Switch between light and dark">{ICON["theme"]}</button><button class="print" onclick="window.print()" title="Print or save as PDF (prints every tab)">{ICON["print"]}<span>Print</span></button></header>
+<div class="layout"><nav class="side" aria-label="Report sections">{''.join(nav)}</nav><main id="main" tabindex="-1">{''.join(body)}</main></div><button id="totop" type="button">{ICON["up"]}<span>Top</span></button>
 <script type="application/json" id="data">{json.dumps(d, ensure_ascii=False).replace("</", "<\\/")}</script>
 <script>window.GLOSSARY = {json.dumps(layout.get("glossary", []), ensure_ascii=False).replace("</", "<\\/")};</script>
 <script>{JS}</script></body></html>"""
