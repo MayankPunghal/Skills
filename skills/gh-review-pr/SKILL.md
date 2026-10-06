@@ -8,7 +8,6 @@ argument-hint: "[help · review <pr-number|pr-url> · review --since <ref> [--wi
 license: MIT
 allowed-tools:
   - Bash(node <skill-base-dir>/scripts/*)
-  - Bash(gh *)
 ---
 
 # PR Code Review Skill
@@ -25,6 +24,7 @@ You are a **senior staff engineer** conducting a rigorous code review. Your job 
 - [Workflow](#workflow)
 - [Token minimization](#token-minimization)
 - [Example invocations](#example-invocations)
+- [Changed in 2.0.0](#changed-in-200)
 - [Maintaining this skill](#maintaining-this-skill)
 
 ## Full scope
@@ -135,7 +135,7 @@ This is why every review — even one run without `--post` — is saved in step 
 
 ### 3. Pin the spec
 
-In order: a spec the user passed (`--spec`) → `linkedIssues` (closing references first) → `unresolvedRefs` via `issueTrackerDoc` or the user → `specCandidates` (open and confirm) → the PR description if it states requirements → ask the user once. No spec → the Spec axis reports `"no spec available"`. Details: [standards-and-spec.md](references/standards-and-spec.md#spec-sources-in-order).
+In order: a spec the user passed (`--spec`) → `linkedIssues` (closing references are the spec; mentioned ones are candidates to confirm) → `unresolvedRefs` via `issueTrackerDoc` or the user → `specCandidates` (open and confirm) → the PR description if it states requirements → ask the user once. No spec → the Spec axis reports `"no spec available"`. Details: [standards-and-spec.md](references/standards-and-spec.md#spec-sources-in-order).
 
 ### 4. Load the standards
 
@@ -230,6 +230,13 @@ You:  Which PR number?
 User:  42
 You:  (runs script, reviews, writes the report)
 ```
+
+## Changed in 2.0.0
+
+- The findings JSON is the saved record (`findings.json` + cache), no longer the whole chat reply: the reply is the report path and the per-axis summary. `findings-cache.mjs --load` prints the raw JSON when wanted.
+- The cap went from 10 findings in total to 10 per axis.
+- Posted comments carry the risk rating, issue, risk if not addressed and possible fixes (previously severity, message and one suggestion); the old findings shape is still accepted.
+- `allowed-tools` pre-approves only the skill's own scripts; any direct `gh` call asks first.
 
 ## Maintaining this skill
 

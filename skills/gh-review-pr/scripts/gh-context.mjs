@@ -156,6 +156,9 @@ const BRANCH_NOISE = new Set(['feat', 'feature', 'features', 'fix', 'fixes', 'bu
 // Ticket references GitHub cannot resolve: Jira-style keys (ABC-123) and GitLab merge requests (!67).
 // Reported so the model fetches them through the repo's issue-tracker doc or asks the user.
 const FOREIGN_REF = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b|(?:^|\s)(![0-9]+)\b/g;
+// Standard names that look like ticket keys (UTF-8, SHA-256, ISO-8601, CVE-2024-1234 ...): never tickets.
+const NOT_TICKETS = new Set(['UTF', 'SHA', 'ISO', 'RFC', 'CVE', 'CWE', 'HTTP', 'TLS', 'SSL', 'AES', 'RSA', 'MD', 'ES', 'ECMA',
+  'GPT', 'IPV', 'UTC', 'GMT', 'PEP', 'JSR', 'WCAG', 'OWASP', 'ASVS', 'X', 'H', 'V', 'IEEE', 'ANSI', 'EN', 'BS', 'DIN', 'NIST']);
 
 // --- Exclusion patterns for diff filtering ---
 // (^|/) so a top-level folder (bin/, build/) is excluded as well as a nested one.
@@ -394,7 +397,10 @@ function linkedIssues(owner, repo, prNumber, body, commits, branch, fetchIssue) 
     if (!i) { unresolved.add(full); continue; }
     if (!i.pr) refs.set(full, { ref: full, title: i.title, body: (i.body || '').slice(0, 4000), url: i.url, state: i.state, closing: false, source: c.source });
   }
-  for (const m of [text, branch || ''].join('\n').matchAll(FOREIGN_REF)) unresolved.add(m[1] || m[2]);
+  for (const m of [text, branch || ''].join('\n').matchAll(FOREIGN_REF)) {
+    if (m[1] && NOT_TICKETS.has(m[1].split('-')[0])) continue;
+    unresolved.add(m[1] || m[2]);
+  }
   return { issues: [...refs.values()], unresolved: [...unresolved] };
 }
 

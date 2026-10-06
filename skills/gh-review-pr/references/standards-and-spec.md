@@ -37,7 +37,7 @@ Reporting them separately stops one axis from masking another. Never merge, rera
 ## Spec sources, in order
 
 1. **A spec the user passed** (`--spec <path | #123 | URL>`, or named in the request). Read it; it wins.
-2. **`linkedIssues`** from the context: GitHub "closing" references first, then `#N` / `owner/repo#N` mentioned in the description or commit messages, then an issue number at the start of the branch name. Each carries its title and body.
+2. **`linkedIssues`** from the context: GitHub "closing" references first, then `#N` / `owner/repo#N` mentioned in the description or commit messages, then an issue number at the start of the branch name. Each carries its title, body and `source`. Only `closing reference` entries are the spec outright; `mentioned` and `branch name` entries are candidates (a description often cites unrelated issues as examples): open each and use it only if it describes this change.
 3. **`unresolvedRefs`**: references GitHub could not fetch (Jira keys like `PROJ-77`, GitLab `!67`, a `#N` with no GitHub remote). If `issueTrackerDoc` is set (`docs/agents/issue-tracker.md`), follow it to fetch them; otherwise ask the user for the text or a link.
 4. **`specCandidates`**: files under `docs/`, `specs/`, `.scratch/`, `rfcs/`, `design/`, `plans/`, `adr/` whose names share words with the branch name or PR title. Open the best match and use it only if it really describes this change.
 5. **The PR description**, when it states requirements (acceptance criteria, a list of behaviours). Record `"source": "PR description"`.
