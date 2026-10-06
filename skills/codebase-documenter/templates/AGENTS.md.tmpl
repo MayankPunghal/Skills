@@ -14,7 +14,7 @@ This repository (or workspace) contains {{product}} ({{code_name}}) and its comp
 | --- | --- | --- |
 | Page map | `{{docs_dir}}/llms.txt` | One line per page with its purpose: read first |
 | Entity index | `{{docs_dir}}/agent/entities.jsonl` | Every documented item: `kind`, `name`, `file`, `anchor`, `summary` |
-| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--fuzzy] [--find TEXT] [--src PATH]` | Prints `doc: path:line` and `src: path:line` per match, then the entry; an exact name shows only itself (`--fuzzy` adds partial matches); finding ids (`SEC-02`) and narrative table rows are indexed too; `--find` lists matching source lines |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--fuzzy] [--find TEXT] [--src PATH] [--no-code]` | Prints `doc: path:line` and `src: path:line` per match, then the entry, then the code (the declaration, or each cited source line); an exact name shows only itself (`--fuzzy` adds partial matches); finding ids (`SEC-02`) and narrative table rows are indexed too; `--find` lists matching source lines |
 | Narrative docs | `{{docs_dir}}/<section>/` | Behaviour, rules, flows, integrations, security |
 | Reference | `{{docs_dir}}/reference/` | Exhaustive generated catalogues with anchors |
 | Research notes | `{{docs_dir}}/_notes/` | Dense verified findings per area |
@@ -40,6 +40,7 @@ Kinds: {{kinds}}.
 ## 4. Rules
 
 - Cite every claim as a clickable link copied exactly from the lookup output; never invent a path.
+- Answer completely: quote the relevant code from the lookup output with its `file:line`, plus callers / callees, tables read and written, settings and findings that apply, so the reader needs nothing else.
 - Change requests end with *File (link with :line) · What to change · Why*, code files first.
 - Never copy secret values; name the configuration key only. Confidential: {{sensitive}}.
 - **After code changes, update the docs** (from the docs root; set `DOCS_SOURCE_ROOT` to the source root when it differs):

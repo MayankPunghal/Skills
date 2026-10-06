@@ -13,6 +13,10 @@ Usage (run from the folder Claude Code / your editor is opened in, so printed pa
 Each match prints:
   doc:  <path>:<line>     where it is documented
   src:  <path>:<line>     the source file and the line where it is declared (when the source code is present)
+then the doc entry, then the code: the whole declaration for classes, methods, procedures, tables ... (attributes and doc
+comments included, at most --code-lines, default 40) or, for call sites, errors and settings, each cited source line; the
+first --code-matches (3) matches only, none with --no-code or --list. A "note:" line flags a source file changed after the
+docs were built.
 Paths are relative to the current folder, with forward slashes, so they open as links.
 The source root is --src, DOCS_SOURCE_ROOT, codebase-docs.json source_root, or found automatically (a folder containing the
 source_markers listed in codebase-docs.json).
@@ -141,6 +145,104 @@ def source_path(ent, lines, i, text):
     return None
 
 
+LOC_TICK = re.compile(r"`(" + SRC_EXT + r"):(\d+)`")              # `src/X.cs:73` in reference pages
+LOC_BARE = re.compile(r"(?<![\w/.-])(" + SRC_EXT + r"):(\d+)\b")  # src/X.cs:73 in index summaries
+DECLARED = ("table", "routine", "class", "controller", "function", "method", "enum", "action", "endpoint", "view", "script")
+
+
+def locations(text):
+    """Every distinct `path:line` in a doc entry, in order."""
+    out = []
+    for m in list(LOC_TICK.finditer(text)) or list(LOC_BARE.finditer(text)):
+        loc = (m.group(1).strip(), int(m.group(2)))
+        if loc not in out:
+            out.append(loc)
+    return out
+
+
+LANG = {".cs": "csharp", ".vb": "vbnet", ".sql": "sql", ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx",
+        ".jsx": "jsx", ".java": "java", ".kt": "kotlin", ".go": "go", ".rs": "rust", ".php": "php", ".rb": "ruby", ".cshtml": "cshtml",
+        ".razor": "razor", ".aspx": "aspx", ".json": "json", ".xml": "xml", ".config": "xml", ".yml": "yaml", ".yaml": "yaml"}
+BRACES = (".cs", ".java", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".kt", ".kts", ".scala", ".rs", ".swift", ".php",
+          ".c", ".cc", ".cpp", ".h", ".hpp", ".m")
+VB_END = re.compile(r"^\s*End\s+(Sub|Function|Class|Module|Property|Structure|Interface|Enum|Namespace)\b", re.I)
+
+
+def block_end(src_lines, start, ext):
+    """0-based last line of the declaration starting at 0-based line `start`: the matching brace (C-like), GO or the next
+    CREATE (SQL), End Sub/Function/Class (VB), the dedent (Python); a short window for anything else."""
+    n = len(src_lines)
+    if ext == ".sql":
+        for j in range(start + 1, n):
+            if re.match(r"\s*GO\s*(--.*)?$", src_lines[j], re.I):
+                return j - 1
+            if re.match(r"(?:CREATE|ALTER)\s+(?:OR\s+ALTER\s+)?(?:PROC|FUNCTION|VIEW|TABLE\s+[^#\s]|TRIGGER|TYPE)", src_lines[j], re.I):
+                # the next object in a script without GO; an indented CREATE TABLE #temp inside the body is not one
+                return j - 1
+        return n - 1
+    if ext == ".vb":
+        for j in range(start + 1, n):
+            if VB_END.match(src_lines[j]):
+                return j
+        return min(n - 1, start + 15)
+    if ext == ".py":
+        ind = len(src_lines[start]) - len(src_lines[start].lstrip())
+        last = start
+        for j in range(start + 1, n):
+            s = src_lines[j]
+            if s.strip() and len(s) - len(s.lstrip()) <= ind and not s.lstrip().startswith((")", "]")):
+                break
+            if s.strip():
+                last = j
+        return last
+    if ext not in BRACES:
+        return min(n - 1, start + 15)
+    depth, opened, block_c = 0, False, False
+    for j in range(start, n):
+        s, k, quote = src_lines[j], 0, None
+        while k < len(s):
+            ch = s[k]
+            if block_c:
+                if s.startswith("*/", k):
+                    block_c, k = False, k + 1
+            elif quote:
+                if ch == "\\" and quote != '@"':
+                    k += 1
+                elif quote == '@"' and s.startswith('""', k):
+                    k += 1
+                elif ch == quote[-1]:
+                    quote = None
+            elif s.startswith("//", k):
+                break
+            elif s.startswith("/*", k):
+                block_c, k = True, k + 1
+            elif s.startswith('@"', k) or s.startswith('$@"', k) or s.startswith('@$"', k):
+                quote, k = '@"', k + (1 if s[k] == "@" and s[k + 1] == '"' else 2)
+            elif ch in "\"'`":
+                quote = ch
+            elif ch == "{":
+                depth, opened = depth + 1, True
+            elif ch == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    return j
+            elif ch == ";" and not opened and depth == 0:  # expression-bodied member or a declaration without a body
+                return j
+            k += 1
+    return min(n - 1, start + 15)
+
+
+def snippet(src_lines, line, ext, max_lines):
+    """(first, last, text) of the declaration at 1-based `line`, with the attributes / doc comments right above it."""
+    start = max(0, min(line, len(src_lines)) - 1)
+    first = start
+    while first > 0 and first > start - 8 and src_lines[first - 1].lstrip().startswith(("[", "///", "@", "<Attribute", "--")):
+        first -= 1
+    last = block_end(src_lines, start, ext)
+    shown = src_lines[first:min(last, first + max_lines - 1) + 1]
+    return first + 1, last + 1, "\n".join(shown)
+
+
 def decl_line(ent, src_lines):
     """1-based line where the entry is declared in its source file."""
     n = re.escape(ent["name"].split(".")[-1].split(" ")[0])
@@ -184,6 +286,9 @@ def main():
     ap.add_argument("--find", help="print lines of each match's source file containing this text (case-insensitive)")
     ap.add_argument("--src", help="source root (the folder containing the code; see source_markers in codebase-docs.json)")
     ap.add_argument("--fuzzy", action="store_true", help="also show partial and summary matches when an exact name matches")
+    ap.add_argument("--no-code", action="store_true", help="do not print the code of the declaration / the cited source lines")
+    ap.add_argument("--code-lines", type=int, default=40, help="most lines of code printed per match (default 40)")
+    ap.add_argument("--code-matches", type=int, default=3, help="matches that get their code printed (default the first 3)")
     a = ap.parse_args()
     import sys
     sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
@@ -201,19 +306,33 @@ def main():
     src_root = find_source_root(a.src)
     print(f"{len(hits)} match(es); showing {min(len(hits), a.limit)}")
     print(f"source root: {rel(src_root) if src_root else 'NOT FOUND (set DOCS_SOURCE_ROOT or --src) - code paths are relative to the repository root'}\n")
-    for e in hits[:a.limit]:
+    built = os.path.getmtime(INDEX)
+    for n_hit, e in enumerate(hits[:a.limit]):
         doc = os.path.join(BASE, e["file"])
         lines = read_lines(doc) or []
         i = anchor_line(e, lines)
         b = body(e, lines, i)
         print(f"== {e['kind']}: {e['name']}")
         print(f"   doc: {rel(doc)}:{(i or 0) + 1}")
-        sp = source_path(e, lines, i, b)
+        locs = [] if e["kind"] in ("page", "section", "seed-row", "claim", "role", "report") else locations(b) or locations(e["summary"])
+        # the entry's own `path:line` is the declaration; the old guess (first / last path in the text) is the fallback
+        sp, at = (locs[0] if locs and e["kind"] in DECLARED else (source_path(e, lines, i, b), None))
+        code = []  # printed after the doc text: the declaration, or each cited source line
         if sp:
             full = os.path.join(src_root, sp) if src_root else None
             src_lines = read_lines(full) if full else None
             if src_lines is not None:
-                print(f"   src: {rel(full)}:{decl_line(e, src_lines)}")
+                at = at if at and at <= len(src_lines) else decl_line(e, src_lines)
+                print(f"   src: {rel(full)}:{at}")
+                if os.path.getmtime(full) > built + 1:
+                    print("   note: this source file changed after the docs were built; where they disagree, the code is right")
+                if not a.no_code and not a.list and n_hit < a.code_matches and e["kind"] in DECLARED:
+                    ext = os.path.splitext(full)[1].lower()
+                    first, last, txt = snippet(src_lines, at, ext, a.code_lines)
+                    shown_last = min(last, first + a.code_lines - 1)
+                    code = [f"code ({rel(full)}:{first}-{shown_last}):", "```" + LANG.get(ext, ""), txt, "```"]
+                    if last > shown_last:
+                        code.append(f"... {last - shown_last} more lines to {rel(full)}:{last} (--code-lines {last - first + 1} shows all)")
                 if a.find:
                     f = a.find.lower()
                     found = [(j + 1, l.strip()) for j, l in enumerate(src_lines) if f in l.lower()]
@@ -227,8 +346,19 @@ def main():
                     print("        (source not available: --find skipped)")
         elif a.find:
             print("        (no source file for this entry: --find skipped)")
+        if (not code and e["kind"] not in DECLARED and src_root and locs and not a.no_code and not a.list
+                and n_hit < a.code_matches):  # call sites, errors, settings read in code: quote each cited line
+            for p, ln in locs[:8]:
+                sl = read_lines(os.path.join(src_root, p))
+                if sl and 0 < ln <= len(sl):
+                    code.append(f"   {rel(os.path.join(src_root, p))}:{ln}  {sl[ln - 1].strip()[:200]}")
+            if code:
+                code.insert(0, "code at the cited lines:" + (f" (first 8 of {len(locs)})" if len(locs) > 8 else ""))
         if not a.list:
-            print(b); print()
+            print(b)
+            if code:
+                print("\n".join(code))
+            print()
     if len(hits) > a.limit:
         print(f"... {len(hits) - a.limit} more (use --limit or --kind)")
     others = len(part) + len(text)

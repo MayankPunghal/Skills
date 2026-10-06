@@ -22,7 +22,7 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 | Rules for agents | `AGENTS.md` |
 | Page map (one line per page) | `{{docs_dir}}/llms.txt` |
 | Entity index `{kind, name, file, anchor, summary}` | `{{docs_dir}}/agent/entities.jsonl` |
-| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding) |
+| Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH] [--no-code] [--code-lines N]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding; the first 3 matches also print their code) |
 | Narrative pages | `{{docs_dir}}/<section>/*.md` (getting-started, architecture, modules, workflows, integrations, data, shared, operations, security, appendices) |
 | Reference pages (every item, anchored) | `{{docs_dir}}/reference/*.md` |
 | Research notes (dense, verified) | `{{docs_dir}}/_notes/*.md` |
@@ -33,13 +33,14 @@ Lookup kinds: {{kinds}}.
 ## Workflow
 
 1. **Orient.** Read `{{docs_dir}}/llms.txt`; pick the pages.
-2. **Find names.** For every named item run `lookup.py <Name>`. Each match prints `doc: <path>:<line>` (where it is documented) and `src: <path>:<line>` (declaring line in the code; path only, flagged, when the code is absent). Add `--find <text>` to list matching lines of that source file (`path:line  code`) — the fastest way to the exact line to change.
+2. **Find names.** For every named item run `lookup.py <Name>`. Each match prints `doc: <path>:<line>` (where it is documented) and `src: <path>:<line>` (declaring line in the code; path only, flagged, when the code is absent), then the doc entry, then the **code**: the whole declaration (method, class, procedure, table, up to 40 lines; `--code-lines N` for more) or, for call sites, errors and settings, each cited source line. A `note:` line means the file changed after the docs were built: the code wins. Add `--find <text>` to list matching lines of that source file (`path:line  code`) — the fastest way to the exact line to change.
 3. **Understand behaviour** from the narrative page: rules, statuses, side effects, permissions, integrations.
 4. **Exact details** from the reference entry: columns / keys / FKs / referenced-by; parameters / tables touched / callers; actions / verbs / anonymous flags; members / calls into / called by; permissions.
 5. **Relationships & impact.** With the graph: `graphify query "<question>" --budget 800`, `graphify explain "<Name>"`, `graphify path "<A>" "<B>"`, `graphify affected "<Name>" --depth 2`. Without it: the reference "called by / referenced by / used by" columns. A call through an interface, base class, message, event or delegate does not show what runs: the method map labels such calls `(di registration)`, `(di decorator)`, `(keyed service)`, `(override)`, `(message)`, `(event)`, `(method group)`, `(stored delegate)`, `(background job)`, `(redirect)`, `(filter)`, and `{{docs_dir}}/reference/dependency-injection.md` (when present) gives the implementation each host registers, its lifetime, decorators, message handlers and event subscribers. Never assume the first implementation you find is the one that runs. {{db_graph_skill_note}}
 6. **Verify in the source** before stating anything as certain or editing; the docs describe a snapshot.
 7. **Cite** with clickable links copied **exactly** from the lookup output — `[file.md:42](path/file.md:42)`, `[Service.cs:118](path/Service.cs:118)`. Never cite a path you did not get from `lookup.py` or a file listing. Say where the docs were silent and you read the code.
-8. **Change requests** end with a table *File (link with :line) · What to change · Why*, one row per edit, code first, docs last. Show the code to add next to the line it goes after (read it with `--find` or at the `src:` line). Without source: give paths and the `--find` text, and say line numbers need the code.
+8. **Complete answers.** The reader should not need to open anything else. Quote the relevant code from the lookup output (a fenced block headed by its clickable `file:line`, trimmed to the lines that matter), then cover what applies: what calls it and what it calls, the tables it reads and writes, the settings it reads, the endpoints or screens that reach it, findings and defects about it, and caveats (dynamic SQL, dispatch the scanner cannot see, a stale snapshot).
+9. **Change requests** end with a table *File (link with :line) · What to change · Why*, one row per edit, code first, docs last. Show the code to add next to the line it goes after (read it with `--find` or at the `src:` line). Without source: give paths and the `--find` text, and say line numbers need the code.
 
 ## Where to start
 
