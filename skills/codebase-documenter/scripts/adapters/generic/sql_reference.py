@@ -677,7 +677,22 @@ def main():
     code_sql, stats = sql_parse.scan_code(ROOT, SKIP_DIRS) if (dbs or n_code_only) and eng else ([], {})
     if dbs and PG_NOTES:
         postgres_page(dbs, code_sql, stats)
-    if dbs or n_code_only:  # machine-readable copy for generic-dbaccess, tools and retrieval
+    facts = False
+    if not n_code_only:  # the code-only page carries these sections; else the PostgreSQL map, or a page of their own
+        extra = code_db_sections()
+        facts = bool(DB_EXPORT["migrations"] or DB_EXPORT["sql_server_features"])
+        pg = os.path.join(OUT, "db-postgres.md")
+        if dbs and PG_NOTES and os.path.exists(pg):
+            with open(pg, "a", encoding="utf-8", newline="\n") as fh:  # that page has no index to go back to
+                fh.write("\n".join(x for x in extra if x != BACK) + "\n")
+        elif facts or dbs:
+            write("db-code-facts.md", "\n".join(["# Database facts from the code", "",
+                                                  "Schema migrations and SQL Server-only features found in the application code.",
+                                                  "", anchor("index"), "", "[Schema migrations](#migrations) · "
+                                                  "[SQL Server features](#sql-server-features)"] + extra) + "\n")
+        print(f"generic-sql: {len(DB_EXPORT['migrations'])} migration classes, "
+              f"{len(DB_EXPORT['sql_server_features'])} SQL Server features used from code")
+    if dbs or n_code_only or facts:  # machine-readable copy for generic-dbaccess, tools and retrieval
         DB_EXPORT["code_sql"] = [{"file": s["file"], "line": s["line"], "reads": (s.get("script") or {}).get("reads", []),
                                   "writes": (s.get("script") or {}).get("writes", []), "calls": (s.get("script") or {}).get("calls", []),
                                   "functions": (s.get("script") or {}).get("functions", []), "dynamic": s.get("dynamic", False),

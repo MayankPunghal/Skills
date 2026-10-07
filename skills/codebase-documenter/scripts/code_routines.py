@@ -238,6 +238,15 @@ def sql_server_features(root, files=None):
             for m in TVP_VALUE.finditer(t):
                 if (m.group(1) or m.group(2) or m.group(3)) in dts:
                     add("Table-valued parameters", hints["Table-valued parameters"], rel, t, m.start())
+    if files is None:  # MARS is usually switched on in a connection string kept in config, not in code
+        name = "Multiple active result sets"
+        rx = dict((n, r) for n, r, _ in SQL_FEATURES)[name]
+        for rel, p in walk(root, (".config", ".json")):
+            base = os.path.basename(rel).lower()
+            if base.endswith(".config") or base.startswith(("appsettings", "connectionstrings")):
+                t = read(p)
+                for m in rx.finditer(t):
+                    add(name, hints[name], rel, t, m.start())
     return out
 
 

@@ -394,7 +394,7 @@ def openapi(path, text):
 
 CLIENT_EXT = {".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue", ".cshtml", ".vbhtml", ".razor", ".aspx", ".ascx", ".master",
               ".html", ".htm"}
-URL_PAIR = re.compile(r"(?=/([A-Za-z_]\w*)/([A-Za-z_]\w*)(?!\w))")
+URL_PAIR = re.compile(r"(?=(?:/|(?<=['\"`]))([A-Za-z_]\w*)/([A-Za-z_]\w*)(?!\w))")  # '/Orders/Ship' or relative 'Orders/Ship'
 URL_ONE = re.compile(r"(?=/([A-Za-z_]\w*)(?![\w/]))")
 HELPER_URL = re.compile(r"(?:Url\.Action|Html\.ActionLink|Html\.BeginForm|Ajax\.BeginForm|Url\.RouteUrl|Html\.RenderAction|Html\.Action)"
                         r"\s*\(\s*(?:\"[^\"]*\"\s*,\s*)??\"(\w+)\"\s*,\s*\"(\w+)\"")
@@ -403,12 +403,43 @@ HELPER_ACT = re.compile(r"(?:(?:Url\.Action|Html\.BeginForm|Ajax\.BeginForm|Html
                         r"Html\.ActionLink\s*\(\s*\"[^\"]*\"\s*,\s*)\"(\w+)\"\s*(?:\)|,\s*(?!\"))")
 FORM_SELF = re.compile(r"(?:Html|Ajax)\.BeginForm\s*\(\s*\)|<form\b(?![^>]*\baction\s*=)[^>]*>", re.I)  # posts back to its own action
 VIEW_OF = re.compile(r"(?i)(?:^|/)Views/(\w+)/(\w+)\.(?:cshtml|vbhtml|aspx)$")
-TAG_URL = re.compile(r"asp-action\s*=\s*\"(\w+)\"[^>]*?asp-controller\s*=\s*\"(\w+)\"|asp-controller\s*=\s*\"(\w+)\"[^>]*?asp-action\s*=\s*\"(\w+)\"")
+ASP_ACTION = re.compile(r"\basp-action\s*=\s*\"")
+ASP_CTL = re.compile(r"\basp-controller\s*=\s*\"(\w+)\"")
+QUOTED = re.compile(r"\"(\w+)\"")
+
+
+def tag_actions(text):
+    """(controller or None, action, pos) for each asp-action tag helper. A Razor value (asp-action="@(isNew ? "Create" :
+    "Edit")") gives every quoted name in it; None = no asp-controller on the tag, i.e. the view's own controller."""
+    for m in ASP_ACTION.finditer(text):
+        i = m.end()
+        if text.startswith("@(", i):
+            depth, j = 0, i + 1
+            while j < len(text) and text[j] != "\n":
+                depth += {"(": 1, ")": -1}.get(text[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            acts, end = QUOTED.findall(text[i:j]), j + 1
+        else:
+            v = re.match(r"(\w+)\"", text[i:i + 200])
+            if not v:
+                continue
+            acts, end = [v.group(1)], i + v.end()
+        start = m.start()
+        while start > 0:  # the tag's own "<name", not a "<=" inside an earlier Razor expression
+            start = text.rfind("<", 0, start)
+            if start < 0 or text[start + 1:start + 2].isalpha():
+                break
+        close = text.find(">", end)
+        ctl = ASP_CTL.search(text[max(start, 0):close if close >= 0 else len(text)])
+        for a in acts:
+            yield (ctl.group(1) if ctl else None, a, m.start())
 
 
 def client_callers():
     """{(controller, action) lower: [file:line, ...]} of the URLs that scripts, views and forms name ('/Orders/Ship',
-    Url.Action("Ship", "Orders"), asp-action / asp-controller), comments blanked, copied libraries skipped; plus
+    Url.Action("Ship", "Orders"), asp-action with or without asp-controller), comments blanked, copied libraries skipped; plus
     {controller: [...]} for '/Orders' (the Index action). URLs built at run time from variables are not seen."""
     from _scan import vendored
     lib = vendored()
@@ -426,11 +457,12 @@ def client_callers():
             found.add((m.group(1).lower(), m.group(2).lower(), m.start()))
         for m in HELPER_URL.finditer(text):
             found.add((m.group(2).lower(), m.group(1).lower(), m.start()))
-        for m in TAG_URL.finditer(text):
-            act, ctl = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
-            found.add((ctl.lower(), act.lower(), m.start()))
         view = VIEW_OF.search(path)
-        if view and view.group(1).lower() != "shared":
+        own = view.group(1).lower() if view and view.group(1).lower() != "shared" else None
+        for ctl, act, pos in tag_actions(text):
+            if ctl or own:
+                found.add(((ctl or own).lower(), act.lower(), pos))
+        if own:
             for m in HELPER_ACT.finditer(text):
                 found.add((view.group(1).lower(), m.group(1).lower(), m.start()))
             for m in FORM_SELF.finditer(text):

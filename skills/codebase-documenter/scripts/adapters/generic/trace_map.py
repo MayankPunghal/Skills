@@ -274,8 +274,8 @@ def mark_routine_reach(db, method_entries):
     for ln in lines:
         if ln == "| Procedure | Called from | Found by | Database |":
             ln = "| Procedure | Called from | Found by | Database | Reached from an entry point |"
-        elif ln == "| --- | --- | --- | --- |":
-            ln = "| --- | --- | --- | --- | --- |"
+        elif ln == "| --- | --- | --- | --- |" and out and out[-1].endswith("| Reached from an entry point |"):
+            ln = "| --- | --- | --- | --- | --- |"  # only the routine tables: other 4-column tables keep their shape
         elif ln.startswith('| <a id="sp-'):
             aid = ln.split('"')[1]
             ln += " yes |" if flags.get(aid) else " **no** |"

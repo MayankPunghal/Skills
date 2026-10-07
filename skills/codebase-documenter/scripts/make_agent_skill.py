@@ -117,7 +117,10 @@ def main():
                          f"(`{docs}/reference/db-access.md` when present) for which code reaches which table or procedure.")
         db_graph_skill_note = db_graph_note
     if os.path.exists(os.path.join(docs, "reference", "db-postgres.md")):
-        tasks.append(f"| What converts to PostgreSQL automatically, what needs a rewrite, what has no equivalent | `{docs}/reference/db-postgres.md` |")
+        tasks.append(f"| What converts to PostgreSQL automatically, what needs a rewrite, what has no equivalent; schema migrations and "
+                     f"SQL Server features the code uses | `{docs}/reference/db-postgres.md` |")
+    elif os.path.exists(os.path.join(docs, "reference", "db-code-facts.md")):
+        tasks.append(f"| Schema migrations in the code; SQL Server features the code uses | `{docs}/reference/db-code-facts.md` |")
     if os.path.exists(os.path.join(docs, "reference", "dependencies.md")):
         tasks.append(f"| Which project depends on which, build / port order, package versions, licences, Windows-only packages | "
                      f"`{docs}/reference/dependencies.md` (data: `{docs}/agent/dependencies.json`) |")

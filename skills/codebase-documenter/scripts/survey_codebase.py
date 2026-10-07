@@ -289,7 +289,10 @@ def main():
     def comm_of(files):  # graph communities whose busiest files include these (paths relative to source root or workspace)
         want = {f.replace("\\", "/").lstrip("./") for f in files}
         def rank(c):  # position of the first matching file in the community's busiest-first list; -1 when none
-            return next((i for i, g in enumerate(c.get("files", [])) if any(g.replace("\\", "/").lstrip("./").endswith(w) for w in want)), -1)
+            def same(g, w):  # whole path segments: Controllers/X.cs is not AdminControllers/X.cs
+                g = g.replace("\\", "/").lstrip("./")
+                return g == w or g.endswith("/" + w)
+            return next((i for i, g in enumerate(c.get("files", [])) if any(same(g, w) for w in want)), -1)
         hits = [(rank(c), -c.get("size", 0), c["name"]) for c in comm]
         return [name for r, _, name in sorted(h for h in hits if h[0] >= 0)][:5]
     for x in feature:

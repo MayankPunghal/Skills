@@ -39,7 +39,7 @@ KNOWN_LIBS = {
     "bootstrap", "bootstrap-datepicker", "bootstrap-select", "popper", "lodash", "underscore", "handlebars", "mustache",
     "select2", "toastr", "sweetalert", "sweetalert2", "numeral", "summernote", "dropzone", "fullcalendar", "html2canvas",
     "jspdf", "raphael", "nprogress", "datatables", "jquery.datatables", "jquery.signalr", "highcharts", "highstock",
-    "chartjs-plugin-datalabels", "clipboard", "spin", "ladda", "pace", "jquery.slimscroll", "jquery.sparkline"}
+    "chartjs-plugin-datalabels", "ladda", "jquery.slimscroll", "jquery.sparkline"}  # not "spin", "pace", "clipboard": own code uses them
 MAX_ARG_CHARS = 24000  # Windows caps a command line at 32,767 characters; leave room for the rest of the graphify call
 
 

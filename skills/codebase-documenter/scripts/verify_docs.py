@@ -160,7 +160,8 @@ def comment_only_hosts(src):
                     raw = open(os.path.join(d, f), encoding="utf-8", errors="ignore").read()
                 except OSError:
                     continue
-                for c in re.findall(r"(?://|<!--|')[^\n]*", raw):
+                mark = r"(?:'|\bREM\b)" if f.lower().endswith(".vb") else r"(?://|<!--)"  # ' starts a comment in VB only
+                for c in re.findall(mark + r"[^\n]*", raw):
                     for m in FRAG_NEAR_SERVER.finditer(c):
                         anywhere.add(m.group(1))
 
