@@ -57,6 +57,8 @@ If both A and B could apply (code found, but nothing says where to install), ask
 
 ### 3. Install
 
+Modes A and B install the skill for one folder only: never copy it into the user-level skills folder (`~/.claude/skills/`), where it would appear in every session. Only mode C installs it there, and mode C always pins the docs root.
+
 **Mode A — into the code repository** (`REPO` = the folder containing {{markers_text}}):
 
 1. Copy the **contents** of `PKG/repo-kit/` into `REPO`, merging folders: `AGENTS.md`, `mkdocs.yml`, `codebase-docs.json` (the lookup reads the source markers from it), `docs/`, `.claude/skills/{{skill_name}}/`. Don't overwrite an existing `REPO/docs/` or `REPO/codebase-docs.json` that isn't these docs; if one exists, ask.
