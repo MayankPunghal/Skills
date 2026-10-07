@@ -138,7 +138,7 @@ def _direct(path, rel, stem, pkgs):
 
 def family_stems(folder, pkgs=()):
     """Stems of the script / style files in one folder that are library files on their own evidence (cached per folder)."""
-    key = os.path.abspath(folder)
+    key = (os.path.abspath(folder), frozenset(pkgs))  # one scan per folder and package set
     if key not in _family_cache:
         stems = set()
         try:
