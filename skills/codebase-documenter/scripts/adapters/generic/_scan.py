@@ -45,13 +45,31 @@ def read(p):
         return ""
 
 
+_KITS = []
+
+
+def kit_dirs():
+    """This skill's own output inside the source tree (the workspace, an installed docs kit): never scanned as project code."""
+    if not _KITS:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+        try:
+            import vendor_files
+            _KITS.append({d.lower() for d in vendor_files.docs_kit_dirs(ROOT)})
+        except Exception:  # never fail an adapter over this
+            _KITS.append(set())
+    return _KITS[0]
+
+
 def walk(exts=CODE_EXT, names=None, skip=None):
     """(relative path, absolute path) of source files with the given extensions (or exact / regex file names)."""
     skip = skip or SKIP
+    kits = kit_dirs()
     for d, dirs, files in os.walk(ROOT):
         r = rel(d)
         r = "" if r == "." else r
-        dirs[:] = [x for x in dirs if not skip.search(f"{r}/{x}".lstrip("/") + "/")]
+        dirs[:] = [x for x in dirs if not skip.search(f"{r}/{x}".lstrip("/") + "/")
+                   and f"{r}/{x}".lstrip("/").lower() not in kits]
         for f in sorted(files):
             p = f"{r}/{f}".lstrip("/")
             if skip.search(p):

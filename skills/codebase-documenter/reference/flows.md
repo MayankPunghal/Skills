@@ -42,7 +42,7 @@ The debugging questions ("what does this button call?", "what starts this method
 
 One flow = one business journey a BA would walk through (place an order, approve a refund, nightly settlement). Write one per important journey found during research; not one per method.
 
-1. Find the entry point (controller action, endpoint, job, message handler) in the research note or with `lookup.py`.
+1. Find the entry point (controller action, endpoint, job, message handler) in the research note or with `lookup.py`. Start from the screen, not from the action that sounds right: the UI map row or a search of the scripts for the button's URL names the action that runs today. An endpoint whose `endpoints.md` note says *no script, view or form in the repository names this URL* is not what a screen calls (old actions stay in the code after a script switches to a newer one); `build_site.py` prints a `WARNING` when a flow's start step points at such an action.
 2. `python <skill>/scripts/trace_flow.py <Class.Method> --depth 4` prints the call tree with parameters and file:line (`--up` for callers). Read only the methods whose role is unclear.
 3. `trace_flow.py <Class.Method> --draft <flow-id>` writes `docs/_src/workflows/flows/<flow-id>.flow.json` with one step per method. Then edit it into a business flow:
    - rewrite step texts in business language ("Checks the order is paid", not "LockStatusAsync");

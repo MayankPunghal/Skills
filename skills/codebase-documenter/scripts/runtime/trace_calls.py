@@ -5,6 +5,7 @@ Usage (run from the folder Claude Code / your editor is opened in, so printed pa
   python docs/_tools/trace_calls.py OrderService.Submit --up       # callers ("what breaks if I change this?")
   python docs/_tools/trace_calls.py OrderService.Submit --entry    # entry points that reach it ("how does a user get here?")
   python docs/_tools/trace_calls.py Submit --depth 2 --max 60
+  python docs/_tools/trace_calls.py OrderController               # a class: members other classes use, and the calling files
 
 Each line: name(parameters)  path:line. "↺" marks a method already shown above. A hop bound at run time shows how:
 "[di registration]", "[override]", "[message]", "[event]", "[method group]", "[background job]", "[redirect]" ...
@@ -107,6 +108,39 @@ def entries(agent_dir, m, target, where=lambda f, ln: f"{f}:{ln}"):
     return lines
 
 
+def owner(x):
+    return x["name"].rsplit(".", 1)[0] if "." in x["name"] else ""
+
+
+def class_usage(m, cls, limit, where=lambda f, ln: f"{f}:{ln}"):
+    """What other classes use of `cls`: each member called from outside it (most callers first) and the calling files.
+    The impact of moving or splitting a class (a controller used as a library, a god class) without ad-hoc scans."""
+    low = cls.lower()
+    mine = [a for a, x in m.items() if owner(x).lower() == low or owner(x).lower().endswith("." + low)]
+    if not mine:
+        return [f"no class {cls!r} in the method map (try lookup.py {cls} --kind class)"]
+    used, files, callers_all = [], {}, set()
+    for a in mine:
+        ext = [c for c in m[a].get("callers", []) if c in m and owner(m[c]).lower() != owner(m[a]).lower()]
+        if ext:
+            fs = {m[c]["file"] for c in ext}
+            used.append((len(ext), len(fs), a))
+            callers_all.update(ext)
+            for c in ext:
+                files[m[c]["file"]] = files.get(m[c]["file"], 0) + 1
+    x0 = m[mine[0]]
+    lines = [f"{owner(x0)} ({where(x0['file'], x0['line'])}): {len(mine)} methods; {len(used)} used from outside the class by "
+             f"{len(callers_all)} methods in {len(files)} files",
+             "Calls through an interface, reflection or a returned JsonResult read by property name are not counted: search for those too.",
+             "", "Members used from outside (callers, files):"]
+    for n, nf, a in sorted(used, key=lambda t: (-t[0], m[t[2]]["name"]))[:limit]:
+        lines.append(f"  {m[a]['name']}{params(m[a])}  {where(m[a]['file'], m[a]['line'])}  — {n} callers in {nf} files")
+    lines += ["", "Calling files (calls):"]
+    for f, n in sorted(files.items(), key=lambda kv: -kv[1])[:limit]:
+        lines.append(f"  {where(f, 1)}  — {n}")
+    return lines
+
+
 def pick(m, name):
     """The method for `name`, after printing the alternatives when the name is ambiguous."""
     hits = find(m, name)
@@ -126,6 +160,9 @@ def main():
     ap.add_argument("--depth", type=int, default=4)
     ap.add_argument("--up", action="store_true", help="callers instead of callees")
     ap.add_argument("--entry", action="store_true", help="entry points that reach the method")
+    ap.add_argument("--class", dest="cls", action="store_true",
+                    help="NAME is a class: list its members used from other classes and the calling files (also when NAME "
+                         "has no dot and names a class)")
     ap.add_argument("--max", type=int, default=120)
     ap.add_argument("--src", help="source root (see lookup.py)")
     a = ap.parse_args()
@@ -137,6 +174,9 @@ def main():
         return f"{lookup.rel(os.path.join(src, f)) if src else f}:{ln}"
     agent = os.path.join(BASE, "docs", "agent")
     m = load(agent)
+    if a.cls or ("." not in a.name and not a.entry and any(owner(x).lower() == a.name.lower() for x in m.values())):
+        print("\n".join(class_usage(m, a.name, a.max, where)))
+        return
     root = pick(m, a.name)
     print("\n".join(entries(agent, m, root, where) if a.entry else tree(m, root, a.depth, a.up, a.max, where)))
 

@@ -122,6 +122,17 @@ From a 2,000+ file ASP.NET MVC 5 + Web Forms app with ~1,000 stored procedures c
 - Mermaid syntax errors (a `;` in a sequence message) and Mermaid loaded from unpkg pass MkDocs silently: lint diagrams and check for remote scripts in `verify_docs.py`.
 - Long steps need progress lines and a lock: a silent 20-minute graph build looked hung, and a second build started in parallel corrupted the first.
 
+The same app documented again and then tested with a fresh agent (15 issues, all fixed in the skill). The agent's answers were good; the errors it found were in the docs:
+
+- **The documented journey was not the live one.** The Approve button's script function kept its old name but posted to a newer action (`…WithoutFactsheet`); the action the pages described had no caller left, and the browser step that built factsheets was commented out. Research had started from the controller. `endpoints.md` now marks every ASP.NET endpoint that no script, view or form names (comments blanked, same-controller helpers resolved from the view folder), and the flow adapter warns when a flow starts at one.
+- **Absence claims were wrong:** "no migrations" while `Migrations/` held 20 EF6 classes. The database reference now lists migration classes, so the statement has a script behind it.
+- **Counts included someone else's code.** 1,062 procedures, of which ~350 were called only from a batch application's sources copied into the tree; a database "the app reaches by three-part names" was named only there. The database reference now gives *Reached from an entry point* per procedure and the folders behind each SQL Server feature and database name.
+- **Partial addresses leaked.** Comments named servers by the tail of their IP address; pages repeated the tail and the secret scan, which matched whole values, passed. `verify_docs.py` now collects addresses and address tails found only in comments and fails on them.
+- **Notes outlived corrections.** The research note kept "regenerated if stale" after the page was fixed, and the project skill listed notes as "verified". Corrections go into the note in the same step, and the project skill ranks pages above notes.
+- **The skill's own output was scanned as code.** Installing the docs kit into the repository put `docs/_tools/*.py` (and the workspace `.codebase-docs/`) under the source root; adapters, the survey and the graph picked them up (`DOCS_SOURCE_ROOT` appeared as the app's configuration). `vendor_files.docs_kit_dirs()` excludes both everywhere.
+- Smaller scanner gaps: actions after a nested class in a controller were cut off (class bodies are now brace-matched), PostgreSQL procedure names written as `"\"schema\".\"name\""` were missed, commented-out `GetEnvironmentVariable` lines counted as config readers, `[[page:../x.md]]` passed the tag check but broke links, the survey proposed a whole-`Controllers` area beside the per-controller ones and no foundation area, and `moment-with-locales.js` (no banner) counted as app code.
+- Agents fell back to ad-hoc regex scans for "what breaks if I split this class" and "what blocks a PostgreSQL move": `trace_calls.py <Class>` and the *SQL Server features used from the code* table answer both.
+
 ## Working style
 
 - No progress chatter; one final summary. Ask only real decisions, once.

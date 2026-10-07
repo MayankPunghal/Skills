@@ -15,7 +15,8 @@ Tags (text after | is optional display text):
   [[role:Administrator]]          -> Role anchor (from a permissions adapter)
   [[js:app.js]]                   -> Custom JavaScript
   [[rpt:Sales_Summary]]           -> SSRS report
-  [[page:security/findings.md#anchor|text]] -> another documentation page (checked to exist)
+  [[page:security/findings.md#anchor|text]] -> another documentation page (checked to exist; the path is from the docs root,
+                                     a leading ../ is dropped)
   [[n:db-access.sites]]           -> a headline number from docs/agent/stats.json (written by the adapters), so a page
                                      never carries a count copied from a generated page that goes stale on the next build
 
@@ -201,6 +202,8 @@ def main():
                     return f"{v:,}" if isinstance(v, int) else str(v)
                 if kind == "page":
                     path, _, frag = target.partition("#")
+                    # page targets are docs-root paths: a leading ../ ./ or / would be applied twice in the written link
+                    path = re.sub(r"^(?:\.{1,2}/|/)+", "", path.strip().replace("\\", "/"))
                     if not os.path.exists(os.path.join(SRC, path)) and not os.path.exists(os.path.join(DOCS, path)):
                         unresolved["page"].add(f"{target} (in {relp})")
                     return f"[{label or path}]({to_root}{path}{'#' + frag if frag else ''})"

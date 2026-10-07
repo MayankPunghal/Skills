@@ -593,8 +593,50 @@ def code_only_page(found, have_ddl):
                                           "call_sites": calls[:50], "file": calls[0]["file"], "line": calls[0]["line"],
                                           "database": db if db != "—" else "", "page": "db-code-routines.md",
                                           "anchor": slug("sp", r["name"])})
+    out += code_db_sections()
     write("db-code-routines.md", "\n".join(out) + "\n")
     return len(rows)
+
+
+def code_db_sections():
+    """Schema migrations kept in the code, and SQL Server features the C# code depends on (what a PostgreSQL move must
+    replace). Both are found mechanically, so a page never says "no migrations" or misses a table-valued parameter."""
+    import code_routines
+    out = []
+    migs = code_routines.migrations(ROOT)
+    DB_EXPORT["migrations"] = migs
+    stat("db-migrations", migrations=sum(1 for m in migs if "snapshot" not in m["kind"]))
+    out += ["", anchor("migrations"), "", "## Schema migrations in the code", "", BACK, ""]
+    if migs:
+        kinds = Counter(m["kind"] for m in migs)
+        out += [f"{len(migs)} migration classes ({', '.join(f'{k} {v}' for k, v in kinds.most_common())}). They describe the part of "
+                "the schema the ORM owns (often only the identity tables), not necessarily the whole database.", "",
+                "| Migration | Kind | Id | Source |", "| --- | --- | --- | --- |"]
+        out += [f"| `{md(m['name'])}` | {m['kind']} | {md(m['id']) or '—'} | `{m['file']}:{m['line']}` |" for m in migs]
+    else:
+        out += ["No EF6, EF Core or FluentMigrator migration class in the code."]
+    feats = code_routines.sql_server_features(ROOT)
+    DB_EXPORT["sql_server_features"] = feats
+    stat("db-features", **{re.sub(r"[^a-z0-9]+", "_", k.lower()).strip("_"): len(v["sites"]) for k, v in feats.items()})
+    out += ["", anchor("sql-server-features"), "", "## SQL Server features used from the code", "", BACK, "",
+            "C# / VB uses of SQL Server-only features, found by API name, `db.dbo.object` names in strings, and `DataTable` "
+            "values passed as parameters (table-valued parameters). Each needs a replacement in a PostgreSQL move; counts are a "
+            "floor (a helper that hides the call counts once). **Where** gives the folders: code copied from another "
+            "application (a batch job's sources kept beside the web app) is counted too, so check it before calling a use the app's.", ""]
+    if feats:
+        out += ["| Feature | Uses | Where (folder: uses) | First sites | PostgreSQL needs |", "| --- | ---: | --- | --- | --- |"]
+        for name, v in sorted(feats.items(), key=lambda kv: -len(kv[1]["sites"])):
+            sites = v["sites"]
+            first = ", ".join(f"`{s}`" for s in sites[:3]) + (f" +{len(sites) - 3} more" if len(sites) > 3 else "")
+            where = ", ".join(f"`{f}` {n}" for f, n in sorted(v["by_folder"].items(), key=lambda kv: -kv[1])[:5])
+            if v.get("names"):
+                where += "<br>databases: " + "; ".join(
+                    f"`{md(d)}` {sum(per.values())} (" + ", ".join(f"`{f}` {n}" for f, n in sorted(per.items(), key=lambda kv: -kv[1])) + ")"
+                    for d, per in sorted(v["names"].items(), key=lambda kv: -sum(kv[1].values())))
+            out.append(f"| {name} | {len(sites)} | {where} | {first} | {v['hint']} |")
+    else:
+        out += ["None found."]
+    return out
 
 
 def main():

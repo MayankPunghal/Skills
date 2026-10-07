@@ -121,6 +121,68 @@ def strip_comments(text, vb=False):
     return "".join(out)
 
 
+def code_only(text):
+    """C# text with comments and the contents of string / char literals blanked (offsets and newlines kept), so braces and
+    keywords inside "{0}" or '{' never count as code."""
+    out = list(strip_comments(text))
+    start = 0
+    for line in "".join(out).split("\n"):
+        for a, b in string_spans(line):
+            for k in range(start + a, start + b):
+                out[k] = " "
+        start += len(line) + 1
+    return "".join(out)
+
+
+def block_close(code, open_pos):
+    """Position of the } that closes the { at open_pos in text from code_only(); len(code) when it never closes."""
+    depth = 0
+    for k in range(open_pos, len(code)):
+        ch = code[k]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return k
+    return len(code)
+
+
+def strip_web_comments(text):
+    """JavaScript / TypeScript / Razor / HTML text with comments blanked (// and /* */ outside '..', "..", `..` strings;
+    <!-- -->; Razor @* *@), offsets and newlines kept. A URL left in a comment ('/Orders/OldAction') is not a caller."""
+    out, i, n = list(text), 0, len(text)
+
+    def blank(a, b):
+        for k in range(a, b):
+            if out[k] != "\n":
+                out[k] = " "
+    while i < n:
+        c = text[i]
+        if c in "'\"`":
+            j = i + 1
+            while j < n and text[j] != c and (c == "`" or text[j] != "\n"):
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+            continue
+        for start, end in (("<!--", "-->"), ("@*", "*@"), ("/*", "*/")):
+            if text.startswith(start, i):
+                j = text.find(end, i + len(start))
+                j = n if j < 0 else j + len(end)
+                blank(i, j)
+                i = j
+                break
+        else:
+            if text.startswith("//", i) and (i == 0 or text[i - 1] != ":"):  # not the // of http://
+                j = text.find("\n", i)
+                j = n if j < 0 else j
+                blank(i, j)
+                i = j
+            else:
+                i += 1
+    return "".join(out)
+
+
 def code_match(rx, line, vb=False):
     """True when at least one match of rx starts outside a string literal (a pattern that includes the quote starts at it)."""
     spans = None

@@ -18,7 +18,7 @@ import shutil
 from collections import Counter, defaultdict
 
 from _common import load_config, tick, utf8_stdout, write
-from vendor_files import configured_dirs, context, is_vendored
+from vendor_files import configured_dirs, context, docs_kit_dirs, is_vendored
 
 SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build", "target", "__pycache__", ".venv", "venv",
         ".idea", "graphify-out", "site", "publish", ".next", ".nuxt", "vendor", "coverage"}
@@ -60,6 +60,11 @@ ENGINE_MARKERS = [("SQL Server", ("System.Data.SqlClient", "Microsoft.Data.SqlCl
                   ("ASP.NET MVC 5", ("Microsoft.AspNet.Mvc", "System.Web.Mvc")), ("ASP.NET Web API 2", ("Microsoft.AspNet.WebApi",)),
                   ("SignalR", ("Microsoft.AspNet.SignalR", "Microsoft.AspNetCore.SignalR"))]
 MANIFEST = re.compile(r"(?i)\.(cs|vb|fs)proj$|^packages\.config$|^(web|app)\.config$|^appsettings.*\.json$|^Directory\.Packages\.props$")
+# cross-cutting files that form the foundation area (start-up, hosting, filters, authorisation, configuration)
+FOUNDATION_DIR = re.compile(r"(?i)^(?:.*/)?(?:App_Start|Filters|Authorization|Authorisation|Middleware|Middlewares|Infrastructure|Startup|Configuration)/")
+FOUNDATION = re.compile(r"(?i)(?:^|/)(?:App_Start|Filters|Authorization|Authorisation|Middleware|Middlewares|Infrastructure|Startup|Configuration)/"
+                        r"|(?:^|/)(?:Global\.asax\.(?:cs|vb)|Startup(?:\.\w+)?\.(?:cs|vb)|Program\.(?:cs|vb)|"
+                        r"\w*(?:Filter|Attribute|Middleware)\.(?:cs|vb))$")
 BIG_CONTROLLER = 3000  # lines: research it as several areas (by action group)
 MVC_FEATURE_DIRS = ("Views/{stem}", "Scripts/{stem}*", "Scripts/{stem}/", "Models/{stem}*", "ViewModels/{stem}*", "Content/{stem}*")
 
@@ -196,11 +201,15 @@ def main():
                 line_of[relp] = n
                 largest.append((n, relp))
     conf = configured_dirs()
+    kits = [k for k in docs_kit_dirs(src, SKIP) if k not in conf]
     vendor_lines = ["## Vendored code (not counted, not graphed)", "",
-                    f"{vend_files:,} files, {vend_lines:,} lines of copied third-party libraries "
-                    f"({len(conf)} configured folder(s) in graph.vendor_dirs, {len(vdirs) - len(conf)} library folder(s) detected).", ""]
+                    f"{vend_files:,} files, {vend_lines:,} lines of copied third-party libraries and documentation output "
+                    f"({len(conf)} configured folder(s) in graph.vendor_dirs, {len(kits)} documentation folder(s) of this skill, "
+                    f"{len(vdirs) - len(conf) - len(kits)} library folder(s) detected).", ""]
     if vdirs:
-        vendor_lines += ["| Folder | Source |", "| --- | --- |"] + [f"| `{x}` | {'graph.vendor_dirs' if x in conf else 'detected (versioned name + licence banner)'} |" for x in vdirs]
+        vendor_lines += ["| Folder | Source |", "| --- | --- |"] + [
+            f"| `{x}` | {'graph.vendor_dirs' if x in conf else 'documentation workspace or installed docs kit' if x in kits else 'detected (versioned name + licence banner)'} |"
+            for x in vdirs]
     suspects = [(d, n) for d, n in all_by_dir.most_common(40) if n and vend_by_dir.get(d, 0) < n * 0.5
                 and re.search(r"(?i)(^|/)(scripts|content|js|lib|libs|assets|plugins|static)(/|$)", d) and n > 5000]
     if suspects:
@@ -276,10 +285,27 @@ def main():
     # research areas: MVC controller features first, then top folders by code volume (vendored code never counts)
     areas = []
     feature, claimed = mvc_areas(src, files_by_dir, line_of, vendored)
+
+    def comm_of(files):  # graph communities whose busiest files include these (paths relative to source root or workspace)
+        want = {f.replace("\\", "/").lstrip("./") for f in files}
+        def rank(c):  # position of the first matching file in the community's busiest-first list; -1 when none
+            return next((i for i, g in enumerate(c.get("files", [])) if any(g.replace("\\", "/").lstrip("./").endswith(w) for w in want)), -1)
+        hits = [(rank(c), -c.get("size", 0), c["name"]) for c in comm]
+        return [name for r, _, name in sorted(h for h in hits if h[0] >= 0)][:5]
+    for x in feature:
+        x["communities"] = comm_of(x["paths"][:1])  # the controller is the feature's core
+    # foundation: start-up, filters, authorisation, configuration and other cross-cutting files every feature relies on
+    found = sorted(f for f in line_of if f not in claimed and FOUNDATION.search(f))
+    if found:
+        fpaths = sorted({(m.group(0).rstrip("/") if (m := FOUNDATION_DIR.search(f)) else f) for f in found})
+        areas.append({"id": None, "title": "Foundation", "paths": fpaths, "code_lines": sum(line_of[f] for f in found),
+                      "communities": comm_of(found), "kind": "foundation (cross-cutting)",
+                      "note": "start-up and hosting, filters and authorisation, configuration readers, base classes: read first"})
+        claimed = claimed | set(found)
     claimed_lines = Counter()
-    for relp in claimed:
-        parts = relp.split("/")
-        claimed_lines["/".join(parts[:2]) if len(parts) > 1 else "."] += line_of.get(relp, 0)
+    for relp in claimed:  # keyed like dir_lines: the file's folder, two levels deep
+        parts = relp.split("/")[:-1]
+        claimed_lines["/".join(parts[:2]) if parts else "."] += line_of.get(relp, 0)
     total_lines = sum(dir_lines.values())
     floor = 200 if total_lines > 20000 else 0  # small codebases: every folder with code is an area
     areas += [x for x in feature if x["code_lines"] > (floor // 4)]
@@ -303,9 +329,9 @@ def main():
         area = {"id": None, "title": name.replace("_", " ").title() if name.islower() else name.replace("_", " "),
                 "paths": [d], "code_lines": rest, "communities": cs}
         if claimed_lines.get(d):
-            area["kind"] = "foundation (cross-cutting)"
-            area["note"] = (f"the folder minus the {sum(1 for x in feature if x['paths'][0].startswith(d + '/'))} controller features "
-                            "listed separately: startup, filters, shared helpers, base classes, data access")
+            area["kind"] = "shared (rest of a folder)"
+            area["note"] = (f"the folder minus the files already in the feature and foundation areas "
+                            f"({sum(1 for x in feature if x['paths'][0].startswith(d + '/'))} controller features): shared helpers, base classes, data access")
         areas.append(area)
     for i, ar in enumerate(areas):
         ar["id"] = f"{10 + i * 5}-{re.sub(r'[^a-z0-9]+', '-', ar['title'].lower()).strip('-')}"

@@ -10,3 +10,5 @@
 8. Update `document-control.md` (date, scope of the update).
 
 Automate the cheap part: `code_graph.py hook` installs git hooks that keep the graph current on every commit.
+
+When the docs kit was installed into the documented repository (mode A: `docs/_tools`, `docs/agent`, `codebase-docs.json` at the repository root) or the workspace sits inside it (`.codebase-docs`), the graph, the survey and every adapter skip those folders by themselves (`vendor_files.docs_kit_dirs`): no `graph.vendor_dirs` entry is needed. Update the workspace's copy, then reinstall the repo-kit over the root copy; never edit both.

@@ -98,7 +98,8 @@ def main():
                      f"(data: {', '.join(db_data)}; parsed with Microsoft's T-SQL parser) |")
     elif code_only and db_pages:
         tasks.append(f"| Which stored procedures the code runs and from where (definitions are not in the repository: "
-                     f"parameters and tables are unknown) | {', '.join(db_pages)}" + (f" (data: {', '.join(db_data)})" if db_data else "") + " |")
+                     f"parameters and tables are unknown); which ones an entry point reaches; schema migrations and SQL Server "
+                     f"features the code uses | {', '.join(db_pages)}" + (f" (data: {', '.join(db_data)})" if db_data else "") + " |")
     if graph_objects:
         db_graph_note = ("Database objects are graph nodes too (parsed SQL): `graphify affected \"<table or procedure>\"` lists the "
                          "routines and C# methods that read, write or run it.")

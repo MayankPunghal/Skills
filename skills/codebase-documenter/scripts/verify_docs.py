@@ -112,6 +112,70 @@ def config_secret_values(src):
     return {v for v in vals if len(v) >= 6 and not re.fullmatch(r"(?i)true|false|\d+|none|null|\$\{.*\}|%.*%|<.*>", v)}
 
 
+IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+CONN_HOST = re.compile(r"(?i)\b(?:data source|server|host|address)\s*=\s*([^;\"'<>\s]{3,})")
+# the tail of a server address (".12" or ".3.12"): it identifies the server as well as the whole address
+FRAGMENT = re.compile(r"\.\d{1,3}(?:\.\d{1,3})?")
+SERVER_WORD = r"(?:dev\w*|prod\w*|test\w*|server|database|db|sql|host|box|machine)"
+FRAG_NEAR_SERVER = re.compile(r"(?i)(?<![\w.])(\.\d{1,3}(?:\.\d{1,3})?)(?![\w.])(?=[^\n]{0,25}?\b" + SERVER_WORD + r"\b)")
+IP_FRAGMENT = re.compile(r"[\"'“‘(]\.\d{1,3}(?:\.\d{1,3})?[\"'”’)]")
+
+
+def comment_only_hosts(src):
+    """IP addresses and connection-string hosts that occur in the source only inside comments (commented-out connection
+    strings, old server notes). Live hosts belong in the network reference; these are leftovers that identify servers and
+    must not be copied into the docs, not even in part."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from code_text import strip_comments, strip_web_comments
+    from vendor_files import docs_kit_dirs, under
+    kits = docs_kit_dirs(src)
+    live, anywhere = set(), set()
+    for d, dirs, files in os.walk(src):
+        dirs[:] = [x for x in dirs if x not in {"bin", "obj", "node_modules", ".git", "packages"} and not x.startswith(".")
+                   and not under(os.path.relpath(os.path.join(d, x), src).replace("\\", "/"), kits)]
+        for f in files:
+            low = f.lower()
+            if not low.endswith((".cs", ".vb", ".config", ".xml", ".json", ".js", ".ts", ".cshtml", ".aspx", ".py", ".java")):
+                continue
+            try:
+                raw = open(os.path.join(d, f), encoding="utf-8", errors="ignore").read()
+            except OSError:
+                continue
+            if not (IPV4.search(raw) or CONN_HOST.search(raw)):
+                continue
+            code = (strip_comments(raw, vb=low.endswith(".vb")) if low.endswith((".cs", ".vb", ".java"))
+                    else strip_web_comments(raw) if low.endswith((".config", ".xml", ".js", ".ts", ".cshtml", ".aspx")) else raw)
+            for rx in (IPV4, CONN_HOST):
+                for m in rx.finditer(raw):
+                    anywhere.add(m.group(m.lastindex or 0))
+                for m in rx.finditer(code):
+                    live.add(m.group(m.lastindex or 0))
+    # comments that name a server by the tail of its address ("// .NN dev server", "call to .NN database")
+    for d, dirs, files in os.walk(src):
+        dirs[:] = [x for x in dirs if x not in {"bin", "obj", "node_modules", ".git", "packages"} and not x.startswith(".")
+                   and not under(os.path.relpath(os.path.join(d, x), src).replace("\\", "/"), kits)]
+        for f in files:
+            if f.lower().endswith((".cs", ".vb", ".config", ".java")):
+                try:
+                    raw = open(os.path.join(d, f), encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    continue
+                for c in re.findall(r"(?://|<!--|')[^\n]*", raw):
+                    for m in FRAG_NEAR_SERVER.finditer(c):
+                        anywhere.add(m.group(1))
+
+    def server_like(h):
+        if FRAGMENT.fullmatch(h):
+            return True
+        if re.fullmatch(r"(?i)localhost|127\.0\.0\.1|\.|\(local\)|\(localdb\).*|\{.*\}|%.*%|\$.*", h):
+            return False
+        if IPV4.fullmatch(h):  # 4.0.0.0 and 1.2.3.4 are assembly versions; addresses start at 10.
+            parts = [int(x) for x in h.split(".")]
+            return parts[0] >= 10 and max(parts) <= 255
+        return True
+    return {h for h in anywhere - live if server_like(h)}
+
+
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
@@ -151,6 +215,15 @@ def main():
     pages = [p for p in glob.glob(os.path.join(docs, "**", "*.md"), recursive=True) if f"{os.sep}_tools{os.sep}" not in p]
     pages += glob.glob(os.path.join(docs, "**", "*.jsonl"), recursive=True) + glob.glob(os.path.join(docs, "llms.txt"))
     values = config_secret_values(cfg["source_root"]) if os.path.isdir(cfg["source_root"]) else set()
+    hosts = comment_only_hosts(cfg["source_root"]) if os.path.isdir(cfg["source_root"]) else set()
+    tails = {}  # ".82" / ".1.82" -> the address it ends (a quoted tail identifies the server as well as the whole address)
+    for h in hosts:
+        if IPV4.fullmatch(h):
+            o = h.split(".")
+            tails["." + o[3]] = tails["." + ".".join(o[2:])] = h
+        elif FRAGMENT.fullmatch(h):
+            tails[h] = h
+    hosts = {h for h in hosts if not FRAGMENT.fullmatch(h)}
     for p in pages:
         t = open(p, encoding="utf-8", errors="ignore").read()
         for pat, label in SECRET_PATTERNS:
@@ -159,7 +232,16 @@ def main():
         for v in values:
             if v in t:
                 hits.append(f"{os.path.relpath(p)}: a secret VALUE from the source config files")
-    results.append(("no secrets in docs", not hits, f"{len(hits)} hits" + (": " + "; ".join(sorted(set(hits))[:6]) if hits else f" (checked {len(values)} config secret values + {len(SECRET_PATTERNS)} patterns)")))
+        for h in hosts:
+            if re.search(r"(?<![\w.])" + re.escape(h) + r"(?![\w])", t):
+                hits.append(f"{os.path.relpath(p)}: a server address found in the source only inside comments")
+        frags = [m.group(0)[1:-1] for m in IP_FRAGMENT.finditer(t)] + [m.group(1) for m in FRAG_NEAR_SERVER.finditer(t)]
+        for fr in frags:
+            if fr in tails:
+                hits.append(f"{os.path.relpath(p)}: part of a server address found only in source comments (describe the server, "
+                            "give no part of its address)")
+    results.append(("no secrets in docs", not hits, f"{len(hits)} hits" + (": " + "; ".join(sorted(set(hits))[:6]) if hits else
+                    f" (checked {len(values)} config secret values, {len(hosts)} comment-only server addresses + {len(SECRET_PATTERNS)} patterns)")))
 
     prog = os.path.join(docs, "_notes", "PROGRESS.md")
     if os.path.exists(prog):
