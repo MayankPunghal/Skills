@@ -82,18 +82,48 @@ def _code(f):
     return _CODE[f]
 
 
+_PARTIALS = {}
+
+
+def partial_files(name):
+    """Source files (relative to the source root) declaring `partial class|struct|record <name>`."""
+    if not _PARTIALS:
+        _PARTIALS[None] = []
+        root = CFG.get("source_root", ".")
+        rx = re.compile(r"\bpartial\s+(?:class|struct|record)\s+(\w+)")
+        for d, dirs, files in os.walk(root):
+            dirs[:] = [x for x in dirs if not x.startswith(".") and not SKIP_PATH.search(norm(os.path.relpath(os.path.join(d, x), root).replace("\\", "/")) + "/")]
+            for fn in files:
+                if fn.endswith(".cs") and not fn.endswith(".designer.cs"):
+                    r = os.path.relpath(os.path.join(d, fn), root).replace("\\", "/")
+                    raw, code = _code(r)
+                    if "partial" in code:
+                        for m in rx.finditer(code):
+                            _PARTIALS.setdefault(m.group(1), []).append(r)
+    return sorted(set(_PARTIALS.get(name, [])))
+
+
 def defaults_of(name, f, ln):
     """Fixed values a C# class sets ["Member = value (:line)"]: assignments in its constructors, property / field initializers
-    and constants with number or true/false values. Business rules such as a 21-day trial or a 30-minute timeout often live
-    only there, out of reach of the method map (graphify has no constructor nodes)."""
+    and constants with number or true/false values, from every part of a partial class. Business rules such as a 21-day trial
+    or a 30-minute timeout often live only there, out of reach of the method map (graphify has no constructor nodes)."""
     if not f.endswith(".cs") or not ln:
         return []
+    out = _defaults_in(name, f, ln, "")
+    for other in partial_files(name):
+        if other != f:
+            out += [x for x in _defaults_in(name, other, 0, other.rsplit("/", 1)[-1]) if x not in out]
+    return out[:MAX_DEFAULTS]
+
+
+def _defaults_in(name, f, ln, label):
+    """Values set by the class body in one file; label is "" for the graph node's own file, else the file name shown."""
     raw, code = _code(f)
     if not code:
         return []
     starts = [0] + [k + 1 for k, ch in enumerate(code) if ch == "\n"]
     head = re.compile(r"\b(?:class|struct|record)\s+" + re.escape(name) + r"\b[^{;]*\{")
-    m = head.search(code, starts[min(ln, len(starts)) - 1] if ln <= len(starts) else 0) or head.search(code)
+    m = (head.search(code, starts[min(ln, len(starts)) - 1]) if 0 < ln <= len(starts) else None) or head.search(code)
     if not m:
         return []
     o = m.end() - 1
@@ -110,7 +140,7 @@ def defaults_of(name, f, ln):
         if '"' in val or "'" in val or not SHOWN_VALUE.search(val) or re.match(r"new\b(?!\s*(?:DateTime|DateTimeOffset|TimeSpan)\s*\()", val) or len(val) > 70:
             return
         line = code.count("\n", 0, o + 1 + at) + 1
-        item = f"{member} = {val} (:{line})"
+        item = f"{member} = {val} ({label}:{line})"
         if item not in out:
             out.append(item)
     for cm in re.finditer(r"(?:^|[;{}\]\s])(?:(?:public|protected|internal|private|static)\s+)*" + re.escape(name)
@@ -122,7 +152,7 @@ def defaults_of(name, f, ln):
         keep(pm.group(1), pm.start(2), pm.end(2), pm.start(1))
     for km in re.finditer(r"\bconst\s+[\w.<>?]+\s+([A-Za-z_]\w*)\s*=\s*([^;]+);", body):
         keep(km.group(1), km.start(2), km.end(2), km.start(1))
-    return out[:MAX_DEFAULTS]
+    return out
 
 
 def main():

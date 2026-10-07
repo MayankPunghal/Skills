@@ -618,7 +618,10 @@ def prepass(files):
         t = strip_comments(read(full))
         cls = list(CS_CLASS.finditer(t))
         for k, m in enumerate(cls):
-            if CSRF_NAME.search(m.group(2)):  # the project's own anti-forgery filter; does it look at the HTTP verb?
+            # the project's own anti-forgery filter (named like one AND an attribute or filter type, so a CsrfTokenService
+            # does not count); does it look at the HTTP verb?
+            filterish = m.group(2).endswith("Attribute") or re.search(r"\w*(?:Attribute|Filter)\b", m.group(3) or "")
+            if CSRF_NAME.search(m.group(2)) and filterish:
                 n = m.group(2).removesuffix("Attribute").lower()
                 CSRF_ATTRS.add(n)
                 body = t[m.end():cls[k + 1].start() if k + 1 < len(cls) else len(t)]

@@ -100,26 +100,59 @@ SCRIPT_CALLS = ((r"fetch\(\s*" + PREFIX + r"([`'\"])(.+?)\1(?:\s*,\s*\{[^}]*?met
                 (r"\$\.(get|post|getJSON)\(\s*" + PREFIX + r"(['\"`])(.+?)\2", 1, 3),
                 (r"\bhttp\.(get|post|put|delete|patch)\s*(?:<[^>()]*>)?\(\s*" + PREFIX + r"([`'\"])(.+?)\2", 1, 3))
 AJAX_URL = re.compile(r"\burl\s*:\s*" + PREFIX + r"(['\"`])(.+?)\1")
-AJAX_VERB = re.compile(r"\b(?:type|method)\s*:\s*['\"](\w+)['\"]")
+AJAX_VERB = re.compile(r"\b(?:type|method)\s*:\s*['\"]([^'\"\n]*)['\"]")
+
+
+def js_mask(text):
+    """Script text with the contents of string / template literals and comments blanked (quotes, offsets and newlines kept),
+    so a brace inside '{id}' or a comment never counts when matching the braces of a $.ajax({...}) object."""
+    out, k, n = list(text), 0, len(text)
+    while k < n:
+        ch = text[k]
+        if ch in "'\"`":
+            j = k + 1
+            while j < n and text[j] != ch and not (text[j] == "\n" and ch != "`"):
+                j += 2 if text[j] == "\\" else 1
+            for x in range(k + 1, min(j, n)):
+                if out[x] != "\n":
+                    out[x] = " "
+            k = j + 1
+        elif text.startswith("//", k):
+            j = text.find("\n", k)
+            j = n if j < 0 else j
+            out[k:j] = " " * (j - k)
+            k = j
+        elif text.startswith("/*", k):
+            j = text.find("*/", k + 2)
+            j = n if j < 0 else j + 2
+            out[k:j] = [c if c == "\n" else " " for c in text[k:j]]
+            k = j
+        else:
+            k += 1
+    return "".join(out)
 
 
 def script_calls(text):
     """[(offset, verb or None, url)] of the HTTP calls a script makes. $.ajax({...}) reads url and type / method in either
-    order within the call's object (nested data: {...} and success: function () {...} do not end it)."""
+    order within the call's object (nested data: {...} and success: function () {...} do not end it; braces inside strings
+    and comments do not count)."""
     out = [(m.start(), m.group(vg), m.group(ug)) for rx, vg, ug in SCRIPT_CALLS for m in re.finditer(rx, text, re.S)]
+    mask = None
     for m in re.finditer(r"\$\.ajax\(\s*\{", text):
+        mask = mask if mask is not None else js_mask(text)
+        if mask[m.start()] == " ":  # the call itself sits in a comment or a string
+            continue
         depth, k = 1, m.end()
-        while depth and k < len(text) and k - m.end() < 4000:
-            depth += (text[k] == "{") - (text[k] == "}")
+        while depth and k < len(mask) and k - m.end() < 4000:
+            depth += (mask[k] == "{") - (mask[k] == "}")
             k += 1
-        obj = text[m.end():k]
-        top = re.sub(r"\{[^{}]*\}", lambda b: " " * len(b.group(0)), obj)  # keys of nested objects are not the call's
-        for _ in range(3):
+        obj, top = text[m.end():k], mask[m.end():k]
+        for _ in range(4):  # keys of nested objects are not the call's
             top = re.sub(r"\{[^{}]*\}", lambda b: " " * len(b.group(0)), top)
         u = AJAX_URL.search(top)
         if u:
             v = AJAX_VERB.search(top)
-            out.append((m.start(), v.group(1) if v else None, obj[u.start(2):u.end(2)]))
+            out.append((m.start(), obj[v.start(1):v.end(1)] if v else None, obj[u.start(2):u.end(2)]))
     return sorted(out)
 
 
