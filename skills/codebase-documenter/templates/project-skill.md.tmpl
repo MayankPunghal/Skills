@@ -14,6 +14,7 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 2. **Source root**: `lookup.py` finds it itself (`--src`, `DOCS_SOURCE_ROOT`, `codebase-docs.json`, nearby folders) and prints `source root:` first. If it prints `NOT FOUND` and you know where the code is, pass `--src <path>`.
 3. **No source available**: answer from the docs, cite every claim, say once that answers are not verified against current code and that source line numbers need the code. Still give source paths. Don't block.
 4. If `graphify-out/graph.json` exists next to the source or docs, graphify is available (Workflow step 5).
+5. **Python:** the commands below say `python`. If it is not found (on Windows it may open the Microsoft Store), use `py -3` or `python3`, whichever answers, for the rest of the session.
 
 ## Resources (relative to the docs root)
 
@@ -24,10 +25,10 @@ description: Answer questions about and plan changes to {{product}} ({{code_name
 | Entity index `{kind, name, file, anchor, summary}` | `{{docs_dir}}/agent/entities.jsonl` |
 | Lookup | `python {{docs_dir}}/_tools/lookup.py <Name> [--kind K] [--list] [--limit N] [--fuzzy] [--find TEXT] [--src PATH] [--no-code] [--code-lines N] [--no-related]` (an exact name shows only itself; `--fuzzy` adds partial matches; `SEC-02` finds a finding; the first 3 matches also print their code; the first match also prints its connections, related items and the findings that name it) |
 | Search by topic | `python {{docs_dir}}/_tools/lookup.py --search "<question in words>"` — ranked docs sections and code items with `doc:` / `src:` links, when you know the topic but not the name (several words with no item of that name do the same) |
-| Call trees | `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry] [--depth N]` — callees, callers (`--up`: what breaks if it changes) or the endpoints, screens and jobs that reach it with one call path each (`--entry`) |
+| Call trees | `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry] [--depth N]` — callees, callers (`--up`: what breaks if it changes) or the endpoints, screens and jobs that reach it with one call path each (`--entry`); `trace_calls.py <Class>` lists the members other classes use and the calling files |
 | Narrative pages | `{{docs_dir}}/<section>/*.md` (getting-started, architecture, modules, workflows, integrations, data, shared, operations, security, appendices) |
 | Reference pages (every item, anchored) | `{{docs_dir}}/reference/*.md` |
-| Research notes (dense, verified) | `{{docs_dir}}/_notes/*.md` |
+| Research notes (working notes written before the pages) | `{{docs_dir}}/_notes/*.md` — dense, but below the pages: where a note and a page disagree, the page wins; check the code before relying on either |
 | Code graph (if built) | `graphify-out/graph.json`, `graphify-out/wiki/index.md` |
 
 Lookup kinds: {{kinds}}.
@@ -41,6 +42,8 @@ Lookup kinds: {{kinds}}.
 | How does `<feature>` work | `--search`, then the module or workflow page, then `trace_calls.py <entry method>` | quote each step's code |
 | How does a user get to / what starts `<method>` | `trace_calls.py <method> --entry` | name the screens and buttons |
 | What breaks if I change `<X>` | `trace_calls.py <method> --up`, the reference "used by" lists, `graphify affected` | list callers, screens, jobs, tables |
+| What breaks if I move / split class `<C>` | `trace_calls.py <C>` (members other classes use, with callers and calling files) | then `--up` on the most used members; search for reflection and interface calls it cannot count |
+| What blocks a database move (e.g. SQL Server → PostgreSQL) | the database reference: stored procedures (with *Reached from an entry point*), *SQL Server features used from the code*, *Schema migrations in the code* | count only what the application reaches; name the folders of the rest |
 | Who reads / writes table `<T>` | `lookup.py <T> --kind db-access` | every call site with its code line |
 | Where is this error shown | `lookup.py "<message text>" --kind error` | the raising line and the screens that reach it |
 | Is `<X>` safe / correct | `lookup.py <X>` (its findings) and the security / defects pages | cite the finding ids |
@@ -52,7 +55,7 @@ Lookup kinds: {{kinds}}.
 3. **Understand behaviour** from the narrative page: rules, statuses, side effects, permissions, integrations.
 4. **Exact details** from the reference entry: columns / keys / FKs / referenced-by; parameters / tables touched / callers; actions / verbs / anonymous flags; members / calls into / called by; permissions.
 5. **Relationships & impact.** `trace_calls.py <Class.Method>` (callees), `--up` (callers), `--entry` (endpoints, screens and jobs that reach it, with the buttons that call them). With the graph: `graphify query "<question>" --budget 800`, `graphify explain "<Name>"`, `graphify path "<A>" "<B>"`, `graphify affected "<Name>" --depth 2`. Without it: the reference "called by / referenced by / used by" columns. A call through an interface, base class, message, event or delegate does not show what runs: the method map labels such calls `(di registration)`, `(di decorator)`, `(keyed service)`, `(override)`, `(message)`, `(event)`, `(method group)`, `(stored delegate)`, `(background job)`, `(redirect)`, `(filter)`, and `{{docs_dir}}/reference/dependency-injection.md` (when present) gives the implementation each host registers, its lifetime, decorators, message handlers and event subscribers. Never assume the first implementation you find is the one that runs. {{db_graph_skill_note}}
-6. **Verify in the source** before stating anything as certain or editing; the docs describe a snapshot.
+6. **Verify in the source** before stating anything as certain or editing; the docs describe a snapshot. Before describing an action as what a screen or button does, check that something calls it: an endpoint whose reference note says *no script, view or form in the repository names this URL* is not the user's path (search the scripts for the screen's URL with `--find`, or run `trace_calls.py <method> --entry`).
 7. **Cite** with clickable links copied **exactly** from the lookup output — `[file.md:42](path/file.md:42)`, `[Service.cs:118](path/Service.cs:118)`. Never cite a path you did not get from `lookup.py` or a file listing. Say where the docs were silent and you read the code.
 8. **Complete answers.** The reader should not need to open anything else. Quote the relevant code from the lookup output (a fenced block headed by its clickable `file:line`, trimmed to the lines that matter), then cover what applies: what calls it and what it calls, the tables it reads and writes, the settings it reads, the endpoints or screens that reach it, findings and defects about it, and caveats (dynamic SQL, dispatch the scanner cannot see, a stale snapshot). Answer layout, skipping parts that do not apply:
    1. **Answer** — two or three plain sentences first.

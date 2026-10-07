@@ -10,7 +10,8 @@ Load [quality-standards.md](quality-standards.md) and [page-patterns.md](page-pa
    Counts taken from the generated reference are tags too: `[[n:db-access.sites]]`, `[[n:configuration.keys]]`, `[[n:views.screens]]`, `[[n:sql-<database>.procedure]]` (every key is in `docs/agent/stats.json`). A typed "455 call sites" is wrong the next time the code or a scanner fix changes the count; the tag is resolved on every build, and an unknown key fails as `UNRESOLVED n`. `verify_docs.py` prints a NOTE for typed counts that equal a generated number.
 4. New module pages: add `docs/_src/modules/<module>.md` (or a folder with `index.md` for big modules) — the nav is regenerated automatically; order with `<!-- nav: N -->`.
 5. After each section: `python <skill>/scripts/build_site.py --skip-adapters --no-site`. Fix every `UNRESOLVED` (wrong name, wrong kind, or the item is not in the reference → check the code, then the adapter).
-6. Record any fact corrected while writing (`research_notes.py correct "…"`) and fix the note too.
+6. Record any fact corrected while writing (`research_notes.py correct "…"`) and fix the note too, in the same step: the notes ship with the docs and agents read them, so a note left with the old claim contradicts the page (the generated project skill ranks pages above notes, but a stale note still misleads).
+7. `[[page:…]]` targets are paths from the docs root (`[[page:reference/configuration.md|…]]`), never relative (`../`), whatever folder the page is in.
 
 ## Section order that works
 

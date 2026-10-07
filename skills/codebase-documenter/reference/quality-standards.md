@@ -19,9 +19,11 @@ The documentation must read like the product docs of a software studio: accurate
 2. Out-of-repository facts are labelled (schedules, servers, SSO proxies, SQL Agent jobs, external system behaviour).
 3. Unknown expansions say "not expanded in the code"; never guess acronyms or intent.
 4. Status / code tables come from enums **and** seed data; when they disagree, say so.
-5. "Unused", "only", "always", "never" require a caller search first.
+5. "Unused", "only", "always", "never" require a caller search first. "There is no …" (migrations, tests, jobs, schema scripts) requires a script result or a search, cited in the note.
 6. Security claims name the file and the exploit condition; no exploit recipes beyond what a reviewer needs.
-7. No secret values anywhere (config keys by name only).
+7. No secret values anywhere (config keys by name only). Servers named only in comments or commented-out connection strings are described ("a production SQL Server named in a comment"), never identified: no host name, address or part of an address (`verify_docs.py` fails on a quoted address tail such as ".12").
+8. What a button or screen does is the path its script or view calls today, checked with the trace, the endpoint's caller note or a search of the scripts; an action no screen calls is described as unused, not as the journey.
+9. Counts say what they cover: code copied from another application or not reached from any entry point is counted separately or named (the database reference gives the folders and the reachability).
 
 ## Writing rules
 

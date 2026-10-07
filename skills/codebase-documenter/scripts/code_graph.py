@@ -381,7 +381,8 @@ def cmd_summary(cfg, a):
         name = labels.get(str(cid)) or ns[0].get("community_name") or f"Community {cid}"
         summ = (sums.get(str(cid)) or {}).get("summary", "")
         out.append(f"| {cid} | {name} | {len(ns):,} | {summ.replace('|', '/')} | {', '.join('`' + d + '`' for d in top)} |")
-        areas.append({"community": cid, "name": name, "size": len(ns), "folders": top, "summary": summ})
+        files = [f for f, _ in Counter((n.get("source_file") or "").replace("\\", "/") for n in ns if n.get("source_file")).most_common(10)]
+        areas.append({"community": cid, "name": name, "size": len(ns), "folders": top, "files": files, "summary": summ})
     rp = os.path.join(cfg["graph_dir"], "csharp-resolve.json")
     if os.path.exists(rp):
         r = json.load(open(rp, encoding="utf-8"))

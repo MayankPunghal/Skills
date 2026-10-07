@@ -14,6 +14,8 @@
 
 The script asserts the root layout and a byte-identical skill copy, scans the package for secrets, and lists sensitive pages. The README's setup instructions cover three install modes (A: into the code repository; B: docs-only workspace; C: personal / global install with a pinned docs root), a verification lookup with expected output, other agents (AGENTS.md; Copilot instructions), the optional graph rebuild, and the report back to the user.
 
+Installing the repo-kit into the documented repository (mode A) is safe for later updates: the skill recognises an installed docs kit (`agent/entities.jsonl` + `_tools/lookup.py`) and its own workspace under the source root and never scans them as project code.
+
 **Never packaged**: `graphify-out/` (large; machine-specific paths; the reference already carries its relationship data — the README explains how to rebuild it on the real repository), `site/` outside `website/`, caches.
 
 ## Test before handing over

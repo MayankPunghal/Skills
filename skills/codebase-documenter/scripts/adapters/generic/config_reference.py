@@ -14,7 +14,14 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+import sys
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from code_text import strip_comments  # noqa: E402
+
+# languages whose comments strip_comments understands (// and /* */; VB ' and REM)
+C_COMMENTS = (".cs", ".vb", ".java", ".kt", ".scala", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".go", ".fs", ".swift", ".php")
 
 CFG = json.load(open("codebase-docs.json", encoding="utf-8"))
 ROOT = os.environ.get("DOCS_SOURCE_ROOT") or CFG.get("source_root", ".")
@@ -226,7 +233,10 @@ def main():
                     pass
             elif f.endswith(CODE_EXT) and not re.search(r"\.min\.js$|\.designer\.cs$", f, re.I) and r not in lib:
                 try:
-                    code.append((r, read(p)))
+                    t = read(p)
+                    if f.lower().endswith(C_COMMENTS):  # a commented-out GetEnvironmentVariable(...) is not a reader
+                        t = strip_comments(t, vb=f.lower().endswith(".vb"))
+                    code.append((r, t))
                 except OSError:
                     pass
     cfg_text = {r: read(p) for r, p in cfgs}

@@ -88,7 +88,12 @@ def main():
     idx = anchors()
     mpath = os.path.join(DOCS, "agent", "methods.json")
     methods = json.load(open(mpath, encoding="utf-8")) if os.path.exists(mpath) else {}
-    errors, flows = [], []
+    epath = os.path.join(DOCS, "agent", "endpoints.json")
+    by_handler = defaultdict(list)  # method anchor -> endpoints it serves (with "callers" from the generic-api adapter)
+    for ep in (json.load(open(epath, encoding="utf-8")) if os.path.exists(epath) else []):
+        if ep.get("handler"):
+            by_handler[ep["handler"]].append(ep)
+    errors, warnings, flows = [], [], []
     for fname in specs:
         try:
             f = json.load(open(os.path.join(FLOWS, fname), encoding="utf-8"))
@@ -132,6 +137,15 @@ def main():
                         errors.append(f"{fname}: step {s['id']}: ref '{r}' matches no reference entry")
                     continue
                 page, a = hit
+                if (s.get("kind") == "start" or s is steps[0]) and r in refs:
+                    # a flow must start where users or jobs really enter: an action no screen calls is the wrong path
+                    eps = by_handler.get(a, [])
+                    if eps and all(ep.get("callers") == 0 for ep in eps):
+                        warnings.append(f"{fname}: step {s['id']} starts at {r}, but no script, view or form in the repository "
+                                        f"calls {eps[0]['route']}: check which action the screen really posts to "
+                                        f"(trace_calls.py <method> --entry, or search the scripts for the URL)")
+                    elif not eps and a in methods and not methods[a].get("callers") and not methods[a].get("entry_points"):
+                        warnings.append(f"{fname}: step {s['id']} starts at {r}, which nothing in the code calls")
                 if page == "page":
                     path, _, frag = a.partition("#")
                     links.append({"label": r.split(":", 1)[1], "url": "../../" + path[:-3] + ".html" + ("#" + frag if frag else "")})
@@ -164,6 +178,8 @@ def main():
     linked = sum(1 for fl in flows for s in fl["steps"] if s["links"])
     stat("flows", flows=len(flows), steps=nsteps)
     print(f"flows: {len(flows)} flows, {nsteps} steps ({linked} linked to code), viewer {VIEWER}")
+    if warnings:
+        print("\n".join("WARNING " + w for w in warnings))
     if errors:
         print("\n".join("ERROR " + e for e in errors))
         sys.exit(1)

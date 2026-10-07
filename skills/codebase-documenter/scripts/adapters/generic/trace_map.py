@@ -239,6 +239,57 @@ def reach(start):
     return seen
 
 
+def mark_routine_reach(db, method_entries):
+    """Stored procedures named in code (db.json, written earlier by generic-sql) get "reachable": does any call site sit in a
+    method that an entry point reaches? Unreached ones are dead code, code copied from another application (a batch job's
+    sources kept in the tree), or called through dispatch the graph cannot see. db.json and db-code-routines.md get the
+    split, by folder, so a count of procedures is never read as the application's own without saying so."""
+    routines = db.get("routines") or []
+    if not routines:
+        return
+    by_site = defaultdict(list)  # (file, short method name) -> method anchors
+    for a, x in M.data.items():
+        by_site[(x.get("file", ""), x["name"].split(".")[-1])].append(a)
+    reached, unreached_dirs = 0, defaultdict(int)
+    flags = {}
+    for r in routines:
+        sites = r.get("call_sites") or []
+        for c in sites:
+            c["reachable"] = any(a in method_entries for a in by_site.get((c.get("file", ""), c.get("method", "")), []))
+        r["reachable"] = any(c["reachable"] for c in sites)
+        flags[r.get("anchor", "")] = r["reachable"]
+        if r["reachable"]:
+            reached += 1
+        else:
+            dirs = sorted({"/".join(c.get("file", "").split("/")[:-1][:2]) or "." for c in sites})
+            unreached_dirs[dirs[0] if len(dirs) == 1 else "several folders"] += 1
+    with open(os.path.join(DOCS, "agent", "db.json"), "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(db, fh, ensure_ascii=False, indent=1)
+    stat("db-reach", routines=len(routines), reachable=reached, unreached=len(routines) - reached)
+    page = os.path.join(DOCS, "reference", "db-code-routines.md")
+    if not os.path.exists(page):
+        return
+    lines = open(page, encoding="utf-8").read().split("\n")
+    out = []
+    for ln in lines:
+        if ln == "| Procedure | Called from | Found by | Database |":
+            ln = "| Procedure | Called from | Found by | Database | Reached from an entry point |"
+        elif ln == "| --- | --- | --- | --- |" and out and out[-1].endswith("| Reached from an entry point |"):
+            ln = "| --- | --- | --- | --- | --- |"  # only the routine tables: other 4-column tables keep their shape
+        elif ln.startswith('| <a id="sp-'):
+            aid = ln.split('"')[1]
+            ln += " yes |" if flags.get(aid) else " **no** |"
+        elif ln == '<a id="index"></a>' and out and not any(x.startswith("**Reachability:**") for x in out):
+            where = ", ".join(f"`{d}` {n}" for d, n in sorted(unreached_dirs.items(), key=lambda kv: -kv[1])[:8])
+            out += [f"**Reachability:** {reached} of {len(routines)} procedures are called from a method that an entry point "
+                    f"(endpoint, screen event, job) reaches; {len(routines) - reached} are not"
+                    + (f" (by folder of their call sites: {where})" if where else "")
+                    + ". Unreached ones are dead code, code copied from another application, or reached through dispatch the "
+                      "graph cannot see: check before counting them as the application's.", ""]
+        out.append(ln)
+    open(page, "w", encoding="utf-8", newline="\n").write("\n".join(out))
+
+
 def main():
     if not M.data:
         print("trace: docs/agent/methods.json not found (needs generic-graph or generic-methods earlier)")
@@ -439,6 +490,7 @@ def main():
         x["entry_points"] = [e["label"] for e in method_entries.get(a, [])][:10]
         x["flows"] = sorted(flow_of.get(a, set()) | {f for e in method_entries.get(a, []) for f in e["flows"]})
     open(os.path.join(agent, "methods.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(M.data, ensure_ascii=False, separators=(",", ":")))
+    mark_routine_reach(db, method_entries)
     stat("trace", ui_triggers=len(ui), entry_points=len(entries), methods_reachable=len(method_entries))
     print(f"trace: {len(ui)} UI triggers ({resolved} to a handler), {len(entries)} entry points, "
           f"{len(method_entries)} methods reachable, {len(table_writers)} objects with writers")

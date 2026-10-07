@@ -98,7 +98,8 @@ def main():
                      f"(data: {', '.join(db_data)}; parsed with Microsoft's T-SQL parser) |")
     elif code_only and db_pages:
         tasks.append(f"| Which stored procedures the code runs and from where (definitions are not in the repository: "
-                     f"parameters and tables are unknown) | {', '.join(db_pages)}" + (f" (data: {', '.join(db_data)})" if db_data else "") + " |")
+                     f"parameters and tables are unknown); which ones an entry point reaches; schema migrations and SQL Server "
+                     f"features the code uses | {', '.join(db_pages)}" + (f" (data: {', '.join(db_data)})" if db_data else "") + " |")
     if graph_objects:
         db_graph_note = ("Database objects are graph nodes too (parsed SQL): `graphify affected \"<table or procedure>\"` lists the "
                          "routines and C# methods that read, write or run it.")
@@ -116,7 +117,10 @@ def main():
                          f"(`{docs}/reference/db-access.md` when present) for which code reaches which table or procedure.")
         db_graph_skill_note = db_graph_note
     if os.path.exists(os.path.join(docs, "reference", "db-postgres.md")):
-        tasks.append(f"| What converts to PostgreSQL automatically, what needs a rewrite, what has no equivalent | `{docs}/reference/db-postgres.md` |")
+        tasks.append(f"| What converts to PostgreSQL automatically, what needs a rewrite, what has no equivalent; schema migrations and "
+                     f"SQL Server features the code uses | `{docs}/reference/db-postgres.md` |")
+    elif os.path.exists(os.path.join(docs, "reference", "db-code-facts.md")):
+        tasks.append(f"| Schema migrations in the code; SQL Server features the code uses | `{docs}/reference/db-code-facts.md` |")
     if os.path.exists(os.path.join(docs, "reference", "dependencies.md")):
         tasks.append(f"| Which project depends on which, build / port order, package versions, licences, Windows-only packages | "
                      f"`{docs}/reference/dependencies.md` (data: `{docs}/agent/dependencies.json`) |")

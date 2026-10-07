@@ -6,7 +6,7 @@ This repository (or workspace) contains {{product}} ({{code_name}}) and its comp
 
 - **Docs root** = the folder containing `{{docs_dir}}/agent/entities.jsonl` (repository root, `repo-kit/` when a shared package was unpacked as is, or search for it).
 - **Source root** = `{{source_root}}` relative to the docs root, or the repository root. If there is no code, answer from the docs with citations and say the answers are not verified against the code.
-- Run `lookup.py` **from the workspace root** by its path (`python <docs root>/{{docs_dir}}/_tools/lookup.py <Name>`); never `cd` into the docs first.
+- Run `lookup.py` **from the workspace root** by its path (`python <docs root>/{{docs_dir}}/_tools/lookup.py <Name>`); never `cd` into the docs first. If `python` is not found (on Windows it may open the Microsoft Store), use `py -3` or `python3`.
 
 ## 1. What exists
 
@@ -19,7 +19,7 @@ This repository (or workspace) contains {{product}} ({{code_name}}) and its comp
 | Call trees | `python {{docs_dir}}/_tools/trace_calls.py <Class.Method> [--up] [--entry]` | Callees; callers (`--up`, impact of a change); endpoints, screens and jobs that reach it (`--entry`) |
 | Narrative docs | `{{docs_dir}}/<section>/` | Behaviour, rules, flows, integrations, security |
 | Reference | `{{docs_dir}}/reference/` | Exhaustive generated catalogues with anchors |
-| Research notes | `{{docs_dir}}/_notes/` | Dense verified findings per area |
+| Research notes | `{{docs_dir}}/_notes/` | Dense working notes per area, written before the pages: where a note and a page disagree, the page wins (check the code) |
 | Code graph | `graphify-out/` (if built) | `graphify query / explain / path / affected` |
 
 Kinds: {{kinds}}.

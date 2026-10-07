@@ -14,7 +14,8 @@ What counts as a call, only in files that set CommandType.StoredProcedure (or ca
     parameter and runs it as a stored procedure (adapter_options.generic-sql.code_only_helpers names more, and can map a
     helper to its database: {"ExecReporting": "Reporting"})
   - Dapper / EF: Query("Name", ..., commandType: CommandType.StoredProcedure); "EXEC Name ..." strings
-"Name" is one identifier, optionally schema-qualified (dbo.Name, [dbo].[Name]). A const declared more than once in a file
+"Name" is one identifier, optionally schema-qualified (dbo.Name, [dbo].[Name], or a PostgreSQL quoted identifier escaped
+inside the C# string, regular or verbatim; the quotes are removed and the schema kept). A const declared more than once in a file
 is ambiguous and not followed.
 
     python <skill>/scripts/code_routines.py <source root>     # list the procedures found and their call sites
@@ -28,7 +29,11 @@ from code_text import strip_comments  # noqa: E402
 
 SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build", "target", "__pycache__", ".venv", "venv",
         ".idea", "graphify-out", "site", "publish", "vendor", "coverage"}
-NAME = r"(?:\[?[A-Za-z_]\w*\]?\.)?\[?[A-Za-z_][\w$#]*\]?"
+# one name part: bare / [bracketed] (SQL Server), or a PostgreSQL "quoted" identifier written inside a C# string literal
+# as \"Name\" (regular string) or ""Name"" (verbatim string): "\"UserTracking_Data\".\"MasterEvents_Insert\""
+_PART = r'(?:\[?[A-Za-z_]\w*\]?|\\"[A-Za-z_]\w*\\"|""[A-Za-z_]\w*"")'
+_LAST = r'(?:\[?[A-Za-z_][\w$#]*\]?|\\"[A-Za-z_][\w$#]*\\"|""[A-Za-z_][\w$#]*"")'
+NAME = r"(?:" + _PART + r"\.)?" + _LAST
 LIT = r'@?"(' + NAME + r')"'
 SP_FLAG = re.compile(r"CommandType\s*\.\s*StoredProcedure|commandType\s*:\s*CommandType\.StoredProcedure")
 NEW_CMD = re.compile(r"\bnew\s+\w*Command\s*\(\s*" + LIT)
@@ -47,7 +52,7 @@ KEYWORDS = {"if", "for", "foreach", "while", "switch", "using", "lock", "return"
 
 
 def clean(name):
-    parts = [p.strip("[]") for p in name.split(".")]
+    parts = [p.replace('\\"', "").replace('""', "").strip("[]") for p in name.split(".")]
     return (parts[0] if len(parts) > 1 else ""), parts[-1]
 
 
@@ -160,6 +165,89 @@ def find(root, extra_helpers=None, files=None):
                 if val:
                     add(val, rel, text, m.start(), f"helper {h}" + (f" ({var})" if var else ""), methods, helpers.get(h, ""))
     return {"routines": found, "helpers": helpers, "files_with_flag": flagged}
+
+
+EF6_MIGRATION = re.compile(r"\bclass\s+(\w+)\s*:\s*(?:System\.Data\.Entity\.Migrations\.)?DbMigration\b")
+EFCORE_MIGRATION = re.compile(r"\[\s*Migration\s*\(\s*\"([^\"]+)\"\s*\)\s*\]\s*(?:\[[^\]]*\]\s*)*(?:public\s+|internal\s+)?(?:partial\s+)?class\s+(\w+)")
+FLUENT_MIGRATION = re.compile(r"\[\s*Migration\s*\(\s*(\d+)[^)]*\)\s*\]\s*(?:\[[^\]]*\]\s*)*(?:public\s+)?class\s+(\w+)\s*:\s*\w*Migration\b")
+SNAPSHOT = re.compile(r"\bclass\s+(\w+)\s*:\s*ModelSnapshot\b")
+
+
+def migrations(root, files=None):
+    """Schema migrations kept in the code: EF6 Code First (DbMigration), EF Core ([Migration("id")] / ModelSnapshot) and
+    FluentMigrator. [{"file", "line", "kind", "name", "id"}], oldest first by id. A "no migrations" statement needs this."""
+    out = []
+    for rel, text in (files or ((r, read(p)) for r, p in walk(root, (".cs",)))):
+        t = strip_comments(text)
+        for rx, kind in ((EF6_MIGRATION, "EF6 Code First"), (EFCORE_MIGRATION, "EF Core"), (FLUENT_MIGRATION, "FluentMigrator"),
+                         (SNAPSHOT, "EF Core model snapshot")):
+            for m in rx.finditer(t):
+                name = m.group(m.lastindex)
+                mid = m.group(1) if kind in ("EF Core", "FluentMigrator") else (re.match(r"\d{8,}", os.path.basename(rel)) or [""])[0]
+                out.append({"file": rel, "line": t.count("\n", 0, m.start()) + 1, "kind": kind, "name": name, "id": mid})
+    return sorted(out, key=lambda x: (x["kind"], x["id"] or x["file"]))
+
+
+# SQL Server features the C# code depends on, which a move to PostgreSQL has to replace (C# API use and object names in
+# string literals; no SQL is parsed here)
+SQL_FEATURES = [
+    ("Table-valued parameters", re.compile(r"SqlDbType\s*\.\s*Structured|SqlParameter\b[^;]{0,200}?\bTypeName\s*="),
+     "No equivalent: pass arrays, jsonb or composite-type arrays, on both sides"),
+    ("FILESTREAM / FileTable", re.compile(r"\bSqlFileStream\b|GET_FILESTREAM_TRANSACTION_CONTEXT|\bFileTableRootPath\b|\.PathName\s*\(\s*\)"),
+     "Not available: move the files to object storage (keep a key column) or bytea for small files"),
+    ("Bulk copy", re.compile(r"\bSqlBulkCopy\b"), "COPY through Npgsql's binary importer"),
+    ("Query notifications", re.compile(r"\bSqlDependency\b|\bSqlNotificationRequest\b"), "LISTEN / NOTIFY"),
+    ("Spatial / hierarchyid types", re.compile(r"\bSql(?:Geography|Geometry|HierarchyId)\b"), "PostGIS / ltree"),
+    ("Output and return-value parameters", re.compile(r"ParameterDirection\s*\.\s*(?:Output|InputOutput|ReturnValue)"),
+     "OUT parameters of a function, or a returned row"),
+    ("Cross-database names", re.compile(r"\"[^\"\n]*?\b\[?([A-Za-z_]\w*)\]?\.\[?dbo\]?\.\[?[A-Za-z_]\w*\]?"),
+     "No cross-database queries: one database with a schema per source database, or postgres_fdw"),
+    ("Distributed / ambient transactions", re.compile(r"\bTransactionScope\b"), "Npgsql enlists, but distributed transactions need care"),
+    ("Multiple active result sets", re.compile(r"MultipleActiveResultSets\s*=\s*true", re.I), "Not supported: read results one at a time"),
+]
+
+
+DATATABLE_VAR = re.compile(r"\bDataTable\s+(\w+)\s*[=,;)]")
+TVP_VALUE = re.compile(r"new\s+SqlParameter\s*\(\s*(?:@?\"[^\"]+\"|\w+)\s*,\s*(\w+)\s*\)|\.AddWithValue\s*\(\s*(?:@?\"[^\"]+\"|\w+)\s*,\s*(\w+)\s*\)"
+                       r"|\bValue\s*=\s*(\w+)\s*[,}]")
+
+
+def sql_server_features(root, files=None):
+    """{feature: {"hint", "sites": [file:line, ...], "by_folder": {folder: n}, "names": {name: {folder: n}}}} for SQL_FEATURES used in
+    C# / VB code (comments blanked). A DataTable passed as a parameter value is a table-valued parameter too (SqlClient infers
+    Structured). "names" holds the database names of cross-database references; "by_folder" the two top folders of each site,
+    so copied code (a batch application's sources kept beside the web app) is told apart from the app itself."""
+    out = {}
+
+    def add(name, hint, rel, t, pos, label=None):
+        f = out.setdefault(name, {"hint": hint, "sites": [], "by_folder": {}, "names": {}})
+        f["sites"].append(f"{rel}:{t.count(chr(10), 0, pos) + 1}")
+        folder = "/".join(rel.split("/")[:-1][:2]) or "."
+        f["by_folder"][folder] = f["by_folder"].get(folder, 0) + 1
+        if label:  # database name -> {folder: uses}
+            per = f["names"].setdefault(label, {})
+            per[folder] = per.get(folder, 0) + 1
+    hints = {n: h for n, _, h in SQL_FEATURES}
+    for rel, text in (files or ((r, read(p)) for r, p in walk(root))):
+        t = strip_comments(text, vb=rel.lower().endswith(".vb"))
+        for name, rx, hint in SQL_FEATURES:
+            for m in rx.finditer(t):
+                add(name, hint, rel, t, m.start(), m.group(1) if name == "Cross-database names" else None)
+        dts = set(DATATABLE_VAR.findall(t))
+        if dts and ("SqlParameter" in t or "AddWithValue" in t):
+            for m in TVP_VALUE.finditer(t):
+                if (m.group(1) or m.group(2) or m.group(3)) in dts:
+                    add("Table-valued parameters", hints["Table-valued parameters"], rel, t, m.start())
+    if files is None:  # MARS is usually switched on in a connection string kept in config, not in code
+        name = "Multiple active result sets"
+        rx = dict((n, r) for n, r, _ in SQL_FEATURES)[name]
+        for rel, p in walk(root, (".config", ".json")):
+            base = os.path.basename(rel).lower()
+            if base.endswith(".config") or base.startswith(("appsettings", "connectionstrings")):
+                t = read(p)
+                for m in rx.finditer(t):
+                    add(name, hints[name], rel, t, m.start())
+    return out
 
 
 if __name__ == "__main__":

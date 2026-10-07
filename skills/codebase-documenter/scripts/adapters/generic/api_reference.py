@@ -19,6 +19,7 @@ Options (adapter_options.generic-api): conventional_mvc (default true), skip_reg
 names that check the user / the role, when they are not recognisable from their base class), sibling_role_min (default 2),
 test_name_ignore (regexes of action names that only look like test code).
 """
+import bisect
 import json
 import os
 import re
@@ -29,7 +30,7 @@ from _scan import BACK, DOCS, Methods, esc, esc_text, global_filters, line_at, o
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from code_text import strip_comments  # noqa: E402
+from code_text import block_close, code_only, strip_comments, strip_web_comments  # noqa: E402
 
 OPT = options("generic-api")
 CONVENTIONAL = OPT.get("conventional_mvc", True)
@@ -177,14 +178,25 @@ def effective(mauth, cname):
 
 def dotnet(path, raw):
     text = strip_comments(raw)  # //[HttpPost] and /* [Authorize] */ are not attributes
+    code = code_only(raw)       # braces inside strings and comments do not count
     classes = list(CS_CLASS.finditer(text))
+    spans = []                  # (start, end) of each class body: a nested class must not end its controller
+    for k, c in enumerate(classes):
+        close = block_close(code, c.end() - 1)
+        spans.append((c.end(), close if close < len(code) else (classes[k + 1].start() if k + 1 < len(classes) else len(text))))
     for k, c in enumerate(classes):
         name, bases, cattrs = c.group(2), c.group(3) or "", c.group(1) or ""
         is_api = "ApiController" in cattrs or "ControllerBase" in bases or "ApiController" in bases
         if not (name.endswith("Controller") or is_api):
             continue
-        start, end = c.end(), (classes[k + 1].start() if k + 1 < len(classes) else len(text))
-        body = text[start:end]
+        start, end = spans[k]
+        body = list(text[start:end])
+        for j, (a, b) in enumerate(spans):  # blank nested types: their methods are not this controller's actions
+            if j != k and start <= classes[j].start() and b <= end:
+                for x in range(classes[j].start() - start, min(b + 1, end) - start):
+                    if body[x] != "\n":
+                        body[x] = " "
+        body = "".join(body)
         ctl = re.sub(r"Controller$", "", name)
         # [Area("X")] (ASP.NET Core), else the Areas/<X>/Controllers folder (MVC 5 AreaRegistration convention)
         area = re.search(r"\[Area\(\s*\"([^\"]+)\"", cattrs) or re.search(r"(?i)(?:^|/)Areas/([^/]+)/Controllers/", path)
@@ -380,6 +392,105 @@ def openapi(path, text):
             add(m.group(1), route, "OpenAPI", path, k, handler=False, params=[])
 
 
+CLIENT_EXT = {".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue", ".cshtml", ".vbhtml", ".razor", ".aspx", ".ascx", ".master",
+              ".html", ".htm"}
+URL_PAIR = re.compile(r"(?=(?:/|(?<=['\"`]))([A-Za-z_]\w*)/([A-Za-z_]\w*)(?!\w))")  # '/Orders/Ship' or relative 'Orders/Ship'
+URL_ONE = re.compile(r"(?=/([A-Za-z_]\w*)(?![\w/]))")
+HELPER_URL = re.compile(r"(?:Url\.Action|Html\.ActionLink|Html\.BeginForm|Ajax\.BeginForm|Url\.RouteUrl|Html\.RenderAction|Html\.Action)"
+                        r"\s*\(\s*(?:\"[^\"]*\"\s*,\s*)??\"(\w+)\"\s*,\s*\"(\w+)\"")
+# inside Views/<Controller>/: a helper that names only the action targets the view's own controller
+HELPER_ACT = re.compile(r"(?:(?:Url\.Action|Html\.BeginForm|Ajax\.BeginForm|Html\.Action|Html\.RenderAction)\s*\(\s*|"
+                        r"Html\.ActionLink\s*\(\s*\"[^\"]*\"\s*,\s*)\"(\w+)\"\s*(?:\)|,\s*(?!\"))")
+FORM_SELF = re.compile(r"(?:Html|Ajax)\.BeginForm\s*\(\s*\)|<form\b(?![^>]*\baction\s*=)[^>]*>", re.I)  # posts back to its own action
+VIEW_OF = re.compile(r"(?i)(?:^|/)Views/(\w+)/(\w+)\.(?:cshtml|vbhtml|aspx)$")
+ASP_ACTION = re.compile(r"\basp-action\s*=\s*\"")
+ASP_CTL = re.compile(r"\basp-controller\s*=\s*\"(\w+)\"")
+QUOTED = re.compile(r"\"(\w+)\"")
+
+
+def tag_actions(text):
+    """(controller or None, action, pos) for each asp-action tag helper. A Razor value (asp-action="@(isNew ? "Create" :
+    "Edit")") gives every quoted name in it; None = no asp-controller on the tag, i.e. the view's own controller."""
+    for m in ASP_ACTION.finditer(text):
+        i = m.end()
+        if text.startswith("@(", i):
+            depth, j = 0, i + 1
+            while j < len(text) and text[j] != "\n":
+                depth += {"(": 1, ")": -1}.get(text[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            acts, end = QUOTED.findall(text[i:j]), j + 1
+        else:
+            v = re.match(r"(\w+)\"", text[i:i + 200])
+            if not v:
+                continue
+            acts, end = [v.group(1)], i + v.end()
+        start = m.start()
+        while start > 0:  # the tag's own "<name", not a "<=" inside an earlier Razor expression
+            start = text.rfind("<", 0, start)
+            if start < 0 or text[start + 1:start + 2].isalpha():
+                break
+        close = text.find(">", end)
+        ctl = ASP_CTL.search(text[max(start, 0):close if close >= 0 else len(text)])
+        for a in acts:
+            yield (ctl.group(1) if ctl else None, a, m.start())
+
+
+def client_callers():
+    """{(controller, action) lower: [file:line, ...]} of the URLs that scripts, views and forms name ('/Orders/Ship',
+    Url.Action("Ship", "Orders"), asp-action with or without asp-controller), comments blanked, copied libraries skipped; plus
+    {controller: [...]} for '/Orders' (the Index action). URLs built at run time from variables are not seen."""
+    from _scan import vendored
+    lib = vendored()
+    pairs, ones = defaultdict(list), defaultdict(list)
+    for path, full in walk(exts=CLIENT_EXT):
+        if path in lib:
+            continue
+        text = strip_web_comments(read(full))
+        nl = [k for k, ch in enumerate(text) if ch == "\n"]
+
+        def line_at(_text, pos):  # bisect over newline offsets: files with thousands of URLs stay linear
+            return bisect.bisect_right(nl, pos - 1) + 1
+        found = set()
+        for m in URL_PAIR.finditer(text):
+            found.add((m.group(1).lower(), m.group(2).lower(), m.start()))
+        for m in HELPER_URL.finditer(text):
+            found.add((m.group(2).lower(), m.group(1).lower(), m.start()))
+        view = VIEW_OF.search(path)
+        own = view.group(1).lower() if view and view.group(1).lower() != "shared" else None
+        for ctl, act, pos in tag_actions(text):
+            if ctl or own:
+                found.add(((ctl or own).lower(), act.lower(), pos))
+        if own:
+            for m in HELPER_ACT.finditer(text):
+                found.add((view.group(1).lower(), m.group(1).lower(), m.start()))
+            for m in FORM_SELF.finditer(text):
+                found.add((view.group(1).lower(), view.group(2).lower(), m.start()))
+        for ctl, act, pos in found:
+            pairs[(ctl, act)].append(f"{path}:{line_at(text, pos)}")
+        for m in URL_ONE.finditer(text):
+            ones[m.group(1).lower()].append(f"{path}:{line_at(text, m.start())}")
+    return pairs, ones
+
+
+def mark_callers():
+    """Each ASP.NET endpoint gets "callers" (count) and "caller" (first file:line) from client_callers(); an endpoint no script,
+    view or form names says so in its note: it may be dead, called only from server code, or by a client outside the repo."""
+    pairs, ones = client_callers()
+    for r in rows:
+        if not r["framework"].startswith("ASP.NET") or "minimal API" in r["framework"]:
+            continue
+        segs = [s for s in r["route"].split("/") if s]
+        if len(segs) < 2 or "{" in r["route"]:  # a templated URL is assembled in the client: not checked
+            continue
+        ctl, act = segs[-2].lower(), segs[-1].lower()
+        hits = pairs.get((ctl, act), []) + (ones.get(ctl, []) if act == "index" else [])
+        r["callers"], r["caller"] = len(hits), (sorted(hits)[0] if hits else "")
+        if not hits:
+            r["note"] = (r["note"] + "; " if r["note"] else "") + "no script, view or form in the repository names this URL"
+
+
 def main():
     skip = re.compile(OPT["skip_regex"]) if OPT.get("skip_regex") else None
     prepass([(p, f) for p, f in walk(exts={".cs"}) if not (skip and skip.search(p))])
@@ -407,6 +518,7 @@ def main():
         print("endpoints: none found")
         return
     review()
+    mark_callers()
     by_proj = defaultdict(list)
     for r in rows:
         by_proj[project_of(r["file"])].append(r)
@@ -452,7 +564,8 @@ def main():
         r["anchor"] = slug("ep", r["verb"] + " " + r["route"])
     open(os.path.join(DOCS, "agent", "endpoints.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(rows, ensure_ascii=False, indent=1))
     stat("endpoints", endpoints=len(rows), projects=len(by_proj), review_candidates=len(FINDINGS),
-         anonymous=sum(1 for r in rows if r["auth"].startswith("anonymous")), no_auth=sum(1 for r in rows if r["auth"] == "none declared"))
+         anonymous=sum(1 for r in rows if r["auth"].startswith("anonymous")), no_auth=sum(1 for r in rows if r["auth"] == "none declared"),
+         no_client_caller=sum(1 for r in rows if r.get("callers") == 0))
     print(f"endpoints: {len(rows)} in {len(by_proj)} projects (" + ", ".join(f"{k} {v}" for k, v in fw.most_common()) + ")"
           + (f"; {len(FINDINGS)} security review candidates" if FINDINGS else ""))
 
