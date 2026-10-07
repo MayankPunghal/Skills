@@ -42,11 +42,45 @@ DEFAULTS = {
 }
 
 
+def _read_cfg(d):
+    try:
+        return json.load(open(os.path.join(d, CONFIG_NAME), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def workspace_for_copy(d, cfg=None):
+    """The documentation workspace beside an installed docs copy at d (a mode A repo-kit: its codebase-docs.json names
+    the workspace, or a sub-folder holds a workspace whose source_root is d), else None."""
+    cfg = _read_cfg(d) if cfg is None else cfg
+    cands = [os.path.join(d, cfg["workspace"])] if cfg.get("workspace") else []
+    try:
+        cands += [os.path.join(d, x) for x in sorted(os.listdir(d)) if os.path.isfile(os.path.join(d, x, CONFIG_NAME))]
+    except OSError:
+        pass
+    for c in cands:
+        w = _read_cfg(c)
+        src = os.path.abspath(os.path.join(c, w.get("source_root", "."))) if w else ""
+        if w and not w.get("installed_copy") and os.path.normcase(src) == os.path.normcase(os.path.abspath(d)):
+            return os.path.abspath(c)
+    return None
+
+
+_redirect_told = []
+
+
 def ws_root():
-    """Folder containing codebase-docs.json (searching upwards from the current folder)."""
+    """Folder containing codebase-docs.json (searching upwards from the current folder). A mode A docs copy installed in a
+    repository is not a workspace: when the documentation workspace sits beside it (<repo>/.codebase-docs), that is used."""
     d = os.path.abspath(os.getcwd())
     while True:
         if os.path.exists(os.path.join(d, CONFIG_NAME)):
+            w = workspace_for_copy(d)
+            if w:
+                if not _redirect_told:
+                    _redirect_told.append(w)
+                    print(f"note: {d} holds an installed docs copy; using the documentation workspace {w}", file=sys.stderr)
+                return w
             return d
         parent = os.path.dirname(d)
         if parent == d:
