@@ -10,7 +10,9 @@ Every public instance method of an MVC controller is listed (MVC routes it whate
 an action result are marked "helper exposed as action". Attributes are read after comments are blanked, so //[HttpPost] does
 not count. Auth is the EFFECTIVE authorisation: method attributes, else the controller or a base controller, else global
 filters (GlobalFilters / FilterConfig / AddMvc options), with the project's own attributes that derive from AuthorizeAttribute
-or an authorisation / authentication filter (any of their base types; anti-forgery filters excluded). A "Security review
+or an authorisation / authentication filter (any of their base types; anti-forgery filters excluded). The anti-forgery
+(CSRF) filter is shown beside it the same way (method, controller, base controller, global; the framework's and the
+project's own classes named like one, noting when such a class checks the HTTP verb). A "Security review
 candidates" section lists what a reviewer must confirm: authorisation attributes on methods MVC never runs as actions,
 admin-looking actions (or most of a controller) missing the role attribute siblings carry, admin-area actions without a role
 filter, state-changing actions that accept GET, anonymous state-changing actions, test / temporary actions, user-id
@@ -100,6 +102,10 @@ AUTH_BASES = {"AuthorizeAttribute", "AuthorizationFilterAttribute", "IAuthorizat
               "AuthorizeFilter", "IAuthorizationRequirement", "IAuthenticationFilter", "IAsyncAuthenticationFilter"}
 AUTH_ATTRS = {"Authorize"}           # plus the project's own authorisation attributes (found in main)
 CLASS_ATTRS = {}                     # controller class -> (attribute block, base class), for inherited [Authorize]
+# anti-forgery (CSRF) filters: the framework's, plus the project's own classes named like one (found in prepass)
+CSRF_ATTRS = {"validateantiforgerytoken", "autovalidateantiforgerytoken"}
+CSRF_SKIPS_GET = {"autovalidateantiforgerytoken": "framework: validates unsafe verbs only"}  # filter -> where it checks the verb
+CSRF_NAME = re.compile(r"(?i)anti_?forgery|csrf|xsrf")
 GLOBAL = []                          # global filters [(name, file, line)]
 FINDINGS = []                        # security review candidates
 CONTROLLERS = {}                     # class -> [{"meth", "auth", "verbs", "params", "file", "line", "action": bool}]
@@ -148,6 +154,31 @@ def auth_of(attrs):
         return "anonymous"
     found = [n + (f" ({a})" if a else "") for n, a in names if n in AUTH_ATTRS]
     return ", ".join(found)
+
+
+def csrf_of(attrs):
+    """Anti-forgery filters in an attribute block; "ignored" for [IgnoreAntiforgeryToken]."""
+    names = attr_names(attrs)
+    if any(n.lower() == "ignoreantiforgerytoken" for n, _ in names):
+        return "ignored"
+    return ", ".join(n for n, _ in names if n.lower() in CSRF_ATTRS)
+
+
+def effective_csrf(mattrs, cname):
+    """(anti-forgery filters, where): the method's, else the controller's or a base controller's, else global filters."""
+    c = csrf_of(mattrs)
+    if c:
+        return c, "method"
+    seen, name = set(), cname
+    while name in CLASS_ATTRS and name not in seen:
+        seen.add(name)
+        attrs, base = CLASS_ATTRS[name]
+        c = csrf_of(attrs)
+        if c:
+            return c, "class" if name == cname else f"base {name}"
+        name = base
+    g = sorted({n.removesuffix("Attribute") for n, _, _ in GLOBAL if n.removesuffix("Attribute").lower() in CSRF_ATTRS})
+    return (", ".join(g), "global filter") if g else ("", "")
 
 
 def class_auth(name, seen=None):
@@ -226,13 +257,15 @@ def dotnet(path, raw):
             mauth = auth_of(attrs)
             eff, where = effective(mauth, name)
             auth = (f"{eff} ({where})" if where and where != "method" else eff) or "none declared"
+            cs, cs_where = effective_csrf(attrs, name)
+            first_row = len(rows)
             handler = M.next_after(path, line, within=0) or M.enclosing(path, line)
             params = sig_params(body, m.end() - 1)
             ret = m.group(0)[:m.start(2) - m.start()]
             helper = not is_api and not ACTION_RESULT.search(re.sub(r"\[[^\]]*\]", "", ret))
             members.append({"meth": meth, "auth": eff, "where": where, "declared": mauth, "file": path, "line": line,
                             "verbs": [v.upper() for v, _ in verbs] or ["ANY"], "params": params, "helper": helper,
-                            "area": area.group(1) if area else ""})
+                            "area": area.group(1) if area else "", "csrf": cs, "csrf_where": cs_where})
 
             def tokens(r):
                 return r.replace("[controller]", ctl).replace("[action]", meth).replace("[area]", area.group(1) if area else "")
@@ -256,6 +289,8 @@ def dotnet(path, raw):
                 continue
             if helper and (verbs or mroute is not None):
                 rows[-1]["note"] = (rows[-1]["note"] + "; " if rows[-1]["note"] else "") + "helper exposed as action"
+            for r in rows[first_row:]:
+                r["csrf"] = (f"{cs} ({cs_where})" if cs_where != "method" else cs) if cs else ""
     groups = {g.group(1): g.group(2) for g in re.finditer(r"(\w+)\s*=\s*[\w.]+\.MapGroup\(\s*\"([^\"]*)\"", text)}
     for m in re.finditer(r"(\w+)\s*\.\s*Map(Get|Post|Put|Delete|Patch|Methods|Fallback)\s*\(\s*\"([^\"]*)\"", text):
         recv, verb, route = m.group(1), m.group(2), m.group(3)
@@ -528,7 +563,9 @@ def main():
            "Routes are read from attributes, decorators and route registrations; anything built at run time (reflection, "
            "convention plug-ins, gateways) is not visible here. **Auth** is the effective authorisation the code declares: "
            "the method's attributes, else its controller or a base controller (`class`, `base X`), else a global filter; "
-           "`none declared` means any visitor can call it unless middleware outside the controller checks. An MVC controller "
+           "`none declared` means any visitor can call it unless middleware outside the controller checks. "
+           "*anti-forgery* names the request-forgery (CSRF) filter that applies, found the same way; it checks a token, not "
+           "the user, and many such filters skip GET requests. An MVC controller "
            "routes every public instance method, so helpers that return data rather than an action result are listed too "
            "(marked *helper exposed as action*)."
            + (" Global filters: " + ", ".join(f"`{n}` (`{f}:{ln}`)" for n, f, ln in GLOBAL) + "." if GLOBAL else ""), "",
@@ -544,8 +581,11 @@ def main():
             if r["handler"] and r["note"]:
                 h += f" · {esc_text(r['note'])}"
             params = ", ".join(f"`{esc(x)}`" for x in r["params"]) or "—"
+            auth = esc_text(r["auth"]) or "—"
+            if r.get("csrf"):
+                auth += f" · anti-forgery: {esc_text(r['csrf'])}"
             out.append(f'| <a id="{slug("ep", r["verb"] + " " + r["route"])}"></a>**{r["verb"]} {esc_text(r["route"])}** | {h} | {params} | '
-                       f'{esc_text(r["auth"]) or "—"} | `{esc(r["file"])}:{r["line"]}` ({r["framework"]}) |')
+                       f'{auth} | `{esc(r["file"])}:{r["line"]}` ({r["framework"]}) |')
     if FINDINGS:
         kinds = Counter(f["kind"] for f in FINDINGS)
         out += ["", '<a id="security-review"></a>', "", "## Security review candidates", "", BACK, "",
@@ -576,7 +616,16 @@ def prepass(files):
     bases = {}
     for path, full in files:
         t = strip_comments(read(full))
-        for m in CS_CLASS.finditer(t):
+        cls = list(CS_CLASS.finditer(t))
+        for k, m in enumerate(cls):
+            if CSRF_NAME.search(m.group(2)):  # the project's own anti-forgery filter; does it look at the HTTP verb?
+                n = m.group(2).removesuffix("Attribute").lower()
+                CSRF_ATTRS.add(n)
+                body = t[m.end():cls[k + 1].start() if k + 1 < len(cls) else len(t)]
+                v = re.search(r"HttpMethod|RequestType|\bIsPost\b|HttpVerbs\.Post|\"POST\"", body, re.I)
+                if v:
+                    CSRF_SKIPS_GET[n] = f"{path}:{line_at(t, m.end() + v.start())}"
+        for m in cls:
             # every base type counts: "ActionFilterAttribute, IAuthenticationFilter" is an authentication gate
             types = [b.strip().split("<")[0].split(".")[-1] for b in re.sub(r"<[^<>]*>", "", m.group(3) or "").split(",")]
             name, base = m.group(2), types[0] if types else ""
@@ -619,8 +668,13 @@ def review():
                 FINDINGS.append(dict(loc, kind="admin-area action without a role filter",
                                      detail=f"in area {m['area']}; effective auth {m['auth'] or 'none'}: any signed-in user may call it"))
             if state and accepts_get:
+                cs = [c.strip() for c in m["csrf"].split(",") if c.strip() and m["csrf"] != "ignored"]
+                skip = [f"{c} checks the HTTP verb (`{CSRF_SKIPS_GET[c.lower()]}`)" for c in cs if c.lower() in CSRF_SKIPS_GET]
+                guard = ("" if not cs else f"; anti-forgery {', '.join(cs)} ({m['csrf_where']}) applies" +
+                         (f", but {'; '.join(skip)}: confirm whether a GET request runs the action without the token" if skip
+                          else ": confirm it validates GET requests too"))
                 FINDINGS.append(dict(loc, kind="state-changing action accepting GET", detail=f"verbs: {', '.join(m['verbs'])}: a link or "
-                                     "image tag can trigger it, and anti-forgery checks that only cover POST do not apply"))
+                                     "image tag can trigger it, and anti-forgery checks that only cover POST do not apply" + guard))
             if m["auth"] == "anonymous" and state:
                 FINDINGS.append(dict(loc, kind="anonymous state-changing action", detail="[AllowAnonymous] on an action whose name "
                                      "says it changes data"))

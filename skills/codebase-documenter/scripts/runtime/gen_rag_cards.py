@@ -153,8 +153,13 @@ def main():
             f"Handler: {name(e['handler'])}" if e.get("handler") else (f"Inline handler registered in {name(e['registered_in'])}" if e.get("registered_in") else "Inline handler"),
             f"Parameters: {'; '.join(e['params'])}" if e.get("params") else "",
             f"Authorization: {e['auth']}" if e.get("auth") else "Authorization: none declared on the endpoint",
+            f"Anti-forgery (CSRF) filter: {e['csrf']}" if e.get("csrf") else "",
             f"Note: {e['note']}" if e.get("note") else "",
-            f"Called from the UI: {cap([ui_txt(u) for u in ui_by_ep.get(e['anchor'], [])], 8)}" if ui_by_ep.get(e["anchor"]) else "Called from the UI: no static caller found",
+            f"Called from the UI: {cap([ui_txt(u) for u in ui_by_ep.get(e['anchor'], [])], 8)}" if ui_by_ep.get(e["anchor"]) else
+            # the endpoint reference's URL scan (any script, view or form naming the URL) when the UI map has no element for it
+            f"Called from the UI: the URL is named in {e['caller']}" + (f" and {e['callers'] - 1} more place(s)" if e["callers"] > 1 else "")
+            if e.get("callers") else "Called from the UI: no script, view or form in the repository names this URL" if e.get("callers") == 0
+            else "Called from the UI: no static caller found",
             f"Reaches {ent['reaches']} methods; database: {cap([f'{o} {op} ({t})' for o, op, t in ent['db']])}" if ent and ent.get("db") else "",
             f"Errors it can return: {cap([repr(x['message']) for x in ent['errors']], 6)}" if ent and ent.get("errors") else "",
             f"Workflows: {', '.join(ent['flows'])}" if ent and ent.get("flows") else "",
@@ -180,6 +185,7 @@ def main():
         card(e["id"], "entry-point", f"{e['kind']}: {e['label']}", [
             f"Handler: {name(e['handler'])} at {e['file']}:{e['line']}", f"Reaches {e['reaches']} methods",
             f"Database: {cap([f'{o} {op} ({t})' for o, op, t in e['db']])}" if e.get("db") else "",
+            f"Databases reached: {', '.join(e['databases'])} (separate connections)" if len(e.get("databases") or []) > 1 else "",
             f"Errors: {cap([repr(x['message']) for x in e['errors']], 6)}" if e.get("errors") else "",
             f"Workflows: {', '.join(e['flows'])}" if e.get("flows") else ""],
             doc=f"{ref}entry-points.md#{e['id']}", source=f"{e['file']}:{e['line']}", related=[e["handler"]])

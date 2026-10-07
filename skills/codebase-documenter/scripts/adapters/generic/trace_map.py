@@ -93,6 +93,36 @@ class Endpoints:
         return pick[0] if pick else None
 
 
+# a base-URL prefix joined with + before the literal: basePath + '/Orders/Ship', window.appRoot + "/api/orders"
+PREFIX = r"(?:[\w$.\[\]]+\s*\+\s*)?"
+SCRIPT_CALLS = ((r"fetch\(\s*" + PREFIX + r"([`'\"])(.+?)\1(?:\s*,\s*\{[^}]*?method\s*:\s*['\"](\w+))?", 3, 2),
+                (r"axios\.(get|post|put|delete|patch)\(\s*" + PREFIX + r"([`'\"])(.+?)\2", 1, 3),
+                (r"\$\.(get|post|getJSON)\(\s*" + PREFIX + r"(['\"`])(.+?)\2", 1, 3),
+                (r"\bhttp\.(get|post|put|delete|patch)\s*(?:<[^>()]*>)?\(\s*" + PREFIX + r"([`'\"])(.+?)\2", 1, 3))
+AJAX_URL = re.compile(r"\burl\s*:\s*" + PREFIX + r"(['\"`])(.+?)\1")
+AJAX_VERB = re.compile(r"\b(?:type|method)\s*:\s*['\"](\w+)['\"]")
+
+
+def script_calls(text):
+    """[(offset, verb or None, url)] of the HTTP calls a script makes. $.ajax({...}) reads url and type / method in either
+    order within the call's object (nested data: {...} and success: function () {...} do not end it)."""
+    out = [(m.start(), m.group(vg), m.group(ug)) for rx, vg, ug in SCRIPT_CALLS for m in re.finditer(rx, text, re.S)]
+    for m in re.finditer(r"\$\.ajax\(\s*\{", text):
+        depth, k = 1, m.end()
+        while depth and k < len(text) and k - m.end() < 4000:
+            depth += (text[k] == "{") - (text[k] == "}")
+            k += 1
+        obj = text[m.end():k]
+        top = re.sub(r"\{[^{}]*\}", lambda b: " " * len(b.group(0)), obj)  # keys of nested objects are not the call's
+        for _ in range(3):
+            top = re.sub(r"\{[^{}]*\}", lambda b: " " * len(b.group(0)), top)
+        u = AJAX_URL.search(top)
+        if u:
+            v = AJAX_VERB.search(top)
+            out.append((m.start(), v.group(1) if v else None, obj[u.start(2):u.end(2)]))
+    return sorted(out)
+
+
 def handler_in(path, name):
     """Method anchor for an event handler `name` declared in `path` (or its code-behind / partial class file)."""
     bases = [path, path + ".cs", path + ".vb", re.sub(r"\.designer\.(cs|vb)$", r".\1", path, flags=re.I), re.sub(r"\.razor$", ".razor.cs", path)]
@@ -192,21 +222,15 @@ def ui_triggers(EP):
                     handler=handler_in(path, m.group(3)))
         if ext in (".js", ".mjs", ".jsx", ".ts", ".tsx", ".vue", ".html", ".htm", ".cshtml", ".razor"):
             text = text if text is not None else read(full)
-            for rx, vg, ug in ((r"fetch\(\s*([`'\"])(.+?)\1(?:\s*,\s*\{[^}]*?method\s*:\s*['\"](\w+))?", 3, 2),
-                               (r"axios\.(get|post|put|delete|patch)\(\s*([`'\"])(.+?)\2", 1, 3),
-                               (r"\$\.(get|post|getJSON)\(\s*(['\"`])(.+?)\2", 1, 3),
-                               (r"\$\.ajax\(\s*\{[^}]*?url\s*:\s*(['\"`])(.+?)\1[^}]*?(?:type|method)\s*:\s*['\"](\w+)", 3, 2),
-                               (r"\bhttp\.(get|post|put|delete|patch)\s*(?:<[^>()]*>)?\(\s*([`'\"])(.+?)\2", 1, 3)):
-                for m in re.finditer(rx, text, re.S):
-                    verb = (m.group(vg) or "GET").upper().replace("GETJSON", "GET")
-                    url = m.group(ug)
-                    if not url.startswith(("/", "http", "${", "api", "~")) and "/" not in url:
-                        continue
-                    before = text[max(0, m.start() - 3000):m.start()]
-                    fn = re.findall(r"(?:function\s+(\w+)|(\w+)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>)|^\s*(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{)", before, re.M)
-                    fname = next((x for x in reversed([g for t in fn for g in t if g]) if x not in ("if", "for", "while", "switch", "catch", "function")), "")
-                    ep = EP.url(url, verb)
-                    js_funcs[fname].append((path, line_at(text, m.start()), verb, url, ep))
+            for start, verb, url in script_calls(text):
+                verb = (verb or "GET").upper().replace("GETJSON", "GET")
+                if not url.startswith(("/", "http", "${", "api", "~")) and "/" not in url:
+                    continue
+                before = text[max(0, start - 3000):start]
+                fn = re.findall(r"(?:function\s+(\w+)|(\w+)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>)|^\s*(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{)", before, re.M)
+                fname = next((x for x in reversed([g for t in fn for g in t if g]) if x not in ("if", "for", "while", "switch", "catch", "function")), "")
+                ep = EP.url(url, verb)
+                js_funcs[fname].append((path, line_at(text, start), verb, url, ep))
             for m in re.finditer(r"\bon(click|submit|change)=\"(\w+)\(|onClick=\{(?:\(\)\s*=>\s*)?(\w+)|@click(?:\.\w+)?=\"(\w+)|v-on:click=\"(\w+)|\(click\)=\"(\w+)\(|"
                                  r"addEventListener\(\s*['\"](click|submit|change)['\"]\s*,\s*(\w+)", text):
                 g = [x for x in m.groups() if x]
@@ -299,6 +323,13 @@ def main():
     errs = load("errors.json") or []
     db = load("db.json") or {}
     touches = {r["name"].lower(): r.get("touches", []) for r in db.get("routines", [])}
+    # database of each routine / table (the connection its helper opens), for entry points that span databases
+    db_of = {}
+    for r in db.get("routines", []) + db.get("tables", []):
+        d = r.get("database") or next((c.get("database") for c in r.get("call_sites", []) if c.get("database")), "")
+        if d:
+            for n in {r.get("name", ""), r.get("full_name", "")} - {""}:
+                db_of[n.lower()] = d
     db_by_method = defaultdict(list)
     for obj, sites in dba.items():
         for s in sites:
@@ -388,9 +419,11 @@ def main():
         r = reach(e["handler"])
         e["reach"] = r
         e["db"] = sorted({x for a in r for x in db_by_method.get(a, [])})
-        e["errors"] = [x for a in r for x in err_by_method.get(a, [])]
+        # reach() is a set: walk it in a fixed order, or the sampled lists change between identical builds
+        e["errors"] = [x for a in sorted(r) for x in err_by_method.get(a, [])]
         e["flows"] = sorted({f for a in r for f in flow_of.get(a, set())})
-        for a in r:
+        e["databases"] = sorted({db_of[o.lower()] for o, _, _ in e["db"] if o.lower() in db_of})
+        for a in sorted(r):
             method_entries[a].append(e)
         for obj, op, tech in e["db"]:
             if op not in ("read", "call"):
@@ -438,6 +471,7 @@ def main():
     write_page("ui-map.md", out)
 
     # ---- entry-points.md
+    cross = [e for e in entries if len(e["databases"]) > 1]
     out = ["# Entry points", "",
            f"Where work starts ({len(entries)}: endpoints, UI event handlers, background jobs and message handlers) and everything "
            "each one reaches through the call graph: methods, database objects, errors a user can see, and documented flows. "
@@ -445,7 +479,8 @@ def main():
            "where users meet an error. Static reachability: calls resolved from the code are followed (for C#, also dependency "
            "injection, overrides, messages, events, stored delegates, jobs and filters, see the dependency-injection reference); "
            "reflection and dispatch built at run time are not, so treat absences as \"not shown by the code\".", "", '<a id="index"></a>', "",
-           "- [Entry points](#entries) · [Method → entry points](#by-method) · [Who changes each table](#by-table) · [Where users meet each error](#by-error)", "",
+           "- [Entry points](#entries) · [Method → entry points](#by-method) · [Who changes each table](#by-table) · [Where users meet each error](#by-error)"
+           + (" · [Entry points that reach more than one database](#cross-db)" if cross else ""), "",
            '<a id="entries"></a>', "", "## Entry points", "", BACK, "",
            "| Entry point | Handler | Reaches | Database | Errors it can raise | Flows |", "| --- | --- | ---: | --- | --- | --- |"]
     for e in sorted(entries, key=lambda e: (e["kind"], e["label"].lower())):
@@ -458,7 +493,7 @@ def main():
     out += ["", '<a id="by-method"></a>', "", "## Method → entry points", "", BACK, "",
             "Every method reached from at least one entry point: the entry points and UI triggers that run it, and the flows it belongs to.", "",
             "| Method | Started by | UI triggers | Flows |", "| --- | --- | --- | --- |"]
-    for a in sorted(method_entries, key=lambda a: M.data[a]["name"].lower()):
+    for a in sorted(method_entries, key=lambda a: (M.data[a]["name"].lower(), a)):
         es = method_entries[a]
         uis = [u for e in es for u in ui_by_handler.get(e["handler"], []) if u["endpoint"]] + ui_by_handler.get(a, [])
         uis = list({(u["file"], u["line"]): u for u in uis}.values())
@@ -470,15 +505,32 @@ def main():
             "Entry points that insert, update, delete or merge rows, directly or through a procedure that touches the table.", "",
             "| Object | Changed by |", "| --- | --- |"]
     for t in sorted(table_writers):
-        ws = sorted(table_writers[t], key=lambda w: w[1].lower())
+        ws = sorted(table_writers[t], key=lambda w: (w[1].lower(), w))
         out.append(f"| `{esc(t)}` | " + ", ".join(f"[{esc_text(lbl)}](#{i}) ({esc_text(op)})" for i, lbl, op in ws[:8]) + (f" +{len(ws) - 8}" if len(ws) > 8 else "") + " |")
     out += ["", '<a id="by-error"></a>', "", "## Where users meet each error", "", BACK, "",
             "| Error | Raised in | Reached from |", "| --- | --- | --- |"]
     for x in errs:
         if x.get("method") and err_entries.get(x["anchor"]):
-            es = sorted(err_entries[x["anchor"]], key=lambda w: w[1].lower())
+            es = sorted(err_entries[x["anchor"]], key=lambda w: (w[1].lower(), w))
             out.append(f"| [{esc_text(x['message'][:70])}](errors.md#{x['anchor']}) | {M.link(x['method'])} | "
                        + ", ".join(f"[{esc_text(lbl)}](#{i})" for i, lbl in es[:6]) + (f" +{len(es) - 6}" if len(es) > 6 else "") + " |")
+    if cross:
+        out += ["", '<a id="cross-db"></a>', "", "## Entry points that reach more than one database", "", BACK, "",
+                f"{len(cross)} entry points reach routines or tables on more than one database, as the database reference names "
+                "them: the connection the calling helper opens, or the database a three-part name points to (reached through "
+                "the caller's connection on the same server). Work spread over separate connections is not covered by one "
+                "database transaction unless the code opens a distributed one (`TransactionScope`): check in code how a failure "
+                "between them is handled. Static reachability, so this is a lower bound.", "",
+                "| Entry point | Databases | Objects per database |", "| --- | --- | --- |"]
+        for e in sorted(cross, key=lambda e: (e["kind"], e["label"].lower())):
+            per = defaultdict(list)
+            for o, _, _ in e["db"]:
+                d = db_of.get(o.lower())
+                if d and f"`{esc(o)}`" not in per[d]:
+                    per[d].append(f"`{esc(o)}`")
+            objs = "; ".join(f"{esc_text(d)}: " + ", ".join(per[d][:4]) + (f" +{len(per[d]) - 4}" if len(per[d]) > 4 else "")
+                             for d in e["databases"])
+            out.append(f"| {elink(e)} | {esc_text(', '.join(e['databases']))} | {objs} |")
     write_page("entry-points.md", out)
 
     # ---- machine-readable
@@ -491,7 +543,7 @@ def main():
         x["flows"] = sorted(flow_of.get(a, set()) | {f for e in method_entries.get(a, []) for f in e["flows"]})
     open(os.path.join(agent, "methods.json"), "w", encoding="utf-8", newline="\n").write(json.dumps(M.data, ensure_ascii=False, separators=(",", ":")))
     mark_routine_reach(db, method_entries)
-    stat("trace", ui_triggers=len(ui), entry_points=len(entries), methods_reachable=len(method_entries))
+    stat("trace", ui_triggers=len(ui), entry_points=len(entries), methods_reachable=len(method_entries), cross_database_entry_points=len(cross))
     print(f"trace: {len(ui)} UI triggers ({resolved} to a handler), {len(entries)} entry points, "
           f"{len(method_entries)} methods reachable, {len(table_writers)} objects with writers")
 

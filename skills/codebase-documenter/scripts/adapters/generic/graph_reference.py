@@ -2,7 +2,8 @@
 
 Writes into docs/reference/:
   components.md   every class/type (anchor cls-…) and free function (fn-…): file:line, members, calls into, called by,
-                  inherits/implements — grouped by folder, with an index table
+                  inherits/implements, fixed values a C# class sets (constructors, initializers, constants) — grouped by
+                  folder, with an index table
   modules.md      every source file (mod-…): what it defines, which files it calls / is called by
   communities.md  every graphify community (com-…): name, size, main folders, main members
 
@@ -59,6 +60,69 @@ def line_of(n):
 
 def esc(s):
     return str(s).replace("|", "\\|")
+
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from code_text import block_close, code_only  # noqa: E402
+
+MAX_DEFAULTS = OPT.get("max_defaults", 8)
+_CODE = {}
+# a value worth showing: a number, true / false, or a call on numbers (AddDays(21), TimeSpan.FromMinutes(30)); string values are
+# never shown (they may be secrets), nor objects (new X()) or nulls
+SHOWN_VALUE = re.compile(r"\d|\btrue\b|\bfalse\b", re.I)
+
+
+def _code(f):
+    if f not in _CODE:
+        try:
+            raw = open(os.path.join(CFG.get("source_root", "."), f), encoding="utf-8-sig", errors="replace").read()
+            _CODE[f] = (raw, code_only(raw))
+        except OSError:
+            _CODE[f] = ("", "")
+    return _CODE[f]
+
+
+def defaults_of(name, f, ln):
+    """Fixed values a C# class sets ["Member = value (:line)"]: assignments in its constructors, property / field initializers
+    and constants with number or true/false values. Business rules such as a 21-day trial or a 30-minute timeout often live
+    only there, out of reach of the method map (graphify has no constructor nodes)."""
+    if not f.endswith(".cs") or not ln:
+        return []
+    raw, code = _code(f)
+    if not code:
+        return []
+    starts = [0] + [k + 1 for k, ch in enumerate(code) if ch == "\n"]
+    head = re.compile(r"\b(?:class|struct|record)\s+" + re.escape(name) + r"\b[^{;]*\{")
+    m = head.search(code, starts[min(ln, len(starts)) - 1] if ln <= len(starts) else 0) or head.search(code)
+    if not m:
+        return []
+    o = m.end() - 1
+    c = block_close(code, o)
+    body = code[o + 1:c]
+    # blank nested types: their members are not this class's
+    for nm in list(re.finditer(r"\b(?:class|struct|record|interface|enum)\s+\w+[^{;]*\{", body)):
+        e = block_close(body, nm.end() - 1)
+        body = body[:nm.start()] + re.sub(r"[^\n]", " ", body[nm.start():e + 1]) + body[e + 1:]
+    out = []
+
+    def keep(member, s, e, at):
+        val = re.sub(r"\s+", " ", raw[o + 1 + s:o + 1 + e]).strip()
+        if '"' in val or "'" in val or not SHOWN_VALUE.search(val) or re.match(r"new\b(?!\s*(?:DateTime|DateTimeOffset|TimeSpan)\s*\()", val) or len(val) > 70:
+            return
+        line = code.count("\n", 0, o + 1 + at) + 1
+        item = f"{member} = {val} (:{line})"
+        if item not in out:
+            out.append(item)
+    for cm in re.finditer(r"(?:^|[;{}\]\s])(?:(?:public|protected|internal|private|static)\s+)*" + re.escape(name)
+                          + r"\s*\([^)]*\)\s*(?::\s*(?:base|this)\s*\([^)]*\)\s*)?\{", body):
+        cb, ce = cm.end() - 1, block_close(body, cm.end() - 1)
+        for am in re.finditer(r"(?:^|[;{}\s])(?:this\.)?([A-Za-z_]\w*)\s*=(?![=>])\s*([^;{}]+);", body[cb + 1:ce]):
+            keep(am.group(1), cb + 1 + am.start(2), cb + 1 + am.end(2), cb + 1 + am.start(1))
+    for pm in re.finditer(r"\b([A-Za-z_]\w*)\s*\{\s*(?:(?:public|protected|internal|private)\s+)?get;\s*(?:(?:public|protected|internal|private|init)\s+)?(?:set;|init;)?\s*\}\s*=\s*([^;]+);", body):
+        keep(pm.group(1), pm.start(2), pm.end(2), pm.start(1))
+    for km in re.finditer(r"\bconst\s+[\w.<>?]+\s+([A-Za-z_]\w*)\s*=\s*([^;]+);", body):
+        keep(km.group(1), km.start(2), km.end(2), km.start(1))
+    return out[:MAX_DEFAULTS]
 
 
 def main():
@@ -126,11 +190,14 @@ def main():
     # ---------------- components.md
     out = ["# Code components", "",
            "Every class / type and free function found by graphify in the source tree, generated from `graph.json` "
-           "(EXTRACTED call edges only). Click a name in the index to jump to its entry; each entry links its callers and callees.", "",
+           "(EXTRACTED call edges only). Click a name in the index to jump to its entry; each entry links its callers and callees. "
+           "**Sets** lists the fixed values a C# class assigns in its constructors, property initializers and constants (numbers, "
+           "true / false and calls on them such as `AddDays(21)`; text values are never shown).", "",
            f"Total: {len(classes):,} classes / types, {len(funcs):,} functions.", "", '<a id="index"></a>', "",
            "| Folder | Classes | Functions |", "| --- | ---: | ---: |"]
     for fo, ids in by_folder.items():
         out.append(f"| [{esc(fo)}](#{slug('area', fo)}) | {sum(1 for i in ids if i in classes)} | {sum(1 for i in ids if i in funcs)} |")
+    n_defaults = 0
     for fo, ids in by_folder.items():
         out += ["", f'<a id="{slug("area", fo)}"></a>', "", f"## {fo}", "", BACK, "",
                 "| Name | Kind | File | Members | Calls into | Called by |", "| --- | --- | --- | --- | --- | --- |"]
@@ -144,6 +211,11 @@ def main():
             co = ", ".join(link(t) for t, _ in calls_out[i].most_common(12)) + (" …" if len(calls_out[i]) > 12 else "")
             ci = ", ".join(link(t) for t, _ in calls_in[i].most_common(12)) + (" …" if len(calls_in[i]) > 12 else "")
             kind = "class" if i in classes else "function"
+            dflt = defaults_of(n.get("label", ""), f, ln) if i in classes else []
+            if dflt:
+                n_defaults += 1
+                # first in the cell: the agent index keeps only the start of a long row
+                mem_s = "Sets: " + ", ".join(f"`{esc(x.rsplit(' (', 1)[0])}` ({x.rsplit(' (', 1)[1]}" for x in dflt) + ("<br>" + mem_s if mem_s else "")
             out.append(f'| <a id="{aid[i]}"></a>**{esc(n.get("label"))}**{" (" + inh + ")" if inh else ""} | {kind} | '
                        f'`{esc(f)}`{":" + str(ln) if ln else ""} | {mem_s} | {co} | {ci} |')
     open(os.path.join(OUT, "components.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
@@ -195,7 +267,7 @@ def main():
             out += [s["summary"] + (f" Distinguishing terms: {', '.join(s.get('terms', [])[:6])}." if s.get("terms") else ""), ""]
         out += ["Main members (most connected first): " + ", ".join(link(i) for i in hubs)]
     open(os.path.join(OUT, "communities.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
-    stat("graph", classes=len(classes), functions=len(funcs), files=len(files), communities=len(comm))
+    stat("graph", classes=len(classes), functions=len(funcs), files=len(files), communities=len(comm), classes_with_defaults=n_defaults)
     print(f"graph-reference: {len(classes)} classes, {len(funcs)} functions, {len(files)} files, {len(comm)} communities")
 
 

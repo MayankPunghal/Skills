@@ -133,6 +133,15 @@ The same app documented again and then tested with a fresh agent (15 issues, all
 - Smaller scanner gaps: actions after a nested class in a controller were cut off (class bodies are now brace-matched), PostgreSQL procedure names written as `"\"schema\".\"name\""` were missed, commented-out `GetEnvironmentVariable` lines counted as config readers, `[[page:../x.md]]` passed the tag check but broke links, the survey proposed a whole-`Controllers` area beside the per-controller ones and no foundation area, and `moment-with-locales.js` (no banner) counted as app code.
 - Agents fell back to ad-hoc regex scans for "what breaks if I split this class" and "what blocks a PostgreSQL move": `trace_calls.py <Class>` and the *SQL Server features used from the code* table answer both.
 
+Questions asked against the finished docs then showed where an agent still had to read code:
+
+- **Two caller detectors disagreed.** `endpoints.md` found the page that calls an action; the agent's card for the same endpoint said "no static caller", because the UI map missed `url: basePath + '/Ctl/Act'` and `$.ajax` objects with nested braces. The UI map now reads a joined base-URL prefix and the whole `$.ajax({...})` object, and the card falls back to the endpoint reference's callers.
+- **A finding understated the protection.** The Auth column showed `[Authorize]` but dropped anti-forgery filters, so a SEC entry said no token was checked while the controller carried one class-wide (its real gap: the filter checks POST only and the action accepts GET). The Auth cell now names the anti-forgery filter and where it applies, and notes when a project filter checks the verb.
+- **Business values lived in constructors.** A 21-day trial was set only in two constructors, which the graph has no nodes for, so the docs search found nothing. `components.md` lists the number and true / false values each C# class sets in constructors, initializers and constants (text values never).
+- **Cross-database requests had to be computed by hand.** "Does one request touch both databases?" needed a join of `entry-points.json` and `db.json`. `entry-points.md#cross-db` now lists the entry points that reach more than one database, with the objects on each.
+- **A credential in a comment was missed.** A webhook signing secret sat in a code comment; no finding mentioned it, and the docs leak gate did not know the `whsec_` / `sk_live_` shapes. `configuration.md#cfg-credentials` lists credential-shaped text in code, config and scripts (kind, `file:line`, comment or not, tracked by git or not; never the value), and the gate knows those shapes.
+- **Identical builds differed.** Sets were iterated in hash order (reach sets, delegate builders) and sorts had ties. Iterate sets sorted and give every sort a full tie-break; check by building twice with different `PYTHONHASHSEED` values and diffing `docs/reference` and `docs/agent`.
+
 ## Working style
 
 - No progress chatter; one final summary. Ask only real decisions, once.

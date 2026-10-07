@@ -35,6 +35,9 @@ SECRET_PATTERNS = [
     (r"(?i)\b(api[_-]?key|secret|token)\s*[=:]\s*['\"][A-Za-z0-9_\-./+=]{12,}['\"]", "key/secret literal"),
     (r"\bghp_[A-Za-z0-9]{30,}", "GitHub token"),
     (r"\bxox[abp]-[A-Za-z0-9-]{10,}", "Slack token"),
+    (r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}", "Stripe secret key"),
+    (r"\bwhsec_[A-Za-z0-9]{10,}", "Stripe webhook secret"),
+    (r"\bAIza[0-9A-Za-z_-]{35}\b", "Google API key"),
 ]
 # capitalised words that can open a sentence before a real count ("The 6 tables", "All 40 endpoints")
 COUNT_LEAD = {"the", "all", "these", "those", "only", "about", "over", "of", "in", "with", "has", "have", "contains", "lists",

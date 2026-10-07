@@ -123,14 +123,14 @@ def main():
         out += ["", f"Database routines named in test code ({len(sql_hits)} of {len(routines)}): " + ", ".join(
             f"[{shown_as[a]}]({routines[a]}#{a})" for a in sorted(sql_hits))]
     for p in sorted(by_proj):
-        ids = sorted(by_proj[p], key=lambda a: m.data[a]["name"].lower())
+        ids = sorted(by_proj[p], key=lambda a: (m.data[a]["name"].lower(), a))
         got = [a for a in ids if a in reached]
         miss = [a for a in ids if a not in reached]
         out += ["", f'<a id="{slug("area", p)}"></a>', "", f"## {p}", "", BACK, ""]
         if got:
             out += ["| Method | Reached by |", "| --- | --- |"]
             for a in got:
-                ts = sorted(reached[a], key=lambda t: (t not in direct[a], m.data[t]["name"]))
+                ts = sorted(reached[a], key=lambda t: (t not in direct[a], m.data[t]["name"], t))
                 shown = ", ".join(("**" + m.link(t) + "**") if t in direct[a] else m.link(t) for t in ts[:MAX_TESTS_SHOWN])
                 out.append(f"| {m.link(a)} | {shown}{f' +{len(ts) - MAX_TESTS_SHOWN} more' if len(ts) > MAX_TESTS_SHOWN else ''} |")
             out.append("")
