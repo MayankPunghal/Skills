@@ -1446,13 +1446,13 @@ def stored_delegates(model, G, facts):
             for t, mems in members.items():
                 if not builders.get(t):
                     continue
-                for m in re.finditer(r"(?<![\w.])([a-z_]\w*)\s*\.\s*(" + "|".join(map(re.escape, mems)) + r")\s*(?:\?\s*\.\s*Invoke|\.\s*Invoke)?\s*\(", body):
+                for m in re.finditer(r"(?<![\w.])([a-z_]\w*)\s*\.\s*(" + "|".join(map(re.escape, sorted(mems))) + r")\s*(?:\?\s*\.\s*Invoke|\.\s*Invoke)?\s*\(", body):
                     pos = md["body_start"] + m.start()
                     vt = var_type(src, md, m.group(1), pos) or field_type(src, md, m.group(1))
                     if vt != t:
                         continue
                     caller = G.method_at(p, md["line"], md["name"])
-                    for bf, bn, bl in builders[t]:
+                    for bf, bn, bl in sorted(builders[t]):
                         target = G.method_at(bf, bl, bn)
                         if target and G.add(caller, target, "stored delegate", "INFERRED", 0.7, p, src.line(pos),
                                             {"type": t, "member": m.group(2), "builder": bn}, relation="calls"):
