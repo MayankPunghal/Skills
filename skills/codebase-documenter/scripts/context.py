@@ -35,12 +35,38 @@ def missing_tools():
     return miss
 
 
+def stray_global_docs_skills():
+    """Project docs skills (written by make_agent_skill) found in the user-level skills folder without a pinned docs root.
+    Only a mode C (personal / global) install belongs there, and it always pins the root; any other copy is a misplaced
+    mode A / B install that shows up in every session. Reported only: the user decides whether to remove it."""
+    base = os.path.join(os.path.expanduser("~"), ".claude", "skills")
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for n in names:
+        f = os.path.join(base, n, "SKILL.md")
+        try:
+            text = open(f, encoding="utf-8", errors="ignore").read(20000)
+        except OSError:
+            continue
+        m = re.search(r"PINNED_DOCS_ROOT: (\S+)", text)
+        if m and m.group(1).strip("`.,") == "none":
+            out.append(os.path.join(base, n))
+    return out
+
+
 def main():
     utf8_stdout()
     root, cfg = load_config(required=False)
     miss = missing_tools()
     if miss:
         print(f"PREREQUISITES: missing {', '.join(miss)}")
+    for d in stray_global_docs_skills():
+        print(f"WARNING: project docs skill installed globally without a pinned docs root: {d} — it appears in every "
+              "session. Only a mode C install belongs there; tell the user and suggest deleting that folder (the project's "
+              "own copy under <repo>/.claude/skills/ keeps working). Do not delete it yourself.")
     import tool_updates
     upd = tool_updates.cached_summary()  # the last `npx ... update` check; no network here
     if upd:
