@@ -72,6 +72,11 @@ CFG = json.load(open(CFG_FILE, encoding="utf-8")) if os.path.exists(CFG_FILE) el
 MARKERS = CFG.get("source_markers") or []
 
 
+REPO_MANIFESTS = (".sln", ".slnx", ".csproj", ".vbproj", ".fsproj")
+REPO_FILES = {"package.json", "pyproject.toml", "setup.py", "pom.xml", "build.gradle", "build.gradle.kts", "go.mod", "cargo.toml",
+              "composer.json", "gemfile"}
+
+
 def is_source_root(d):
     if MARKERS:
         return any(os.path.exists(os.path.join(d, m)) for m in MARKERS)
@@ -82,9 +87,18 @@ def find_source_root(explicit):
     for c in (explicit, os.environ.get("DOCS_SOURCE_ROOT")):  # explicit choices win, markers or not
         if c and os.path.isdir(c):
             return os.path.abspath(c)
+    if not CFG:  # no codebase-docs.json beside docs/ (a mode A install that skipped it): the docs root is the repository
+        # when it holds a solution / project / package manifest; a docs-only workspace holds none
+        try:
+            names = os.listdir(BASE)
+        except OSError:
+            names = []
+        if any(n.lower().endswith(REPO_MANIFESTS) or n.lower() in REPO_FILES for n in names):
+            return BASE
+        return None
     if not MARKERS:  # no markers configured: trust codebase-docs.json source_root (relative to the docs root)
         c = os.path.join(BASE, CFG.get("source_root", "."))
-        return os.path.abspath(c) if CFG and os.path.isdir(c) else None
+        return os.path.abspath(c) if os.path.isdir(c) else None
     cands = [explicit, os.environ.get("DOCS_SOURCE_ROOT"), BASE, os.path.dirname(BASE),
              os.path.join(BASE, CFG.get("source_root", ".")), os.path.join(os.path.dirname(BASE), CFG.get("source_root", ".")),
              os.getcwd()]

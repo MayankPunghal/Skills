@@ -29,7 +29,7 @@ BANNER = re.compile(r"(?i)\bv?\d+\.\d+\.\d+\b.{0,80}\b(license|\(c\)|copyright)"
 # an open-source licence header: a copyright line plus a licence grant (a company's own "All rights reserved" header has no grant)
 COPYRIGHT = re.compile(r"(?i)copyright|\(c\)\s*\d{4}")
 GRANT = re.compile(r"(?i)licen[cs]ed under|released under|\bMIT\b|\bGPL\b|apache licen[cs]e|\bBSD\b|mit-license|opensource\.org")
-STEM_CUT = re.compile(r"[-.](?:\d|min\b|slim\b|bundle\b)")
+STEM_CUT = re.compile(r"[-.](?:\d|min\b|slim\b|bundle\b|debug\b|dev\b|umd\b|esm\b)")
 VERSIONED_DIR = re.compile(r"(?i)(?:^|[-_.v])v?\d+(?:\.\d+)+(?:[-_.]?\w+)?$|[a-z]v\d+(?:\.\d+)*$")
 # well-known libraries often copied in without a version or a licence banner (file stem, exact match after STEM_CUT)
 KNOWN_LIBS = {
@@ -39,7 +39,11 @@ KNOWN_LIBS = {
     "bootstrap", "bootstrap-datepicker", "bootstrap-select", "popper", "lodash", "underscore", "handlebars", "mustache",
     "select2", "toastr", "sweetalert", "sweetalert2", "numeral", "summernote", "dropzone", "fullcalendar", "html2canvas",
     "jspdf", "raphael", "nprogress", "datatables", "jquery.datatables", "jquery.signalr", "highcharts", "highstock",
-    "chartjs-plugin-datalabels", "ladda", "jquery.slimscroll", "jquery.sparkline"}  # not "spin", "pace", "clipboard": own code uses them
+    "chartjs-plugin-datalabels", "ladda", "jquery.slimscroll", "jquery.sparkline", "jqplot", "jquery.jqplot", "jquery.flot",
+    "flot"}  # not "spin", "pace", "clipboard": own code uses them
+# plugin families shipped as many files named <family>.<plugin> (jqplot.barRenderer.js, jquery.flot.time.js)
+PLUGIN_FAMILIES = ("jqplot.", "jquery.jqplot.", "jquery.flot.")
+_family_cache = {}
 MAX_ARG_CHARS = 24000  # Windows caps a command line at 32,767 characters; leave room for the rest of the graphify call
 
 
@@ -101,8 +105,28 @@ def is_vendored(path, rel, pkgs, dirs=()):
         return False
     if low.endswith((".intellisense.js", "-vsdoc.js")):
         return True
-    stem = STEM_CUT.split(low.rsplit(".", 1)[0])[0]
-    if stem in KNOWN_LIBS:
+    stem = file_stem(low)
+    if _direct(path, rel, stem, pkgs):
+        return True
+    # a sibling of a library file: its .min / .debug build anywhere (nifty.min.css beside nifty.css, whose banner the
+    # minified copy dropped); a companion named after it only inside the library's own folder (Nifty/nifty-demo-icons.css),
+    # because elsewhere bootstrap-custom.css beside bootstrap.css is usually the project's own override
+    folder = os.path.basename(os.path.dirname(os.path.abspath(path))).lower()
+    return any(stem == s or (folder == s and in_family(stem, s)) for s in family_stems(os.path.dirname(path), pkgs))
+
+
+def file_stem(name):
+    """Lower-case file name without extension, version, .min / .debug / .umd ... (jspdf.debug.js -> jspdf)."""
+    return STEM_CUT.split(name.lower().rsplit(".", 1)[0])[0]
+
+
+def in_family(stem, root):
+    return len(root) >= 4 and (stem == root or stem.startswith(root + "-") or stem.startswith(root + "."))
+
+
+def _direct(path, rel, stem, pkgs):
+    """Evidence from the file itself: a known library name, a declared client package, or a licence banner."""
+    if stem in KNOWN_LIBS or stem.startswith(PLUGIN_FAMILIES):
         return True
     if len(stem) >= 4 and any(stem == pk or stem.startswith(pk + ".") or pk.startswith(stem + ".") for pk in pkgs):
         return True
@@ -112,10 +136,29 @@ def is_vendored(path, rel, pkgs, dirs=()):
     return has_banner(path)
 
 
+def family_stems(folder, pkgs=()):
+    """Stems of the script / style files in one folder that are library files on their own evidence (cached per folder)."""
+    key = os.path.abspath(folder)
+    if key not in _family_cache:
+        stems = set()
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            names = []
+        for f in names:
+            if f.lower().endswith(ASSET_EXT):
+                p = os.path.join(folder, f)
+                if _direct(p, f, file_stem(f), pkgs):
+                    stems.add(file_stem(f))
+        _family_cache[key] = stems
+    return _family_cache[key]
+
+
 def library_dirs(src, skip=SKIP, pkgs=()):
     """Folders that hold a copied library: (1) the name carries a version and some file below has a library banner; or
     (2) a folder directly inside a script / style folder (Scripts/jqplot, Content/summernote) where at least half of the
-    script / style files below (and at least 3) are vendored on their own: the banner-less plugins beside them are too."""
+    script / style files below (and at least 3) are vendored on their own: the banner-less plugins beside them are too; or
+    (3) the source folder of a library build beside it (Content/scss/nifty next to the vendored Content/scss/nifty.css)."""
     found = []
     for d, dirs, files in os.walk(src):
         dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")]
@@ -123,6 +166,9 @@ def library_dirs(src, skip=SKIP, pkgs=()):
         if rel == "." or under(rel, found):
             continue
         parts = rel.lower().split("/")
+        if len(parts[-1]) >= 4 and parts[-1] in family_stems(os.path.dirname(d), pkgs):
+            found.append(rel)
+            continue
         versioned = bool(VERSIONED_DIR.search(parts[-1]))
         in_assets = len(parts) >= 2 and parts[-2] in ASSET_PARENTS
         if not (versioned or in_assets):
