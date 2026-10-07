@@ -59,7 +59,7 @@ If both A and B could apply (code found, but nothing says where to install), ask
 
 **Mode A — into the code repository** (`REPO` = the folder containing {{markers_text}}):
 
-1. Copy the **contents** of `PKG/repo-kit/` into `REPO`, merging folders: `AGENTS.md`, `mkdocs.yml`, `docs/`, `.claude/skills/{{skill_name}}/`. Don't overwrite an existing `REPO/docs/` that isn't these docs; if one exists, ask.
+1. Copy the **contents** of `PKG/repo-kit/` into `REPO`, merging folders: `AGENTS.md`, `mkdocs.yml`, `codebase-docs.json` (the lookup reads the source markers from it), `docs/`, `.claude/skills/{{skill_name}}/`. Don't overwrite an existing `REPO/docs/` or `REPO/codebase-docs.json` that isn't these docs; if one exists, ask.
 2. `CLAUDE.md`: if `REPO/CLAUDE.md` doesn't exist, copy `PKG/repo-kit/CLAUDE.md`. If it exists, append the kit's content to it, unless a "{{product}} documentation" / `AGENTS.md` section is already there.
 3. If `REPO` is a git repository, suggest (don't run) adding `site/` and `graphify-out/` to `.gitignore`. Remind the user that the security findings must not be pushed to a public remote.
 

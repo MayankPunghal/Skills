@@ -36,7 +36,7 @@ Not included: the graphify code graph (large; its paths point at the machine tha
 
 Give an AI agent `README.md` ("Read README.md in this folder and set up the {{product}} docs skill"); it follows the setup instructions there. By hand:
 
-- **Into the code repository (recommended)**: copy the contents of `repo-kit/` into the repository root (the folder containing {{markers_text}}); append `repo-kit/CLAUDE.md` to an existing `CLAUDE.md`. Commit to a private branch; add `site/` and `graphify-out/` to `.gitignore`.
+- **Into the code repository (recommended)**: copy the contents of `repo-kit/` into the repository root (the folder containing {{markers_text}}), `codebase-docs.json` included (the lookup finds the code through it); append `repo-kit/CLAUDE.md` to an existing `CLAUDE.md`. Commit to a private branch; add `site/` and `graphify-out/` to `.gitignore`.
 - **Docs only**: unzip anywhere, copy `repo-kit/.claude/skills/{{skill_name}}/SKILL.md` to `<unzipped>/.claude/skills/{{skill_name}}/SKILL.md`, copy `repo-kit/CLAUDE.docs-only.md` to `<unzipped>/CLAUDE.md`, open Claude Code in the unzipped folder. Answers then come from the docs only.
 - **Personal / global**: copy `SKILL.md` to `~/.claude/skills/{{skill_name}}/` and replace `PINNED_DOCS_ROOT: none` with the absolute docs root.
 

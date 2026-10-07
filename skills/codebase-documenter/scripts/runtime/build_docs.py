@@ -91,8 +91,10 @@ def resolve(kind, target, anchors, idx):
         a = slug(prefix, t)
         if a in anchors:
             return anchors[a], a
-        if kind == "table":  # reporting / shared DB table pages use the same prefix
-            return None
+        if kind == "proc" and "." in t:  # SalesDb.dbo.Order_Approve / dbo.Order_Approve: entries are anchored on the bare name
+            a = slug(prefix, t.rsplit(".", 1)[-1].strip("[]\""))
+            if a in anchors:
+                return anchors[a], a
         return None
     if kind in ("ctl", "act"):
         ctl, act = (t.rsplit(".", 1) + [None])[:2] if kind == "act" else (t, None)
@@ -106,7 +108,15 @@ def resolve(kind, target, anchors, idx):
             a = c if kind == "ctl" else "act-" + c[4:] + "-" + slug(act)
             if a in anchors:
                 return anchors[a], a
-        return None
+        # no controllers.md (generic adapters only): the class / method entries of the graph reference, then the endpoint
+        if kind == "ctl":
+            return resolve("cls", name, anchors, idx) if "cls" in idx else None
+        r = resolve("mth", f"{name}.{act}", anchors, idx) if "mth" in idx else None
+        if r or "ep" not in idx:
+            return r
+        short = name[: -len("controller")] if name.lower().endswith("controller") else name
+        cands = sorted(((x, p) for x, p in idx["ep"] if x.endswith("-" + slug(short, act))), key=lambda c: len(c[0]))
+        return (cands[0][1], cands[0][0]) if cands else None
     if kind == "cls":
         end = "-" + slug(t)
         cands = [(a, p) for a, p in idx["cls"] if a.endswith(end)]

@@ -571,7 +571,8 @@ def code_only_page(found, have_ddl):
            "touches are unknown until the schema is exported (ask the database owner for it). Call sites with the calling "
            "method and access technology are in [Database access](db-access.md).", ""]
     if dbs:
-        out += ["Database per helper (adapter_options.generic-sql.code_only_helpers): " + ", ".join(f"`{d}`" for d in dbs), ""]
+        out += ["Databases, from the helper that runs the call (adapter_options.generic-sql.code_only_helpers) or named in the "
+                "call itself (`Db.dbo.Name`, listed under its bare name): " + ", ".join(f"`{d}`" for d in dbs), ""]
     out += [anchor("index"), ""]
     letters = sorted({(r["name"][:1].upper() if r["name"][:1].isalpha() else "#") for r in rows})
     out.append(" · ".join(f"[{x}](#{slug('letter', x if x != '#' else 'other')})" for x in letters))

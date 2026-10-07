@@ -11,7 +11,9 @@ import json
 import os
 import re
 
-from _common import load_config, render, utf8_stdout, write
+import sys
+
+from _common import load_config, note_problems, render, utf8_stdout, write
 
 BEGIN, END = "<!-- docs:areas -->", "<!-- /docs:areas -->"
 
@@ -68,6 +70,10 @@ def main():
         set_areas(cfg, areas)
         print(f"added area {a.id}")
     elif a.cmd == "done":
+        bad = note_problems(os.path.join(cfg["docs_dir"], "_notes", f"{a.id}.md"))
+        if bad:
+            print(f"not ticked: note {a.id}.md is not finished: " + "; ".join(bad), file=sys.stderr)
+            sys.exit(1)
         p = progress_path(cfg)
         t = open(p, encoding="utf-8").read()
         t2 = re.sub(rf"- \[ \] (research {re.escape(a.id)}\b)", r"- [x] \1", t)
@@ -83,8 +89,9 @@ def main():
         for m in re.finditer(r"- \[( |x)\] research ([\w-]+) — (.+)", t):
             f = os.path.join(cfg["docs_dir"], "_notes", m.group(2) + ".md")
             size = sum(1 for _ in open(f, encoding="utf-8")) if os.path.exists(f) else 0
-            todo = open(f, encoding="utf-8").read().count("<!--") if size else 0
-            print(f"[{'x' if m.group(1) == 'x' else ' '}] {m.group(2):<32} {size:>4} lines  {'(template sections left: ' + str(todo) + ')' if todo > 7 else ''}")
+            bad = note_problems(f)
+            flag = ("  TICKED BUT NOT FINISHED: " if m.group(1) == "x" else "  ") + "; ".join(bad) if bad else ""
+            print(f"[{'x' if m.group(1) == 'x' else ' '}] {m.group(2):<32} {size:>4} lines{flag}")
 
 
 if __name__ == "__main__":

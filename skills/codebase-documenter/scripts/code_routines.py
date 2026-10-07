@@ -14,7 +14,8 @@ What counts as a call, only in files that set CommandType.StoredProcedure (or ca
     parameter and runs it as a stored procedure (adapter_options.generic-sql.code_only_helpers names more, and can map a
     helper to its database: {"ExecReporting": "Reporting"})
   - Dapper / EF: Query("Name", ..., commandType: CommandType.StoredProcedure); "EXEC Name ..." strings
-"Name" is one identifier, optionally schema-qualified (dbo.Name, [dbo].[Name], or a PostgreSQL quoted identifier escaped
+"Name" is one identifier, optionally schema- or database-qualified (dbo.Name, [dbo].[Name], SalesDb.dbo.Name: the row is the
+bare name and the call site keeps the database; or a PostgreSQL quoted identifier escaped
 inside the C# string, regular or verbatim; the quotes are removed and the schema kept). A const declared more than once in a file
 is ambiguous and not followed.
 
@@ -33,7 +34,8 @@ SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build"
 # as \"Name\" (regular string) or ""Name"" (verbatim string): "\"UserTracking_Data\".\"MasterEvents_Insert\""
 _PART = r'(?:\[?[A-Za-z_]\w*\]?|\\"[A-Za-z_]\w*\\"|""[A-Za-z_]\w*"")'
 _LAST = r'(?:\[?[A-Za-z_][\w$#]*\]?|\\"[A-Za-z_][\w$#]*\\"|""[A-Za-z_][\w$#]*"")'
-NAME = r"(?:" + _PART + r"\.)?" + _LAST
+# Name, schema.Name, Db.schema.Name or Db..Name (a cross-database call: the database part is kept on the call site)
+NAME = r"(?:" + _PART + r"\.(?:" + _PART + r"\.|\.)?)?" + _LAST
 LIT = r'@?"(' + NAME + r')"'
 SP_FLAG = re.compile(r"CommandType\s*\.\s*StoredProcedure|commandType\s*:\s*CommandType\.StoredProcedure")
 NEW_CMD = re.compile(r"\bnew\s+\w*Command\s*\(\s*" + LIT)
@@ -52,8 +54,15 @@ KEYWORDS = {"if", "for", "foreach", "while", "switch", "using", "lock", "return"
 
 
 def clean(name):
+    """(schema, name) of Name / schema.Name / Db.schema.Name / Db..Name, quotes and brackets removed."""
     parts = [p.replace('\\"', "").replace('""', "").strip("[]") for p in name.split(".")]
-    return (parts[0] if len(parts) > 1 else ""), parts[-1]
+    return (parts[-2] if len(parts) > 1 else ""), parts[-1]
+
+
+def database_of(name):
+    """The database part of a three-part name (SalesDb.dbo.Order_Approve, SalesDb..Order_Approve), else ""."""
+    parts = name.split(".")
+    return parts[0].replace('\\"', "").replace('""', "").strip("[]") if len(parts) == 3 else ""
 
 
 def methods_in(text):
@@ -121,7 +130,7 @@ def find(root, extra_helpers=None, files=None):
         r = found.setdefault(short.lower(), {"name": short, "schema": schema, "calls": []})
         if schema and not r["schema"]:
             r["schema"] = schema
-        call = {"file": rel, "line": line, "method": meth, "via": via, "database": database}
+        call = {"file": rel, "line": line, "method": meth, "via": via, "database": database_of(name) or database}
         if not any(c["file"] == rel and c["line"] == line for c in r["calls"]):
             r["calls"].append(call)
     for rel, text in srcs:

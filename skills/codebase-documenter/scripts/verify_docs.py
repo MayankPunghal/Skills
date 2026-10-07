@@ -19,13 +19,14 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-from _common import load_config, run, tick, utf8_stdout
+from _common import load_config, note_problems, run, tick, utf8_stdout
 
 SECRET_PATTERNS = [
     # an assignment (password=x, pwd = 'x') or a colon followed by something that looks like a literal: quoted, or holding a
-    # digit, symbol or inner capital. "the account has no password: users created by …" is prose, not a leak.
+    # digit, symbol or inner capital. "the account has no password: users created by …" is prose, not a leak, and neither is a
+    # Markdown label followed by inline code ("- Password: `SelectUserPassword(id)` returns …"): a code span names code.
     (r"\b(?i:password|pwd|passwd)\s*(?:=\s*['\"]?[^\s'\";<>]{4,}|:\s*['\"][^\s'\"]{4,}['\"]|"
-     r":\s*(?=[^\s'\";<>]*(?:[\d_!@#$%^&*+=?~]|(?<=[a-z])[A-Z]))(?![\[(])[^\s'\";<>,.]{4,})",
+     r":\s*(?=[^\s'\";<>]*(?:[\d_!@#$%^&*+=?~]|(?<=[a-z])[A-Z]))(?![\[(`])[^\s'\";<>,.]{4,})",
      "password assignment"),
     (r"\bsk-[A-Za-z0-9_-]{20,}", "API key (sk-...)"),
     (r"\bAKIA[0-9A-Z]{16}\b", "AWS access key"),
@@ -248,7 +249,11 @@ def main():
     if os.path.exists(prog):
         t = open(prog, encoding="utf-8").read()
         open_areas = re.findall(r"- \[ \] research ([\w-]+)", t)
-        results.append(("research areas complete", not open_areas, ", ".join(open_areas[:10]) or "all ticked"))
+        # a ticked area whose note is still the template counts as open (research_notes.py done refuses those too)
+        unfinished = [a for a in re.findall(r"- \[x\] research ([\w-]+)", t)
+                      if note_problems(os.path.join(docs, "_notes", a + ".md"))]
+        results.append(("research areas complete", not open_areas and not unfinished,
+                        ", ".join(open_areas[:10] + [a + " (ticked, note unfinished)" for a in unfinished[:10]]) or "all ticked, notes finished"))
 
     issues = []
     for p in glob.glob(os.path.join(docs, "_src", "**", "*.md"), recursive=True):

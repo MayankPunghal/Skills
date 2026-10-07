@@ -221,3 +221,19 @@ def tick(cfg, startswith):
     t2 = re.sub(r"- \[ \] (" + re.escape(startswith) + ")", r"- [x] \1", t, count=1)
     if t2 != t:
         write(p, t2)
+
+
+def note_problems(path):
+    """Why a research note is not finished yet ([] when it is): missing file, the template's "Status: in progress" header,
+    or most of the template's section comments still unchanged (sections never written)."""
+    if not os.path.exists(path):
+        return ["note file missing"]
+    text = open(path, encoding="utf-8").read()
+    tmpl = open(os.path.join(TEMPLATES, "note.md.tmpl"), encoding="utf-8").read()
+    left = [c for c in re.findall(r"<!--.*?-->", tmpl) if c in text]
+    out = []
+    if "Status: in progress" in text:
+        out.append('header still says "Status: in progress" (set "Status: done")')
+    if len(left) * 2 > len(re.findall(r"<!--.*?-->", tmpl)):
+        out.append(f"{len(left)} template section comments still unchanged")
+    return out
