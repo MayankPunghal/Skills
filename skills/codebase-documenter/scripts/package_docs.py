@@ -61,7 +61,12 @@ def main():
     # repo-kit/ is meant to be unpacked at the repository root (docs next to the code), so the shipped source root is
     # "." instead of this machine's path; lookup.py still finds the code by source_markers, DOCS_SOURCE_ROOT or --src
     raw = json.load(open("codebase-docs.json", encoding="utf-8"))  # the file as written, not merged with the defaults
-    write(os.path.join(kit, "codebase-docs.json"), json.dumps(dict(raw, source_root="."), indent=2, ensure_ascii=False) + "\n")
+    # an installed copy, not a workspace: scripts started beside it switch to the workspace (_common.ws_root)
+    copy = dict(raw, source_root=".", installed_copy=True)
+    ws_rel = os.path.relpath(os.path.abspath("."), os.path.abspath(cfg["source_root"])).replace("\\", "/")
+    if not ws_rel.startswith(".."):  # the workspace lives inside the repository (<repo>/.codebase-docs)
+        copy["workspace"] = ws_rel
+    write(os.path.join(kit, "codebase-docs.json"), json.dumps(copy, indent=2, ensure_ascii=False) + "\n")
     write(os.path.join(kit, "CLAUDE.md"), render("CLAUDE.block.md.tmpl", vals))
     # docs-only workspace (README mode B): the same block with every path under repo-kit/, copied to the package root
     write(os.path.join(kit, "CLAUDE.docs-only.md"),
