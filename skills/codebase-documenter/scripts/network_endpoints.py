@@ -123,7 +123,7 @@ KEY_IN_CODE = re.compile(r"""(?:Configuration|config|_config|_configuration|cfg|
                          r"""(?:GetValue\s*<[^>]+>|GetValue\s*\(\s*Of\s+\w+\s*\)|GetSection|GetConnectionString|GetRequiredSection|"""
                          r"""AppSettings|ConnectionStrings)\s*\(\s*["']([\w:.\-]+)["']""", re.I)  # VB: AppSettings("Key")
 # \\server\share (also escaped "\\\\server\\share" in C# literals): SMB to a file server
-UNC = re.compile(r"(?<![\w\\])\\{2,4}([A-Za-z0-9][A-Za-z0-9.\-]{1,62})\\{1,2}[\w$.\-]+")
+UNC = re.compile(r"(?<![\w\\])(?P<lead>\\{2,4})(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]{1,62})(?P<sep>\\{1,2})[\w$.\-]+")
 INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|Local)?IP\s*\(\s*(\d{2,5})|\.Listen\s*\(\s*IPAddress\.\w+\s*,\s*(\d{2,5})|"""
                           r"""\bapp\.Run\s*\(\s*["'](https?://[^"']+)["']|\.listen\s*\(\s*(\d{2,5})""")
 
@@ -295,7 +295,9 @@ class Scan:
         for i, line in enumerate(text.splitlines(), 1):
             if "\\\\" in line and not (cm and cm.match(line)) and ext not in (".md", ".sql"):
                 for m in UNC.finditer(line):
-                    h = m.group(1)
+                    h = m.group("host")
+                    if ext in (".cs", ".vb") and len(m.group("lead")) == 2 and len(m.group("sep")) == 2:
+                        continue  # "\\Folder\\file.xml" in a regular string is one escaped backslash: a relative path, not \\server\share
                     if not re.fullmatch(r"(?i)\?|\.|localhost|wsl\$|wsl\.localhost|tsclient|[a-z]", h) and not re.fullmatch(r"\d+", h):
                         self.out(h, None, "smb", "unc-path", rp, i)
             if ext in (".cs", ".vb") and not (cm and cm.match(line)):
@@ -334,7 +336,7 @@ class Scan:
             return
         u = UNC.search(value)
         if u:
-            self.out(u.group(1), None, "smb", "unc-path", rp, line, key)
+            self.out(u.group("host"), None, "smb", "unc-path", rp, line, key)
             return
         leaf = re.split(r"[:.]", key)[-1]
         if not HOST_KEY.search(leaf):

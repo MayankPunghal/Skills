@@ -172,6 +172,10 @@ def main():
             if v in t and re.search(pre + re.escape(v) + post, t):
                 leaks.append(os.path.basename(p))
                 break
+    url_cred = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:(?!\*\*\*)[^\s/@\"'<>]+@")  # scheme://user:password@host
+    for p in outputs:
+        if url_cred.search(open(p, encoding="utf-8-sig", errors="ignore").read()):
+            leaks.append(os.path.basename(p))
     results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))
     # 7 structure
     heads = [f"## {i}." for i in range(1, 12)]

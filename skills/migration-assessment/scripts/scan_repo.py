@@ -68,7 +68,7 @@ BLOCK_COMMENT = {"cs": re.compile(r"/\*.*?\*/", re.S), "js": re.compile(r"/\*.*?
                  "config": re.compile(r"<!--.*?-->", re.S), "proj": re.compile(r"<!--.*?-->", re.S), "markup": re.compile(r"<%--.*?--%>|<!--.*?-->", re.S),
                  "xml": re.compile(r"<!--.*?-->", re.S)}
 
-URL_RX = re.compile(r"(?i)\b(https?|net\.tcp|net\.pipe|ftp|sftp|ldaps?|amqps?|tcp)://([A-Za-z0-9_.\-]+|\[[0-9a-f:]+\])(:\d+)?([^\s\"'<>)]*)")
+URL_RX = re.compile(r"(?i)\b(https?|net\.tcp|net\.pipe|ftp|sftp|ldaps?|amqps?|tcp)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9_.\-]+|\[[0-9a-f:]+\])(:\d+)?([^\s\"'<>)]*)")
 IP_RX = re.compile(r"(?<![\w.])((?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})(?![\w.])")
 SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\.0\.0\.1|0\.0\.0\.0|\+|\*|example\.(com|org)|.*\.example\.com|tempuri\.org|schemas\.(microsoft|xmlsoap|openxmlformats)\.(com|org)|"
                         r"www\.w3\.org|w3\.org|go\.microsoft\.com|aka\.ms|json-schema\.org|purl\.org|xmlns\.com|docs\.(microsoft|oasis-open)\.(com|org)|"
@@ -379,6 +379,11 @@ class Scan:
             if "://" in line:
                 for m in URL_RX.finditer(line):
                     scheme, host = m.group(1).lower(), m.group(2)
+                    if line[m.end(2):m.end(2) + 2] in (':"', ":'"):  # ftp://user:" + Encode(pw) + "@host/ : the name before the colon is a user, the host follows the @
+                        later = re.search(r"@([A-Za-z0-9_.\-]+)", line[m.end(2):])
+                        if not later:
+                            continue
+                        host = later.group(1)
                     if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS:
                         continue
                     self.endpoint(host, scheme, rp, project, i, line, ftype)

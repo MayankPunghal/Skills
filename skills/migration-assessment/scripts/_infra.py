@@ -26,7 +26,7 @@ NOT_HOST = {"true", "false", "null", "none", "server", "host", "hostname", "loca
             "version", "encrypt", "pooling", "false", "enabled", "yes", "no", "add", "key", "type", "remove", "clear", "settings", "section", "default", "development",
             "production", "staging", "info", "warning", "error", "debug", "trace", "level", "enable", "disable", "relay", "smtp", "ftp", "sftp", "redis", "kafka", "elastic",
             "elasticsearch", "memcached", "aerospike", "rabbitmq", "ldap", "proxy", "cache", "queue", "topic", "group", "client", "consumer", "producer", "nodes", "servers",
-            "hosts", "uri", "url", "address", "endpoint", "bootstrapservers", "bootstrap", "sasl", "plaintext", "mechanism", "protocol", "username", "credentials", "application"}
+            "hosts", "uri", "url", "address", "endpoint", "bootstrapservers", "bootstrap", "sasl", "plaintext", "mechanism", "protocol", "username", "credentials", "application", "trusted_connection", "multipleactiveresultsets", "application_name", "applicationintent", "persist", "mongo"}
 FILE_LIKE = re.compile(r"(?i)\.(cs|vb|json|xml|config|dll|exe|js|css|html?|aspx?|cshtml|png|jpe?g|gif|svg|txt|log|csv|xlsx?|sql|bak|zip|pdf|ico|woff2?|ttf|xslt?|yml|yaml)$")
 SECTION_NAME = re.compile(r"^(system|microsoft|newtonsoft|nuget|windows|xmlns|schemas)\b", re.I)
 DOCKER_FILE = re.compile(r"(?i)^(dockerfile.*|docker-compose.*\.ya?ml|compose.*\.ya?ml)$")
@@ -76,8 +76,8 @@ def plausible_host(h, port):
         return False
     if port:
         return not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)  # a bare name with a port; random-looking mixes are keys
-    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (letters, optional separators, optional number); never camel-case mixes with digits
-    return bool(re.fullmatch(r"[A-Za-z][A-Za-z]*[-_]?\d{1,3}", h) or re.fullmatch(r"[A-Za-z0-9]+([-_][A-Za-z0-9]+)+", h)) and not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)
+    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (an underscore name needs a trailing number: sig_cruise_itineraries is a key, not a host); never camel-case mixes with digits
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z]*[-_]?\d{1,3}", h) or re.fullmatch(r"[A-Za-z0-9]+(-[A-Za-z0-9]+)+", h) or re.fullmatch(r"[A-Za-z0-9]+(_[A-Za-z0-9]+)*_\d{1,3}", h)) and not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)
 
 
 def host_tokens(text, ports):
@@ -198,7 +198,7 @@ def detect_dependencies(repo_root, inv, facts, cfg):
         prov = (c.get("provider") or "").lower()
         if re.search(r"sqlite|sqlserverce|sqlce|oledb|odbc|firebird|db2|informix|sybase|jet", prov):
             continue  # a file database or another engine: not a SQL Server dependency
-        tid = "mysql" if "mysql" in prov else "postgresql" if re.search(r"npgsql|postgres", prov) else "oracle" if "oracle" in prov else "sql-server"
+        tid = "mysql" if "mysql" in prov else "postgresql" if re.search(r"npgsql|postgres", prov) else "oracle" if "oracle" in prov else "mongodb" if "mongo" in prov else "sql-server"
         h = c.get("host")
         if h and not c.get("template"):
             hits[tid].add("connection-string", c["file"], c["line"], f"connection string: {c.get('name')}", owner(os.path.join(repo_root, c["file"])))

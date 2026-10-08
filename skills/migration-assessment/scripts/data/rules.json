@@ -2792,7 +2792,7 @@
     "\\bFAXCOMEXLib\\b",
     "\\bFAXCOMLib\\b",
     "\\bFaxServer\\b",
-    "\\bFaxDocument\\b"
+    "\\bnew\\s+FaxDocument(Class)?\\s*\\("
    ],
    "why": "Windows Fax Service (COM) is not available on Linux/AWS.",
    "fix": "Use a cloud fax API.",
