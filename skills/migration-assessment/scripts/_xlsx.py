@@ -30,7 +30,8 @@ def _colnum(letters):
     return n - 1
 
 
-def read(path, styles=False):
+def read(path, styles=False, typed=False):
+    """typed=True keeps numbers as int/float and booleans as bool (used when an existing sheet is written back); otherwise every value is a string."""
     z = zipfile.ZipFile(path)
     names = set(z.namelist())
     shared = []
@@ -45,6 +46,8 @@ def read(path, styles=False):
         target = target if target.startswith("xl/") else "xl/" + target
         rows = []
         for r in ET.fromstring(z.read(target)).iter("{%s}row" % NS["m"]):
+            while r.get("r", "").isdigit() and len(rows) < int(r.get("r")) - 1:
+                rows.append([])  # rows missing from the file are blank rows: keep the positions
             cells = {}
             for c in r.findall("m:c", NS):
                 v, is_ = c.find("m:v", NS), c.find("m:is", NS)
@@ -54,6 +57,13 @@ def read(path, styles=False):
                     val = "".join(x.text or "" for x in is_.iter("{%s}t" % NS["m"]))
                 else:
                     val = v.text if v is not None and v.text is not None else ""
+                    if typed and val != "" and c.get("t") in (None, "n"):
+                        try:
+                            val = int(val) if re.fullmatch(r"-?\d+", val) else float(val)
+                        except ValueError:
+                            pass
+                    elif typed and c.get("t") == "b":
+                        val = val == "1"
                 if styles and c.get("s") and c.get("s").isdigit() and int(c.get("s")) in _NAME_BY_ID and val != "":
                     val = (val, _NAME_BY_ID[int(c.get("s"))])  # keep the colour of cells this writer coloured
                 cells[_colnum(re.match(r"[A-Z]+", c.get("r")).group())] = val
@@ -70,7 +80,7 @@ def _cell(ref, v, style):
     if v is None or v == "":
         return f'<c r="{ref}"{st}/>'
     if isinstance(v, bool):
-        return f'<c r="{ref}" t="inlineStr"{st}><is><t>{"yes" if v else "no"}</t></is></c>'
+        return f'<c r="{ref}" t="b"{st}><v>{1 if v else 0}</v></c>'
     if isinstance(v, (int, float)):
         return f'<c r="{ref}"{st}><v>{v}</v></c>'
     t = escape(_BAD.sub("", str(v)))[:32000]
@@ -155,10 +165,10 @@ def write(path, sheets):
 
 
 def update(path, new_sheets, dest=None):
-    """Replace / add `new_sheets` ([(name, rows)]) in the workbook at `path`; every other sheet keeps its values (formatting is regenerated)."""
-    old = read(path, styles=True)
+    """Replace / add `new_sheets` ([(name, rows)]) in the workbook at `path`; every other sheet keeps its values, with numbers and booleans still numbers and booleans and blank rows kept; formatting is regenerated (number and date formats are not kept: a date cell shows its serial number), so the caller keeps a backup copy."""
+    old = read(path, styles=True, typed=True)
     replaced = {n for n, _ in new_sheets}
-    merged = [auto(n, [r for r in rows if r]) for n, rows in old.items() if n not in replaced]
+    merged = [auto(n, rows) for n, rows in old.items() if n not in replaced]
     out = []
     for n, rows in new_sheets:
         out.append(auto(n, rows))

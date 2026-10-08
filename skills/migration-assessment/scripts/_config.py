@@ -27,12 +27,15 @@ URL_RX = re.compile(r"\b(https?|ftps?|sftp|ldaps?|net\.tcp|tcp|amqps?|redis|redi
 IP_RX = re.compile(r"(?<![\d.\w])((?:\d{1,3}\.){3}\d{1,3})(?::(\d{2,5}))?(?![\d.]*\w)")
 UNC_RX = re.compile(r"\\\\([A-Za-z0-9][A-Za-z0-9._-]*)\\([^\s\"'<>|;,]+)")
 DRIVE_RX = re.compile(r"(?<![\w/])([A-Za-z]):[\\/][^\"'<>|;\r\n]{1,150}")
+ARG_START = re.compile(r"\s+(?:--?|/)[A-Za-z]\w*")  # a drive path ends where command-line arguments start
+SECRET_WORD = re.compile(r"(?i)pass(word|wd)?|pwd|secret|token|api[_-]?key|access[_-]?key|credential")
 UNIX_RX = re.compile(r"(?<![\w.:/])(/(?:var|opt|etc|home|mnt|srv|data|usr|app|logs?|tmp|shared)/[^\s\"'<>|;,]{0,150})")
 NOISE_KEY = re.compile(r"(?i)(^|[./@])\$?(schema|ref|id)$|xmlns|xsi|namespace|licen[cs]e|helpurl|documentation|homepage|repository|bugs$")
+DB_FILE = re.compile(r"(?i)^[A-Za-z]:|[\\/]\.{0,2}[^\\/]*\.(sdf|sqlite3?|db|mdf|ldf|mdb|accdb|xlsx?|csv)$|^[^\\/]*\.(sdf|sqlite3?|db|mdf|mdb|accdb)$|^\|")  # a file, not a server
 PLACEHOLDER = re.compile(r"(\{\{.*?\}\}|\$\{.*?\}|#\{.*?\}#?|%[A-Za-z_]+%|__\w+__|\$\(.*?\)|<%.*?%>)")
 CONN_HOST = re.compile(r"(?i)\b(?:data source|server|host|address|addr|network address)\s*=\s*(?:tcp:|np:)?([^;,\"'\s]+)(?:[,:](\d{2,5}))?")
 ENV_NAME = re.compile(r"(?i)[._-](debug|release|dev|development|local|staging|stage|stag|uat|qa|test|testing|sandbox|prod|production|live|preprod|cdn|demo)\b")
-SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\.|0\.0\.0\.0|::1|.*\.(w3|xmlsoap|microsoft|openxmlformats|schemas|nuget|oasis-open|xmlns)\..*|www\.w3\.org|schemas\.\w+\..*|"
+SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\..*|0\.0\.0\.0|::1|.*\.(w3|xmlsoap|microsoft|openxmlformats|schemas|nuget|oasis-open|xmlns)\..*|www\.w3\.org|schemas\.\w+\..*|"
                         r"json\.schemastore\.org|.*\.example\.(com|org)|example\.(com|org)|yourdomain\..*|your-?\w*\.com)$")
 OPEN_TAG = re.compile(r"<([A-Za-z][\w.:-]*)(?:\s[^>]*)?(?<!/)>")
 CLOSE_TAG = re.compile(r"</([A-Za-z][\w.:-]*)\s*>")
@@ -42,10 +45,13 @@ PORT_BY_SCHEME = {"http": 80, "https": 443, "ftp": 21, "ftps": 990, "sftp": 22, 
                   "mongodb": 27017, "net.tcp": 808, "tcp": 0, "ws": 80, "wss": 443}
 
 
+ENV_LABEL = {"stag": "staging", "stage": "staging", "dev": "development", "prod": "production"}
+
+
 def env_of(filename):
     m = ENV_NAME.search(filename)
     if m:
-        return m.group(1).lower().replace("stag", "staging").replace("stagingging", "staging")
+        return ENV_LABEL.get(m.group(1).lower(), m.group(1).lower())
     return "default"
 
 
@@ -95,7 +101,7 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
         seen.add(m.group(1).lower())
     for m in CONN_HOST.finditer(v):
         host = m.group(1).strip("'\"")
-        if host.lower() in seen or host in (".", "(local)", "localhost", "127.0.0.1") or host.lower().startswith(("(localdb)", "|datadirectory|")) or SKIP_HOSTS.match(host):
+        if DB_FILE.search(host) or host.lower() in seen or host in (".", "(local)", "localhost", "127.0.0.1") or host.lower().startswith(("(localdb)", "|datadirectory|")) or SKIP_HOSTS.match(host):
             continue
         seen.add(host.lower())
         port = int(m.group(2)) if m.group(2) else (1433 if re.search(r"(?i)initial catalog|database=|integrated security", v) else None)
@@ -107,8 +113,9 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
         seen.add(ip)
         out.append(("IP address", ip, int(m.group(2)) if m.group(2) else None, "ip", classify_target(ip, company_domains, host_kind, private_ip)))
     for m in DRIVE_RX.finditer(v):
-        if not URL_RX.search(v[max(0, m.start() - 8):m.start() + 3]):
-            out.append(("local drive path", m.group(0).rstrip(" ;,")[:150], None, "path", "local drive path"))
+        path = ARG_START.split(m.group(0), 1)[0].rstrip(" ;,")[:150]
+        if not URL_RX.search(v[max(0, m.start() - 8):m.start() + 3]) and not SECRET_WORD.search(path):
+            out.append(("local drive path", path, None, "path", "local drive path"))
     for m in UNIX_RX.finditer(v):
         out.append(("unix path", m.group(1)[:150], None, "path", "unix path"))
     if not out and HOST_KEY.search(key) and not SECRET_KEY.search(key) and len(v) < 120 and not re.search(r"\s", v):
@@ -121,38 +128,50 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
 
 
 def _json_lines(text):
-    """(line_no, key path, value) for scalar settings in JSON, by line, tracking object nesting. Array items take the array's key."""
-    stack, last_array = [], None
-    for i, line in enumerate(text.splitlines(), 1):
-        s = line.strip()
-        if not s or s.startswith("//"):
+    """(line_no, key path, value) for string settings in JSON (comments allowed), also for compact one-line files.
+    A value inside an array takes the array's key; an object inside an array adds nothing to the path."""
+    ctx, key, line, i, n = [], None, 1, 0, len(text)  # ctx: [(kind, name)], name = the key the container opened under
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            line += 1
+        elif text.startswith("//", i):
+            i = text.find("\n", i)
+            if i < 0:
+                break
             continue
-        m = re.match(r'^"([^"]+)"\s*:\s*(\{|\[)?\s*(.*?)\s*,?$', s)
-        if m:
-            k, opener, rest = m.group(1), m.group(2), m.group(3)
-            if opener == "{" and not rest.rstrip(",").endswith("}"):
-                stack.append(k)
-                continue
-            if opener == "[":
-                last_array = k
-                rest = rest.lstrip("[").rstrip("],")
-                for v in re.findall(r'"([^"]*)"', rest):
-                    yield i, ".".join(stack + [k]), v
-                continue
-            vm = re.match(r'^"((?:[^"\\]|\\.)*)"', rest)
-            if vm:
-                yield i, ".".join(stack + [k]), vm.group(1).replace("\\\\", "\\")
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            line += text.count("\n", i, j)
+            i = j
             continue
-        if s.startswith('"') and last_array:
-            vm = re.match(r'^"((?:[^"\\]|\\.)*)"', s)
-            if vm:
-                yield i, ".".join(stack + [last_array]), vm.group(1).replace("\\\\", "\\")
-            continue
-        if s.startswith(("}", "]")):
-            if s.startswith("}") and stack:
-                stack.pop()
-            if s.startswith("]"):
-                last_array = None
+        elif c in "{[":
+            parent_is_obj = bool(ctx) and ctx[-1][0] == "obj"
+            ctx.append(("obj" if c == "{" else "arr", key if parent_is_obj and key else ""))
+            key = None
+        elif c in "}]":
+            if ctx:
+                ctx.pop()
+            key = None
+        elif c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            s = text[i + 1:j]
+            k = j + 1
+            while k < n and text[k] in " \t\r\n":
+                k += 1
+            if k < n and text[k] == ":" and ctx and ctx[-1][0] == "obj":
+                key = s
+            else:
+                names = [x[1] for x in ctx if x[1]]
+                in_obj = bool(ctx) and ctx[-1][0] == "obj"
+                if (in_obj and key) or (ctx and ctx[-1][0] == "arr" and names):
+                    yield line, ".".join(names + ([key] if in_obj else [])), s.replace("\\\\", "\\")
+                key = None
+            i = j
+        i += 1
 
 
 def _xml_lines(text):
@@ -269,6 +288,16 @@ NEEDS = {
 }
 
 
+def looks_like_noise(h):
+    """A date, a one-letter token or a version number that the address pattern read as a host."""
+    is_ip = bool(re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h))
+    if len(h) < 3:
+        return True
+    if not is_ip and re.search(r"(?i)^\d{1,2}-[a-z]{3}-\d{4}$|^[\d.]+$", h):
+        return True
+    return not (is_ip or "." in h or plausible_host(h, None))
+
+
 def network_access(repo, inv, facts, cfgrows, host_kind, private_ip, company, index=None):
     """One row per (project, destination host, port): what must be reachable from AWS, and what to do about it."""
     rows = OrderedDict()
@@ -292,7 +321,7 @@ def network_access(repo, inv, facts, cfgrows, host_kind, private_ip, company, in
         if o.get("host") in ("localhost", "127.0.0.1"):
             continue
         h = o["host"]
-        if len(h) < 3 or re.search(r"(?i)^\d{1,2}-[a-z]{3}-\d{4}$|^[\d.]+$", h) and not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h) or                 not (re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h) or "." in h or plausible_host(h, None)):
+        if looks_like_noise(h):
             continue  # a date, a one-letter token or a version number that the pattern read as an address
         cls = classify_target(o["host"], company, host_kind, private_ip)
         for pj in (o.get("projects") or ["(repository)"]):

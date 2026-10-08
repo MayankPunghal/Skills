@@ -26,6 +26,7 @@ from collections import Counter
 import _xlsx
 from _common import OUT, load_config, read_json, save_config, slug, utf8_stdout
 
+MAX_ADDITIONS = 1500  # rows of the "Assessment additions" sheet; a sheet longer than this is unreadable
 INV_NAMES = {"sql-server": ["sql server"], "redis": ["redis"], "memcached": ["memcache"], "elasticsearch": ["elasticsearch", "opensearch"], "kafka": ["kafka"],
              "rabbitmq": ["rabbitmq"], "smtp": ["smtp"], "sftp-ftp": ["ftp"], "file-share": ["unc", "file share"], "ldap-ad": ["ldap", "active directory"],
              "mongodb": ["mongo"], "mysql": ["mysql"], "postgresql": ["postgres"], "oracle": ["oracle"], "aerospike": ["aerospike"], "http-proxy": ["proxy"]}
@@ -151,9 +152,6 @@ def main():
             ("Environment of the file", lambda r: r["environment"]), ("Setting", lambda r: r["setting"]), ("What it holds", lambda r: r["type"]), ("Target (address or path)", lambda r: r["target"]),
             ("Port", lambda r: r["port"] or ""), ("Kind", lambda r: (r["class"], colour.get(r["class"], ""))), ("What to do on AWS", lambda r: r["action"])])))
     if servers:
-        dep_roles = {}
-        for r in rows:
-            pass
         used = {}
         for c in view.get("server_coverage", []):
             used[c["role"]] = c["repos_depending"]
@@ -212,7 +210,9 @@ def main():
         if manifest_dir not in found:
             add.append({"g": row[pg] if pg is not None else "", "r": r, "what": "Listed as a Node.js project but not an npm manifest", "detail": row[pm],
                         "evidence": row[pm], "action": "Correct the Projects sheet: the file is a data file or sits outside any buildable project"})
-    sheets.append(("Assessment additions", table(add[:1500], [
+    if len(add) > MAX_ADDITIONS:
+        add = add[:MAX_ADDITIONS] + [{"g": "", "r": "", "what": f"{len(add) - MAX_ADDITIONS} more items not listed", "detail": "The list is capped; fix the first ones and run again", "evidence": "", "action": ""}]
+    sheets.append(("Assessment additions", table(add, [
         ("Group", lambda r: r["g"]), ("Repository", lambda r: r["r"]), ("What the assessment found", lambda r: r["what"]), ("Detail", lambda r: r["detail"]),
         ("Evidence", lambda r: r["evidence"]), ("Action", lambda r: r["action"])])))
 

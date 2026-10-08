@@ -196,7 +196,9 @@ def detect_dependencies(repo_root, inv, facts, cfg):
     # connection strings parsed by scan_repo (provider, host): the most reliable host source for databases
     for c in (facts or {}).get("connection_strings", []):
         prov = (c.get("provider") or "").lower()
-        tid = "mysql" if "mysql" in prov else "postgresql" if "npgsql" in prov else "oracle" if "oracle" in prov else "sql-server"
+        if re.search(r"sqlite|sqlserverce|sqlce|oledb|odbc|firebird|db2|informix|sybase|jet", prov):
+            continue  # a file database or another engine: not a SQL Server dependency
+        tid = "mysql" if "mysql" in prov else "postgresql" if re.search(r"npgsql|postgres", prov) else "oracle" if "oracle" in prov else "sql-server"
         h = c.get("host")
         if h and not c.get("template"):
             hits[tid].add("connection-string", c["file"], c["line"], f"connection string: {c.get('name')}", owner(os.path.join(repo_root, c["file"])))
@@ -286,7 +288,7 @@ def hosting_evidence(repo_root, inv, cfg):
                     continue
                 if low.startswith("dockerfile") or low.startswith(("docker-compose", "compose")):
                     if re.match(r"(?i)\s*FROM\s", line):
-                        if re.search(r"(?i)windowsservercore|nanoserver|servercore", line):
+                        if re.search(r"(?i)windowsservercore|nanoserver|servercore|mcr\.microsoft\.com/dotnet/framework", line):
                             add("windows", "Windows container image", "strong", rp, i, line.strip())
                         elif re.search(r"(?i)mcr\.microsoft\.com/dotnet|alpine|ubuntu|debian", line):
                             add("linux", "Linux container image", "strong", rp, i, line.strip())

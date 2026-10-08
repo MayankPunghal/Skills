@@ -164,11 +164,11 @@ def main():
     for p in outputs:
         t = open(p, encoding="utf-8-sig", errors="ignore").read()
         for v in vals:
-            # a plain short word (letters only) that appears as one label of a host name, URL path or hyphenated name is a coincidence, not a leak;
+            # a plain short word (letters only) right after a slash or joined to other letters by a dot or hyphen (host label, URL path, hyphenated name) is a coincidence, not a leak;
             # anything longer or with digits/symbols must not appear at all as a standalone token
             word = v.isalpha() and len(v) <= 12
-            pre = r"(?<![A-Za-z0-9_])" + (r"(?<![/.\-])" if word else "")
-            post = r"(?![A-Za-z0-9_])" + (r"(?![/.\-])" if word else "")
+            pre = r"(?<![A-Za-z0-9_])" + (r"(?<![/])(?<![A-Za-z0-9_][.-])" if word else "")
+            post = r"(?![A-Za-z0-9_])" + (r"(?![.-][A-Za-z0-9_])" if word else "")
             if v in t and re.search(pre + re.escape(v) + post, t):
                 leaks.append(os.path.basename(p))
                 break

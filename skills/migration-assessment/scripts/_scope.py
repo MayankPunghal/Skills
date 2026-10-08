@@ -95,7 +95,42 @@ def _resolve(base_dir, val):
     return os.path.normpath(os.path.join(base_dir, val.replace("\\", "/")))
 
 
-def coupling(repo_root, np, dotnet_projects, skip=SKIP):
+_SCAN_CACHE = {}
+
+
+def _repo_scan(repo_root, skip):
+    """Pipeline lines that mention Node and C# lines that start Node, read once per repository: [(file, line no, text)]."""
+    key = (os.path.normpath(repo_root), tuple(sorted(skip)))
+    if key in _SCAN_CACHE:
+        return _SCAN_CACHE[key]
+    ci, runtime = [], []
+    for d, files in _walk(repo_root, skip, depth=4):
+        for fn in files:
+            if CI_FILES.match(fn):
+                for i, line in enumerate(_lines(os.path.join(d, fn)), 1):
+                    if NODE_TOKEN.search(line):
+                        ci.append((os.path.join(d, fn), i, line))
+                        break
+    for d, files in _walk(repo_root, skip):
+        for fn in files:
+            if fn.lower().endswith(".cs"):
+                p = os.path.join(d, fn)
+                try:
+                    if os.path.getsize(p) > 1_500_000:
+                        continue
+                    text = read_text(p)
+                except OSError:
+                    continue
+                if "node" in text.lower() or "npm" in text.lower() or "Jering" in text:
+                    for i, line in enumerate(text.splitlines(), 1):
+                        if RUNTIME_USE.search(line):
+                            runtime.append((p, i, line))
+                            break
+    _SCAN_CACHE[key] = {"ci": ci, "runtime": runtime}
+    return _SCAN_CACHE[key]
+
+
+def coupling(repo_root, np, dotnet_projects, skip=SKIP, n_node=1):
     """How the .NET code depends on the non-.NET project `np` (an entry from find_non_dotnet). Evidence only, no guesses."""
     signals = []
 
@@ -190,30 +225,20 @@ def coupling(repo_root, np, dotnet_projects, skip=SKIP):
                         add("manual-build-script", os.path.join(d, fn), i, line)
                         break
     ci_hits = 0
-    for d, files in _walk(repo_root, skip, depth=4):
-        for fn in files:
-            if CI_FILES.match(fn):
-                for i, line in enumerate(_lines(os.path.join(d, fn)), 1):
-                    if NODE_TOKEN.search(line):
-                        add("pipeline-builds-node", os.path.join(d, fn), i, line)
-                        ci_hits += 1
-                        break
-    # 5. run time: C# starts node
-    for d, files in _walk(repo_root, skip):
-        for fn in files:
-            if fn.lower().endswith(".cs"):
-                p = os.path.join(d, fn)
-                try:
-                    if os.path.getsize(p) > 1_500_000:
-                        continue
-                    text = read_text(p)
-                except OSError:
-                    continue
-                if "node" in text.lower() or "npm" in text.lower() or "Jering" in text:
-                    for i, line in enumerate(text.splitlines(), 1):
-                        if RUNTIME_USE.search(line):
-                            add("runtime-node", p, i, line)
-                            break
+    scan = _repo_scan(repo_root, skip)
+    only_node = n_node <= 1  # with several Node projects a hit counts for one only when its line names that project
+
+    def concerns(line):
+        low = line.lower().replace("\\", "/")
+        return only_node or np["name"].lower() in low or (np["path"] != "." and np["path"].lower() in low)
+
+    for path, i, line in scan["ci"]:
+        if concerns(line):
+            add("pipeline-builds-node", path, i, line)
+            ci_hits += 1
+    for path, i, line in scan["runtime"]:
+        if concerns(line):
+            add("runtime-node", path, i, line)
     kinds = {s["kind"] for s in signals}
     if "runtime-node" in kinds or "spa-or-node-package" in kinds:
         level = "runtime"
@@ -242,8 +267,9 @@ def assess_scope(repo_root, skip, dotnet_projects):
     pdirs = [(os.path.normpath(os.path.dirname(os.path.join(repo_root, p["path"]))), p["path"]) for p in dotnet_projects]
     items = find_non_dotnet(repo_root, skip, pdirs)
     out = []
+    n_node = sum(1 for x in items if x["ecosystem"] == "Node.js")
     for e in items:
-        c = coupling(repo_root, e, dotnet_projects, skip) if (e["ecosystem"] == "Node.js" or e["embedded_in"]) else {"level": "none-found", "signals": [], "pipeline_in_repo_builds_it": False}
+        c = coupling(repo_root, e, dotnet_projects, skip, n_node) if (e["ecosystem"] == "Node.js" or e["embedded_in"]) else {"level": "none-found", "signals": [], "pipeline_in_repo_builds_it": False}
         own = any(pd == e["abs"] or pd.startswith(e["abs"] + os.sep) for pd, _ in pdirs)  # the folder holds .NET project files: never skipped
         out.append({"path": e["path"], "name": e["name"], "skippable": not own and e["path"] != ".", "ecosystem": e["ecosystem"], "manifests": sorted(e["manifests"]),
                     "relation": "embedded in .NET project " + e["embedded_in"] if e["embedded_in"] else "standalone folder",

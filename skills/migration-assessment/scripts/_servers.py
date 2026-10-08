@@ -86,6 +86,7 @@ class Index:
     def __init__(self, sv):
         self.servers = sv["servers"]
         self.by_name = {x["name"].lower(): x for x in self.servers}
+        self.by_ip = {ip: x for x in self.servers for ip in re.findall(r"(?:\d{1,3}\.){3}\d{1,3}", x.get("ip") or "")}  # the list's IP column (one or several addresses per server)
         self.by_role = defaultdict(list)
         for x in self.servers:
             for g in x["roles"]:
@@ -95,6 +96,8 @@ class Index:
         h = host.lower()
         if h in self.by_name:
             return self.by_name[h]
+        if h in self.by_ip:
+            return self.by_ip[h]
         first = h.split(".")[0] if not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h) else None
         return self.by_name.get(first) if first else None
 
