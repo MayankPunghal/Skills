@@ -22,6 +22,7 @@ SKIP_FILE = re.compile(r"(?i)(package(-lock)?\.json$|yarn\.lock|tsconfig|launchs
 SECRET_KEY = re.compile(r"(?i)(pass(word|wd|phrase)?$|pwd$|secret|token$|api[_-]?key|access[_-]?key|private[_-]?key|credential|client[_-]?key|shared[_-]?key|signing[_-]?key|salt$|hash$|license[_-]?key|authorization)")
 HOST_KEY = re.compile(r"(?i)(host|server|address|endpoint|url|uri|broker|smtp|proxy|bootstrap|nodes?|redis|memcache|aerospike|elastic|kafka|ldap|ftp|baseaddress|datasource|"
                       r"cache|queue|domain|origin|location|gateway|service|api|callback|redirect|webhook|feed)")
+HOST_LAST = re.compile(r"(?i)host|server|address|endpoint|url|uri|broker|bootstrap|smtp|node|redis|memcache|aerospike|elastic|kafka|ldap|ftp|proxy|domain")  # a bare word is a host only when the LAST part of the setting name says so (DataSource, ServiceType, text are not)
 PATH_KEY = re.compile(r"(?i)(path|dir|directory|folder|file|share|root|location|logs?|temp|tmp|template|export|import|drop|inbox|outbox|archive|storage|cache)")
 URL_RX = re.compile(r"\b(https?|ftps?|sftp|ldaps?|net\.tcp|tcp|amqps?|redis|rediss|mongodb(?:\+srv)?|smtp|wss?|rtmp|jdbc:\w+)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9.\-]+|\[[0-9a-fA-F:]+\])(?::(\d{2,5}))?")
 IP_RX = re.compile(r"(?<![\d.\w])((?:\d{1,3}\.){3}\d{1,3})(?::(\d{2,5}))?(?![\d.]*\w)")
@@ -118,7 +119,7 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
             out.append(("local drive path", path, None, "path", "local drive path"))
     for m in UNIX_RX.finditer(v):
         out.append(("unix path", m.group(1)[:150], None, "path", "unix path"))
-    if not out and HOST_KEY.search(key) and not SECRET_KEY.search(key) and len(v) < 120 and not re.search(r"\s", v):
+    if not out and HOST_LAST.search(re.split(r"[./@:]", key)[-1]) and not SECRET_KEY.search(key) and len(v) < 120 and not re.search(r"\s", v):
         m = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?::(\d{2,5}))?", v)
         if m and plausible_host(m.group(1), m.group(2)) and not re.fullmatch(r"\d+(\.\d+)*", m.group(1)) and not re.fullmatch(r"(?i)\d{1,2}-[a-z]{3}-\d{4}|[\d-]+", m.group(1)) and len(m.group(1)) >= 3:
             h = m.group(1)

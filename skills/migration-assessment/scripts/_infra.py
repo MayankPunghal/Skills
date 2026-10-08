@@ -191,6 +191,8 @@ def detect_dependencies(repo_root, inv, facts, cfg):
                         hits[t["id"]].add("config", rp, i, f"config key: {k}" if matched_key else f"setting pattern: {t['label']}", proj)
                         if t["id"] in ("sql-server", "mysql", "postgresql", "oracle", "mongodb") and not re.search(r"(?i)\b(Data Source|Server|Host|mongodb://)", line):
                             continue
+                        if t["id"] in ("sql-server", "mysql", "postgresql", "oracle") and re.search(r"(?i)mongo", line):
+                            continue  # a MongoDB connection string also says server=...: it is not a relational database host
                         for ht in host_tokens(_value_part(line), t["ports"]):
                             hits[t["id"]].host(ht["host"], ht["port"], rp, i)
     # connection strings parsed by scan_repo (provider, host): the most reliable host source for databases
