@@ -20,12 +20,24 @@ Done looks like: state, recommended NEXT and the step menu are shown; no step st
 Prompt: "We have 40 old ASP.NET MVC and WCF repos. What will break if we move them off Windows to AWS, and roughly how long will it take?"
 Should trigger: yes
 First file Claude should open: `references/setup.md` (prerequisites) via `context.py`
-Done looks like: workspace is proposed outside the client repos; scenario question covers code side (modernize or windows-rehost) and database code (dual, PostgreSQL only, none).
+Done looks like: workspace is proposed outside the client repos; the intake questionnaire is asked (goal, OS today, database engine and hosting, AWS managed services, code access) before discovery; no flags are asked for and no answer is filled in by Claude.
 
 ### Should not trigger
 Prompt: "Upgrade this one console project from .NET 6 to .NET 8 and fix the build."
 Should trigger: no
 Done looks like: skill is not loaded; normal coding help is given.
+
+### Lift-and-shift intake
+Prompt: "The client wants to move 30 Windows and Linux servers from Proxmox to EC2 as they are, databases on EC2. Assess the repos."
+Should trigger: yes
+First file Claude should open: `references/intake.md`
+Done looks like: the answers the user already gave (goal lift-and-shift, db_hosting ec2, platform Proxmox) are confirmed in one line, not re-asked; the rest are asked; `intake.py --answers` records them; `context.py` shows ASSESSMENT TYPE lift-and-shift; the report uses the lift-and-shift template (landing on AWS first, Linux/.NET work under Future options).
+
+### Sample access extrapolation
+Prompt: "We only have 12 of the client's 80 repos. Estimate the whole estate." (workspace with an estimate and an estate list)
+Should trigger: yes
+First file Claude should open: `references/intake.md#sample-access-estimating-the-rest-of-the-estate`
+Done looks like: `extrapolate_estate.py` runs after `estimate_effort.py`; unshared repos are estimated per kind with Low confidence where no sample of that kind exists; the report shows the whole-estate section (7.3 or 8.9) and `assessment/report/estate-extrapolation.csv` is written.
 
 ## Output checks
 

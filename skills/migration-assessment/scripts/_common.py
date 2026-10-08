@@ -29,7 +29,15 @@ DEFAULTS = {
     "git_activity_days": 180,
     "exclude_dirs": ["bin", "obj", "packages", "node_modules", ".git", ".vs", "TestResults", "dist", "wwwroot/lib", "bower_components"],
     "skip_repos": [],
-    "scenario": {"hosting": "modernize", "database": "dual"},  # hosting: modernize | windows-rehost; database: dual | postgresql | none
+    "scenario": {"hosting": "modernize", "database": "dual"},  # hosting: modernize | windows-rehost | lift-and-shift; database: dual | postgresql | none
+    "assessment_type": "",           # set by intake.py from the questionnaire: lift-and-shift | modernize | compare (empty: intake not done)
+    "intake": {},                    # questionnaire answers (intake.py); drive assessment_type, scenario, report sections, estate extrapolation
+}
+
+ASSESSMENT_TYPES = {
+    "lift-and-shift": "Lift-and-shift: same servers and operating systems on Amazon EC2, no code port",
+    "modernize": "Migrate and modernize: port to .NET 10 on Linux, per-application 7R decisions",
+    "compare": "Compare: modernization plan with the lift-and-shift option costed beside it",
 }
 
 SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}

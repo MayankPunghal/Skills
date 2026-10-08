@@ -4,13 +4,15 @@
 
 Gates
   1 evidence        every finding has file+line (or package) evidence, and every cited file exists with that many lines
-  2 coverage        every category appears in the report with findings or "Checked, none found."
+  2 coverage        every category appears in the report with findings or "Checked, none found." (lift-and-shift: every
+                    in-scope category in section 5, and section 8.2 for the out-of-scope modernization findings)
   3 review          every Blocker/High finding with confidence "Needs verification" has a reviewer verdict
   4 decisions       every application has a reviewed 7R decision in assessment/decisions.json (--allow-draft: warning only)
   5 narratives      no PENDING markers left in assessment/narrative/*.md and no missing narrative in the report
   6 secrets         no secret value from the client's config/code appears in the report or exports
   7 structure       report sections 1-11 present; estimate, open questions and an up-to-date HTML report present
   8 dependencies    sections 4.5-4.8 present; every inventoried project in the interdependency table; workflows traced for every application
+                    (lift-and-shift: section 4.5 with every project; workflow tracing not required)
 """
 import argparse
 import glob
@@ -21,6 +23,7 @@ import xml.etree.ElementTree as ET
 
 from _common import OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
 import _findings as F
+import build_report as BR
 
 SECRET_KEY = re.compile(r"(?i)pass|pwd|secret|token|apikey|api_key|accesskey|credential|privatekey|clientkey|sharedkey|decryptionkey|validationkey")
 LITERAL = re.compile(r"(?i)\b\w*(password|passwd|pwd|secret|apikey|api_key|accesskey|clientsecret|token)\w*\s*(=|:)\s*@?\"([^\"\s]{6,})\"")
@@ -112,7 +115,13 @@ def main():
     reports = [p for p in glob.glob(os.path.join(OUT, "report", "*.md"))]
     report = open(reports[0], encoding="utf-8").read() if reports else ""
     cats = data("categories.json")["categories"]
-    gaps = []
+    is_lift = BR.lift(cfg)
+    if is_lift:  # lift-and-shift report: section 5 holds the in-scope categories, 8.2 summarises the rest (Linux / .NET modernization)
+        hs = data("estimation.json")["hosting_scenarios"].get((cfg.get("scenario") or {}).get("hosting") or "", {})
+        keep = {"categories": set(hs.get("keep_categories", [])), "rules": set(hs.get("keep_rules", []))}
+        future_ok = "### 8.2 " in report
+        cats = [c for c in cats if c["id"] in keep["categories"] or any(f["category"] == c["id"] and BR.in_scope(f, keep) for f in findings)]
+    gaps = [] if not is_lift or future_ok else ["8.2 future modernization findings (missing)"]
     for c in cats:
         m = re.search(rf"(?m)^### 5\.\d+ {re.escape(c['title'])}\s*$(.*?)(?=^### |^## |\Z)", report, re.S)
         if not m:
@@ -167,14 +176,19 @@ def main():
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
                     f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
     # 8 dependencies: project interdependencies and workflow tracing
-    miss_sec = [h for h in ("### 4.5 ", "### 4.6 ", "### 4.7 ", "### 4.8 ") if h not in report]
-    sec45 = report.split("### 4.5 ", 1)[1].split("### 4.6 ", 1)[0] if "### 4.5 " in report and "### 4.6 " in report else ""
-    sec46 = report.split("### 4.6 ", 1)[1].split("### 4.7 ", 1)[0] if "### 4.6 " in report and "### 4.7 " in report else ""
+    if is_lift:  # lift-and-shift layout: 4.5 is the project interdependency table (what must move together); no workflow sections
+        miss_sec = [h for h in ("### 4.5 ",) if h not in report]
+        sec45 = re.split(r"(?m)^## ", report.split("### 4.5 ", 1)[1], maxsplit=1)[0] if "### 4.5 " in report else ""
+        sec46 = ""
+    else:
+        miss_sec = [h for h in ("### 4.5 ", "### 4.6 ", "### 4.7 ", "### 4.8 ") if h not in report]
+        sec45 = report.split("### 4.5 ", 1)[1].split("### 4.6 ", 1)[0] if "### 4.5 " in report and "### 4.6 " in report else ""
+        sec46 = report.split("### 4.6 ", 1)[1].split("### 4.7 ", 1)[0] if "### 4.6 " in report and "### 4.7 " in report else ""
     miss_proj = [p["name"] for inv in invs.values() for p in inv["projects"] if p["name"] not in sec45]
     apps = [x["name"] for x in cls["applications"] if x.get("r7") != "Retire"]
     npath = os.path.join(OUT, "narrative", "dependencies.md")
     ntext = read_text(npath) if os.path.exists(npath) else ""
-    no_wf = [n for n in apps if "#### " + n + " " not in sec46 and n not in ntext]
+    no_wf = [] if is_lift else [n for n in apps if "#### " + n + " " not in sec46 and n not in ntext]
     ok8 = not miss_sec and not miss_proj and not no_wf
     results.append(("dependencies mapped", ok8, f"missing sections: {', '.join(miss_sec) or 'none'}; projects not in 4.5: {len(miss_proj)}; applications without traced workflows: {', '.join(no_wf) or 'none'}"
                     + ("" if not no_wf else " (no entry points detected: describe the app's workflows manually in the dependencies narrative and mention the app by name)")))

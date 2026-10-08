@@ -450,7 +450,7 @@
   ]
  },
  "hosting_scenarios": {
-  "_doc": "Code-side scenario. modernize: port to .NET 10 for Linux (per-application 7R decisions, Windows-bound parts replaced). windows-rehost: lift-and-shift the existing Windows app to EC2 Windows, only code / configuration that must change for the new network and identity (keep_categories). skip_categories: findings not needed in a scenario.",
+  "_doc": "Code-side scenario. modernize: port to .NET 10 for Linux (per-application 7R decisions, Windows-bound parts replaced). windows-rehost: lift-and-shift the existing Windows app to EC2 Windows, only code / configuration that must change for the new network and identity (keep_categories). lift-and-shift: every server moves to EC2 with the same operating system (Windows to Windows, Linux to Linux), no code port; costs only the code and configuration that must change to land on AWS (keep_categories plus keep_rules from other categories). skip_categories: findings not needed in a scenario.",
   "modernize": {
    "label": "Convert .NET Windows applications to .NET 10 on Linux",
    "mode": "decisions",
@@ -465,7 +465,28 @@
     "dependencies",
     "integrations",
     "security",
-    "hypervisor"
+    "hypervisor",
+    "aws-landing"
+   ]
+  },
+  "lift-and-shift": {
+   "label": "Lift-and-shift: same operating system on EC2 (Windows to Windows, Linux to Linux), no code port",
+   "mode": "rehost",
+   "keep_categories": [
+    "aws-landing",
+    "connectivity",
+    "configuration-secrets",
+    "dependencies",
+    "integrations",
+    "security",
+    "hypervisor",
+    "auth"
+   ],
+   "keep_rules": [
+    "NET-UNC-SHARE",
+    "FILE-DRIVE-LETTER",
+    "WIN-DIRSERVICES",
+    "DATA-INTEGRATED-SECURITY"
    ]
   }
  },

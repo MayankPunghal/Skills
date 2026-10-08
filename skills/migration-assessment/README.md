@@ -55,11 +55,14 @@ Between `scan` and `build`, the assessor (Claude, or you) does the judgment work
 
 ## Scenarios
 
-The estimate covers what the client actually wants and compares the alternatives side by side. Choose with `setup_assessment.py --target-hosting ... --target-database ...`.
+The estimate covers what the client actually wants and compares the alternatives side by side. The intake questionnaire (`scripts/intake.py`, see [references/intake.md](references/intake.md)) asks the client's goal and sets the scenario; `setup_assessment.py --target-hosting ... --target-database ...` still works for older workspaces.
+
+With access to only part of the estate, `extrapolate_estate.py` estimates the repositories that were not shared from the assessed ones of the same kind.
 
 | Hosting (code side) | Meaning |
 | --- | --- |
 | `modernize` | Convert .NET Windows applications to .NET 10 on Linux, per-application 7R decisions |
+| `lift-and-shift` | Move every server as it is to EC2 with the same operating system (Windows to Windows, Linux to Linux). No code port; costs the AWS landing work (IP allow-lists, DNS, SMTP port 25, file shares, identity, licences, broadcast/multicast) plus connectivity, configuration, integration and security findings. Uses its own report template |
 | `windows-rehost` | Lift-and-shift Windows applications from on-premises to Windows EC2: no code port, only network, identity and configuration changes |
 
 | Database (code side) | Meaning |

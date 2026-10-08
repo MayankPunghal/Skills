@@ -1,0 +1,104 @@
+{
+ "_doc": "Intake questionnaire. The agent asks these in plain words (one screen, multiple choice where options exist) and records the answers with intake.py --answers; the user never types flags. Every answer is stored as given; 'unknown' or a skipped question becomes an open question in the report, never a guess. sets: the assessment.json fields each answer drives (documented here, applied in intake.py). when: ask only if another answer has this value.",
+ "questions": [
+  {
+   "id": "goal",
+   "ask": "What does the client want from this move to AWS?",
+   "options": [
+    {"value": "lift-and-shift", "label": "Move it as it is", "help": "Same servers and operating systems on AWS (Windows to Windows, Linux to Linux). No code rewrite; only what must change to run on AWS."},
+    {"value": "modernize", "label": "Move and modernize", "help": "Update the code to run on Linux / modern .NET and move it to AWS."},
+    {"value": "compare", "label": "Not decided yet", "help": "Plan the modernization and cost the move-as-is option next to it."}
+   ],
+   "sets": "assessment_type, scenario.hosting"
+  },
+  {
+   "id": "os_today",
+   "ask": "Which operating systems do the servers run today?",
+   "options": [
+    {"value": "windows", "label": "Windows only"},
+    {"value": "linux", "label": "Linux only"},
+    {"value": "both", "label": "Both Windows and Linux"},
+    {"value": "unknown", "label": "Not known yet", "help": "Becomes an open question for the client."}
+   ],
+   "sets": "intake.os_today"
+  },
+  {
+   "id": "platform",
+   "ask": "Where do the servers run today, and who manages them?",
+   "free_text": true,
+   "example": "Proxmox on-premises, managed by a vendor",
+   "sets": "current_hosting"
+  },
+  {
+   "id": "db_engine",
+   "ask": "What should happen to the database engine?",
+   "options": [
+    {"value": "keep", "label": "Keep the same engine", "help": "For example SQL Server stays SQL Server. No database code change."},
+    {"value": "postgresql", "label": "Move to PostgreSQL", "help": "Convert the database and its code; SQL Server is removed."},
+    {"value": "dual", "label": "Support both", "help": "The applications run on SQL Server and on PostgreSQL."},
+    {"value": "later", "label": "Decide later", "help": "Keep the engine for now; the report still shows the PostgreSQL options side by side."}
+   ],
+   "sets": "scenario.database"
+  },
+  {
+   "id": "db_hosting",
+   "ask": "Where will the databases run on AWS?",
+   "options": [
+    {"value": "ec2", "label": "On EC2 servers we manage", "help": "Same as today, on AWS virtual machines. SQL Server features that Amazon RDS does not support keep working."},
+    {"value": "rds", "label": "Amazon RDS (managed)", "help": "Some SQL Server features are limited on RDS; the report flags them."},
+    {"value": "undecided", "label": "Not decided"},
+    {"value": "none", "label": "No databases in scope"}
+   ],
+   "sets": "scenario.db_hosting"
+  },
+  {
+   "id": "aws_native",
+   "ask": "Replace some servers with AWS managed services (for example SFTP to AWS Transfer Family, SMTP to Amazon SES, Kafka to Amazon MSK or SQS)?",
+   "options": [
+    {"value": "no", "label": "No", "help": "Not part of this assessment."},
+    {"value": "later", "label": "Later", "help": "List the options as future work in the report, outside the estimate."},
+    {"value": "now", "label": "Yes, now", "help": "Include the code changes in the estimate."}
+   ],
+   "sets": "intake.aws_native (report section and estimate)"
+  },
+  {
+   "id": "code_access",
+   "ask": "How much of the code do we have access to?",
+   "options": [
+    {"value": "all", "label": "All of it"},
+    {"value": "sample", "label": "Only some repositories", "help": "Assess these and estimate the rest of the estate from them."}
+   ],
+   "sets": "intake.code_access"
+  },
+  {
+   "id": "estate_total",
+   "ask": "How many repositories are in the whole estate (including the ones we cannot see)?",
+   "free_text": true,
+   "example": "85",
+   "when": {"code_access": "sample"},
+   "sets": "intake.estate_total"
+  },
+  {
+   "id": "estate_list",
+   "ask": "Is there a list of all the repositories (a CSV, Excel or JSON file)? Give its path.",
+   "free_text": true,
+   "example": "docs/requirements/estate.csv",
+   "when": {"code_access": "sample"},
+   "sets": "intake.estate_list (read by extrapolate_estate.py)"
+  },
+  {
+   "id": "compliance",
+   "ask": "Any compliance rules or data-location limits? (optional)",
+   "free_text": true,
+   "example": "PCI DSS; data must stay in the EU",
+   "sets": "compliance, data_residency"
+  },
+  {
+   "id": "team",
+   "ask": "How many engineers will do the work, and from what date do they have code access? (optional)",
+   "free_text": true,
+   "example": "3 engineers from 2026-11-02",
+   "sets": "scenario.engineers, scenario.start_date"
+  }
+ ]
+}

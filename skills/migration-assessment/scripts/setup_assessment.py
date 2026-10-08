@@ -26,7 +26,8 @@ def main():
     ap.add_argument("--hosting", help="current hosting as stated by the client (VMware, Proxmox, Hyper-V, bare metal, colo)")
     ap.add_argument("--residency")
     ap.add_argument("--target", help="target framework moniker (default net10.0)")
-    ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost"], help="client hosting preference (default modernize)")
+    ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost", "lift-and-shift"],
+                    help="client hosting preference (default modernize); normally set by intake.py from the questionnaire")
     ap.add_argument("--target-database", dest="scen_db", choices=["dual", "postgresql", "none"], help="database code scenario (default dual)")
     ap.add_argument("--start-date", dest="scen_start", help="day the team gets codebase access, YYYY-MM-DD: sprint 1 of the coding plan starts then")
     ap.add_argument("--online", action="store_true", help="api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences (the default)")
@@ -81,7 +82,9 @@ def main():
         with open(gi, "w", encoding="utf-8") as fh:
             fh.write("assessment/cache/\nassessment/graphs/\n")
     print(f"workspace: {root}\nclient: {cfg['client'] or '(not set)'} · roots: {', '.join(cfg['estate_roots']) or '(none)'} · target: {cfg['target_dotnet']}"
-          f" · online package lookup: {cfg['online_package_lookup']}\nnext: python <skill>/scripts/discover_estate.py")
+          f" · online package lookup: {cfg['online_package_lookup']}\nnext: "
+          + ("python <skill>/scripts/discover_estate.py" if cfg.get("assessment_type") else
+             "intake questionnaire (python <skill>/scripts/intake.py --questions; ask them, then intake.py --answers '<json>')"))
 
 
 if __name__ == "__main__":

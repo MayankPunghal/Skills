@@ -19,10 +19,11 @@ import re
 import shutil
 from collections import Counter, defaultdict
 
-from _common import OUT, SKILL_DIR, data, load_config, mark_step, read_json, slug, utf8_stdout, write_text
+from _common import ASSESSMENT_TYPES, DEFAULTS, OUT, SKILL_DIR, data, load_config, mark_step, read_json, slug, utf8_stdout, write_text
 import _findings as F
 import _dependencies as D
 import _analysis as A
+from intake import unanswered as intake_unanswered
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
 
@@ -66,6 +67,7 @@ class Ctx:
         self.cls = read_json(os.path.join(OUT, "classification.json"), {"applications": [], "hybrid": []})
         self.est = read_json(os.path.join(OUT, "estimate.json"), {"work_packages": [], "databases": [], "totals": {}, "timeline": [], "assumptions": []})
         self.cats = data("categories.json")["categories"]
+        self.extrapolation = read_json(os.path.join(OUT, "extrapolation.json"))
         self.apps = {a["id"]: a for a in self.cls["applications"]}
         self.wp = {w["id"]: w for w in self.est.get("work_packages", [])}
         for i, f in enumerate(self.findings, 1):
@@ -96,12 +98,21 @@ def b_headline(c):
             ("Manual-equivalent effort (for comparison)", hd(t["manual_equivalent_days"], t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "-"),
             ("Indicative duration", f"~{t.get('duration_weeks')} weeks at P50" + (f", ~{t['duration_weeks_p80']} weeks at P80" if t.get("duration_weeks_p80") else "")
              + f" with {c.est.get('engineers')} engineers" + sprint_note(c.est.get("sprints") or {}) if t.get("duration_weeks") else "-"),
-            ("Target platform", f"{pretty_tfm(c.cfg.get('target_dotnet', 'net10.0'))} (LTS, supported to 2028-11-14) on Linux, AWS")]
+            ("Target platform", "Amazon EC2 with the same operating systems as today (Windows to Windows, Linux to Linux)" if lift(c.cfg)
+             else f"{pretty_tfm(c.cfg.get('target_dotnet', 'net10.0'))} (LTS, supported to 2028-11-14) on Linux, AWS")]
+    if lift(c.cfg):  # the 7R mix and Linux targets do not apply when every server moves as it is
+        rows = [r for r in rows if not r[0].startswith("Recommended path")]
+    ex = c.extrapolation
+    if ex:
+        t2 = ex["totals"]
+        rows.append(("Whole estate (sample-based)", f"{t2['assessed_repos']} assessed + {t2['extrapolated_repos']} estimated from them: "
+                     f"{rng(t2['estate_hours'][::2], ' h')}, likely {t2['estate_hours'][1]} h (section {'7.3' if lift(c.cfg) else '8.9'})"))
     return table(["Measure", "Value"], rows)
 
 
 def b_key_risks(c):
-    top = [f for f in c.findings if f["severity"] in ("Blocker", "High")][:8]
+    keep = scope_of(c) if lift(c.cfg) else None  # a lift-and-shift report leads with what blocks the move, not with Linux work
+    top = [f for f in c.findings if f["severity"] in ("Blocker", "High") and in_scope(f, keep)][:8]
     return table(["Ref", "Severity", "Finding", "Where"], [(f["ref"], f["severity"], f["title"], ", ".join(c.apps[a]["name"] for a in f.get("apps", []) if a in c.apps) or f["repo"]) for f in top])
 
 
@@ -502,7 +513,7 @@ def b_methodology(c):
     wps = est.get("work_packages", [])
     conv = [x for wp in wps for x in wp.get("conversion", [])]
     fnd = [x for wp in wps for x in wp.get("findings", [])]
-    big = max(conv, key=lambda x: x["manual_hours"][1], default=None)
+    big = max((x for x in conv if "kloc" in x), key=lambda x: x["manual_hours"][1], default=None)  # fixed repoint/retain lines have no KLOC
     many = max((x for x in fnd if x.get("occurrences", 1) > 1), key=lambda x: x["manual_hours"][1], default=None)
     rc = cfg.get("rollup", {})
     team = cfg["team"]
@@ -618,16 +629,19 @@ def b_findings_summary(c):
     return table(["Category", *SEVS, "Status"], rows)
 
 
-def b_findings_by_category(c):
+def b_findings_by_category(c, keep=None, prefix="5"):
     out = []
     segs = {x["id"]: x for x in data("categories.json").get("segments", [])}
     last = None
-    for n, cat in enumerate(c.cats, 1):
-        fs = [f for f in c.findings if f["category"] == cat["id"]]
+    cats = [cat for cat in c.cats if keep is None or cat["id"] in keep["categories"] or any(f["category"] == cat["id"] and in_scope(f, keep) for f in c.findings)]
+    if keep is not None:  # lift-and-shift report: landing checks lead; the full report keeps categories.json order (landing last, so existing numbers hold)
+        cats.sort(key=lambda cat: cat.get("segment") != "landing")
+    for n, cat in enumerate(cats, 1):
+        fs = [f for f in c.findings if f["category"] == cat["id"] and (keep is None or in_scope(f, keep))]
         if cat.get("segment") != last and cat.get("segment") in segs:
             last = cat["segment"]
             out.append(f"**{segs[last]['title']}** — {segs[last]['description']}\n")
-        out.append(f"### 5.{n} {cat['title']}\n")
+        out.append(f"### {prefix}.{n} {cat['title']}\n")
         out.append(f"_Checked:_ {cat['scanned']}.\n")
         extra = CATEGORY_EXTRAS.get(cat["id"])
         if extra:
@@ -810,14 +824,17 @@ def b_scenarios(c):
 
 
 def b_optional(c):
-    """Optional modernizations: managed AWS services the code could adopt. Reported beside the estimate, never in it."""
+    """Optional modernizations: managed AWS services the code could adopt. Reported beside the estimate; inside it only when the intake says aws_native = now."""
     items = c.est.get("optional") or []
     if not items:
         return "_No optional modernization opportunities were detected (SMTP / SMS, Kafka / message queues, local file storage, in-process caches and schedulers, custom authentication, file logging, self-hosted search)._"
     rows = [(o["title"], o["aws"], o["count"], ", ".join(f"`{f['file']}:{f['line']}`" for f in o["files"][:2]) + (f" +{o['count'] - 2} more" if o["count"] > 2 else ""),
              rng(o["hours"], " h"), o["why"]) for o in items]
     t = (c.est.get("totals") or {}).get("optional_hours", [0, 0])
-    return ("These are improvements the client may choose; none is needed to run on Linux or AWS and **none is included in the effort estimate**. Hours are AI-assisted coding hours per item.\n\n" +
+    lead = ("The client chose to replace these servers with AWS managed services in this engagement (intake), so **their hours are included in the effort estimate**."
+            if (c.est.get("totals") or {}).get("optional_in_scope") else
+            "These are improvements the client may choose; none is needed to run on Linux or AWS and **none is included in the effort estimate**.")
+    return (lead + " Hours are AI-assisted coding hours per item.\n\n" +
             table(["Opportunity", "Suggested AWS service", "Files", "Evidence", "Coding effort", "Why consider it"], rows) +
             f"\n\nIf every item were adopted: {rng(t, ' h')} of additional coding.")
 
@@ -986,6 +1003,8 @@ def open_questions(c):
     for a in c.cls["applications"]:
         for n in a.get("notes", []):
             qs.append(("Application", n, a["name"]))
+    for q in intake_unanswered(c.cfg):
+        qs.append(("Engagement scope", q["ask"], "intake"))
     for area, q in STANDARD_QUESTIONS:
         qs.append((area, q, "standard"))
     return qs
@@ -1069,7 +1088,118 @@ def b_appendix_projects(c):
     return b_projects(c)
 
 
-BLOCKS = {"scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
+# ------------------------------------------------------------------ assessment types (intake.py) and the lift-and-shift report
+def lift(cfg):
+    return cfg.get("assessment_type") == "lift-and-shift" or (not cfg.get("assessment_type") and (cfg.get("scenario") or {}).get("hosting") == "lift-and-shift")
+
+
+def template_path(cfg):
+    name = "report-template-lift-and-shift.md" if lift(cfg) else "report-template.md"
+    return os.path.join(SKILL_DIR, "references", name)
+
+
+def scope_of(c):
+    """What the selected code-side scenario costs: keep_categories + keep_rules for rehost scenarios, None (everything) otherwise."""
+    hs = data("estimation.json")["hosting_scenarios"].get((c.cfg.get("scenario") or {}).get("hosting") or "modernize", {})
+    if hs.get("mode") != "rehost":
+        return None
+    return {"categories": set(hs.get("keep_categories", [])), "rules": set(hs.get("keep_rules", []))}
+
+
+def in_scope(f, keep):
+    return keep is None or f["category"] in keep["categories"] or f["rule"].split(":")[0] in keep["rules"]
+
+
+def b_intake(c):
+    ans = c.cfg.get("intake") or {}
+    if not ans:
+        return "_The intake questionnaire was not recorded; the scope follows the assessment settings._"
+    rows = []
+    for q in data("intake.json")["questions"]:
+        if any(ans.get(k) != v for k, v in (q.get("when") or {}).items()):
+            continue
+        v = ans.get(q["id"])
+        label = next((o["label"] for o in q.get("options", []) if o["value"] == v), v)
+        rows.append((q["ask"].replace(" (optional)", ""), label if v not in (None, "") else "not answered (open question)"))
+    return (f"**Assessment type:** {ASSESSMENT_TYPES.get(c.cfg.get('assessment_type'), '-')}\n\n" + table(["Question", "Answer"], rows))
+
+
+def b_landing_summary(c):
+    """Lift-and-shift: what has to change, per application, for the same servers to run on EC2."""
+    keep = scope_of(c) or {"categories": set(), "rules": set()}
+    rows = []
+    for a in c.cls["applications"]:
+        fs = [f for f in c.findings if a["id"] in f.get("apps", []) and in_scope(f, keep)]
+        s = Counter(f["severity"] for f in fs)
+        w = c.wp.get(a["id"], {})
+        rows.append((a["name"], a["repo"], a["type"], ", ".join(a.get("target_frameworks", [])) or a.get("framework_family"),
+                     *[s[k] or "" for k in ("Blocker", "High", "Medium")],
+                     "; ".join(dict.fromkeys(f["title"] for f in fs if f["severity"] in ("Blocker", "High")))[:300] or "-",
+                     f"{w.get('likely_hours', '-')} h" if w else "-"))
+    repo_fs = [f for f in c.findings if not f.get("apps") and in_scope(f, keep)]
+    out = table(["Application", "Repository", "Type", "Framework", "Blocker", "High", "Medium", "Must change before cut-over", "Likely effort"], rows)
+    if repo_fs:
+        s = Counter(f["severity"] for f in repo_fs)
+        out += (f"\n\nRepository-wide items not tied to one application: {len(repo_fs)} (" + ", ".join(f"{k} {s[k]}" for k in SEVS if s[k]) + ").")
+    return out
+
+
+def b_findings_in_scope(c):
+    keep = scope_of(c)
+    return b_findings_by_category(c, keep, "5")
+
+
+def b_findings_future(c):
+    """Findings outside the selected scenario (Linux and .NET modernization): recorded for later, not costed."""
+    keep = scope_of(c)
+    if keep is None:
+        return "_All findings are in scope for the selected scenario._"
+    rest = [f for f in c.findings if not in_scope(f, keep)]
+    if not rest:
+        return "_No finding outside the lift-and-shift scope._"
+    rows = []
+    for cat in c.cats:
+        fs = [f for f in rest if f["category"] == cat["id"]]
+        if fs:
+            s = Counter(f["severity"] for f in fs)
+            rows.append((cat["title"], *[s[k] or "" for k in SEVS], "; ".join(dict.fromkeys(f["title"] for f in fs))[:240]))
+    return ("These findings matter only if the applications are later moved to Linux or modern .NET. They do **not** stop the "
+            "same servers running on EC2 and are **not in the estimate**. Every one is listed with its evidence in findings.csv.\n\n"
+            + table(["Category", *SEVS, "Examples"], rows))
+
+
+def b_aws_native(c):
+    choice = (c.cfg.get("intake") or {}).get("aws_native", "later")
+    if choice == "no":
+        return "_Replacing servers with AWS managed services is not part of this assessment (intake answer)._"
+    head = ("**In scope (intake answer: now).** The code changes below are part of this engagement; their hours are listed here and added to the plan.\n\n"
+            if choice == "now" else
+            "**Future option (intake answer: later).** Servers the code depends on that an AWS managed service could replace after the move. Nothing here is needed for the lift-and-shift and none of it is in the estimate.\n\n")
+    return head + b_optional(c)
+
+
+def b_estate_extrapolation(c):
+    ex = c.extrapolation
+    if not ex:
+        return "_Every repository in scope was assessed from its code; no sample-based extrapolation was needed._"
+    t = ex["totals"]
+    rows = [(s["repo"], "assessed", ARCH_NAMES.get(s["archetype"], s["archetype"]), s["kloc"], rng([s["hours"][0], s["hours"][2]], " h"), s["hours"][1], "from the code", "-") for s in ex["sample"]]
+    rows += [(i["repo"], "estimated", i["archetype_label"], i["kloc"] if i["kloc"] is not None else "-", rng([i["hours"][0], i["hours"][2]], " h"), i["hours"][1], i["basis"], i["confidence"])
+             for i in ex["extrapolated"]]
+    return (f"Code was available for {t['assessed_repos']} repositories; the other {t['extrapolated_repos']} are estimated from them by kind and size "
+            f"({ex['method']}). Estimated rows are planning figures, to be replaced by an assessment once the code is shared.\n\n"
+            + table(["Repository", "Basis", "Kind", "KLOC", "Range", "Likely h", "How", "Confidence"], rows)
+            + f"\n\n**Whole estate:** {rng(t['estate_hours'][::2], ' h')}, likely {t['estate_hours'][1]} h "
+              f"(assessed {t['assessed_hours'][1]} h + estimated {t['extrapolated_hours'][1]} h). List used: {ex.get('list') or 'none'}; estate size: {ex.get('estate_total') or 'not given'}.")
+
+
+ARCH_NAMES = {"web-netfx": "Web app on .NET Framework", "web-modern": "Web app on modern .NET", "service": "Windows service / worker",
+              "console": "Console / batch job", "desktop": "Desktop client", "library": "Library only", "unknown": "Type not known"}
+
+
+BLOCKS = {"intake": b_intake, "landing-summary": b_landing_summary, "findings-in-scope": b_findings_in_scope, "findings-future": b_findings_future,
+          "aws-native": b_aws_native, "estate-extrapolation": b_estate_extrapolation,
+          "scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
           "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network, "jobs": b_jobs, "methodology": b_methodology,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
@@ -1210,7 +1340,7 @@ def exports(c, rdir):
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--template", default=os.path.join(SKILL_DIR, "references", "report-template.md"))
+    ap.add_argument("--template", help="report template (default: chosen by assessment_type: report-template-lift-and-shift.md or report-template.md)")
     ap.add_argument("--out")
     a = ap.parse_args()
     root, cfg = load_config()
@@ -1222,9 +1352,12 @@ def main():
         if fn.endswith(".md") and not os.path.exists(os.path.join(ndir, fn)):
             shutil.copy2(os.path.join(tdir, fn), os.path.join(ndir, fn))
             print(f"new narrative stub: {fn} (write it, then rebuild)")
-    tpl = open(a.template, encoding="utf-8").read()
+    tpl = open(a.template or template_path(cfg), encoding="utf-8").read()
     tpl = re.sub(r"(?s)<!--\s*guide:.*?-->\s*", "", tpl)  # template guidance never reaches the client
-    meta = {"client": cfg.get("client") or "Client", "prepared_by": cfg.get("prepared_by", ""), "engagement": cfg.get("engagement"),
+    engagement = cfg.get("engagement")
+    if lift(cfg) and engagement == DEFAULTS["engagement"]:
+        engagement = "AWS Migration Assessment (Lift-and-Shift)"
+    meta = {"client": cfg.get("client") or "Client", "prepared_by": cfg.get("prepared_by", ""), "engagement": engagement,
             "date": datetime.date.today().isoformat(), "target": pretty_tfm(cfg.get("target_dotnet", "net10.0")), "compliance": ", ".join(cfg.get("compliance") or []) or "not stated",
             "hosting": cfg.get("current_hosting") or "not stated", "version": "1.0", "repos": str(len(c.repos))}
 

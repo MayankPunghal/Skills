@@ -59,6 +59,10 @@ Every finding in this report cites evidence (file and line, package and version,
 
 {{block:not-assessed}}
 
+### 2.4 What the client asked for
+
+{{block:intake}}
+
 ## 3. Application inventory
 
 {{block:inventory}}
@@ -186,6 +190,10 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 ### 8.8 How the estimate was calculated
 
 {{block:methodology}}
+
+### 8.9 Whole estate (repositories estimated from the assessed sample)
+
+{{block:estate-extrapolation}}
 
 ## 9. Risks, assumptions and open questions
 

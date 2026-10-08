@@ -4382,6 +4382,263 @@
     "S1"
    ],
    "in_strings": true
+  },
+  {
+   "id": "LS-SMTP-PORT25",
+   "cat": "aws-landing",
+   "title": "SMTP sent on port 25",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)<network\\b[^>]*\\bport=\\\"25\\\"",
+    "(?i)\\bSmtpClient\\s*\\([^)]*,\\s*25\\s*\\)",
+    "(?i)\\bsmtp\\w*\\.Port\\s*=\\s*25\\b",
+    "(?i)[\\\"']?smtp_?\\w*port[\\\"']?\\s*[:=]\\s*[\\\"']?25\\b",
+    "(?i)key=\\\"[^\\\"]*smtp[^\\\"]*port[^\\\"]*\\\"\\s+value=\\\"25\\\"",
+    "(?i)\\bsmtplib\\.SMTP\\([^)]*,\\s*25\\s*\\)"
+   ],
+   "why": "Amazon EC2 restricts outbound traffic on port 25 by default, so mail sent straight to a relay on port 25 stops after the move.",
+   "fix": "Ask AWS to lift the port 25 restriction for the account (request form), or send through the relay on port 587/465, or through Amazon SES.",
+   "alt": "Amazon SES SMTP interface on 587",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which SMTP relay does this application use, where will it run after the move, and should we request removal of the EC2 port 25 restriction?",
+   "in_strings": true
+  },
+  {
+   "id": "LS-BROADCAST-MULTICAST",
+   "cat": "aws-landing",
+   "title": "UDP broadcast or multicast",
+   "sev": "Blocker",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "any"
+   ],
+   "pat": [
+    "\\bJoinMulticastGroup\\b",
+    "\\bEnableBroadcast\\s*=\\s*true",
+    "\\bIPAddress\\.Broadcast\\b",
+    "\\bMulticastOption\\b",
+    "[\\\"']255\\.255\\.255\\.255[\\\"']",
+    "[\\\"'](22[4-9]|23\\d)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}[\\\"']",
+    "\\bIP_ADD_MEMBERSHIP\\b",
+    "\\bSO_BROADCAST\\b"
+   ],
+   "why": "An Amazon VPC does not carry broadcast traffic, and multicast only works through a Transit Gateway multicast domain. Discovery or messaging built on them stops working on EC2.",
+   "fix": "Replace with unicast and a configured address list or service discovery (AWS Cloud Map), or set up Transit Gateway multicast for the subnets involved.",
+   "alt": "AWS Cloud Map; Transit Gateway multicast",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which components send or listen for UDP broadcast/multicast, and must they keep working across subnets after the move?"
+  },
+  {
+   "id": "LS-IP-ALLOWLIST",
+   "cat": "aws-landing",
+   "title": "IP allow-list (ours or a partner's)",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "js",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\b(white-?list(ed|ing)?|allow-?list(ed|ing)?)\\b.{0,60}\\b(ip|ips|address(es)?|addr|cidr)\\b",
+    "(?i)\\b(ip|ips|address(es)?|cidr)\\b.{0,60}\\b(white-?list(ed|ing)?|allow-?list(ed|ing)?)\\b",
+    "(?i)<ipSecurity\\b",
+    "(?i)<add\\s+ipAddress=\\\"\\d"
+   ],
+   "why": "When the servers move, their public and private IP addresses change. Partners that allow-list our outbound IP (payment gateways, suppliers, SFTP hosts), and our own IP checks, reject the new addresses.",
+   "fix": "List every allow-listed address; give the EC2 servers fixed egress IPs (Elastic IPs or a NAT gateway) and get partners to add them before cut-over; update our own allow-lists.",
+   "alt": "Elastic IPs / NAT gateway with fixed EIPs",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which partners allow-list the client's current public IP addresses, and which internal allow-lists (firewalls, IIS IP restrictions, database logins) name on-prem addresses?"
+  },
+  {
+   "id": "LS-CLIENT-IP-LOGIC",
+   "cat": "aws-landing",
+   "title": "Logic based on the caller's IP address",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "\\bRemoteIpAddress\\b",
+    "\\bUserHostAddress\\b",
+    "[\\\"']REMOTE_ADDR[\\\"']",
+    "\\brequest\\.remote_addr\\b",
+    "\\breq\\.(ip|connection\\.remoteAddress)\\b"
+   ],
+   "not": "(?i)x-forwarded-for|ForwardedHeaders",
+   "why": "Behind a load balancer, NAT or proxy on AWS the caller's address arrives in X-Forwarded-For, so IP checks, rate limits, geo lookups and audit logs see the wrong address.",
+   "fix": "Read the client IP from X-Forwarded-For (ASP.NET Core ForwardedHeaders middleware, or the proxy's header in IIS) and trust only the load balancer's addresses.",
+   "alt": "ForwardedHeaders middleware",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Will a load balancer or reverse proxy sit in front of this application on AWS?"
+  },
+  {
+   "id": "LS-STATIC-BIND",
+   "cat": "aws-landing",
+   "title": "Listener bound to a fixed on-prem IP address",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "\\bIPAddress\\.Parse\\(\\s*\\\"(10|172\\.(1[6-9]|2\\d|3[01])|192\\.168)\\.",
+    "(?i)bindingInformation=\\\"(\\d{1,3}\\.){3}\\d{1,3}:",
+    "(?i)[\\\"'](Urls|urls|ASPNETCORE_URLS)[\\\"']?\\s*[:=]\\s*[\\\"']https?://(\\d{1,3}\\.){3}\\d{1,3}",
+    "(?i)\\.listen\\(\\s*\\d+\\s*,\\s*[\\\"'](10|172|192)\\.",
+    "(?i)\\bhost\\s*=\\s*[\\\"'](10|192\\.168|172\\.(1[6-9]|2\\d|3[01]))\\.[\\d.]+[\\\"']\\s*,\\s*port"
+   ],
+   "why": "The server's IP address changes on EC2; a listener bound to the old address fails to start.",
+   "fix": "Bind to all interfaces (0.0.0.0 / *) or read the address from configuration set per environment.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "LS-HOSTS-FILE",
+   "cat": "aws-landing",
+   "title": "Relies on the server's hosts file",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "(?i)drivers[\\\\/]+etc[\\\\/]+hosts\\b",
+    "(?i)(?<![\\w.])/etc/hosts\\b"
+   ],
+   "why": "Name overrides in a server's hosts file do not move with the code; on EC2 the names resolve differently or not at all.",
+   "fix": "Move the entries into DNS (Route 53 private hosted zone) or into configuration.",
+   "alt": "Route 53 private hosted zone",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Do the current servers have hosts-file entries the applications depend on? Please export them."
+  },
+  {
+   "id": "LS-LOCALHOST-SERVICE",
+   "cat": "aws-landing",
+   "title": "Calls another service on the same machine (localhost)",
+   "sev": "Low",
+   "conf": "Needs verification",
+   "types": [
+    "config",
+    "cs",
+    "vb",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "(?i)[\\\"'=]\\s*https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?/(?!swagger)",
+    "(?i)\\b(data\\s*source|server)\\s*=\\s*(localhost|127\\.0\\.0\\.1|\\(local\\)|\\.)\\s*[;,\\\"]"
+   ],
+   "not": "(?i)launchSettings|applicationUrl|\\.Development\\.|swagger",
+   "why": "Services that share one server today only keep working if they move together onto the same EC2 instance; otherwise the localhost address must point at the other server.",
+   "fix": "Keep these services in the same move group and on the same instance, or put the address in configuration per environment.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which services share a server today and must move to the same EC2 instance?"
+  },
+  {
+   "id": "LS-NETWORK-MOUNT",
+   "cat": "aws-landing",
+   "title": "Network file system mount (NFS / SMB / CIFS)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "script",
+    "config",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\bmount\\s+(-t\\s+)?(nfs4?|cifs|smb3?)\\b",
+    "(?i)\\b(nfs|cifs|smb)://",
+    "(?i)\\bnet\\s+use\\s+[a-z]:",
+    "(?i)New-PSDrive\\b.*-Root\\s+[\\\"']?\\\\\\\\",
+    "(?i)\\b_netdev\\b"
+   ],
+   "why": "File shares mounted from on-prem storage are not reachable from EC2 unless they move too or a network path is kept.",
+   "fix": "Move the share to Amazon FSx (Windows File Server / NetApp ONTAP) or Amazon EFS, or keep it on-prem over VPN/Direct Connect during the transition.",
+   "alt": "Amazon FSx; Amazon EFS",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which file shares do the servers mount, how large are they, and where do they live (the Proxmox host, a NAS, a file server)?"
+  },
+  {
+   "id": "LS-LICENSE-SERVER",
+   "cat": "aws-landing",
+   "title": "Licence server or node-locked licence",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\blicen[cs]e[\\s_-]*server\\b",
+    "(?i)\\b(FlexLM|FlexNet|lmgrd|RLM|HASP|Sentinel\\s*(LDK|RMS)|CodeMeter|Wibu)\\b",
+    "(?i)\\bLicenseKey\\b.*\\b(machine|host|mac)\\b"
+   ],
+   "why": "Licences tied to a machine, MAC address or an on-prem licence server can stop validating on new EC2 hardware.",
+   "fix": "Ask the vendor to re-issue licences for the new instances, or move the licence server with the application.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which third-party components are licensed per machine or through a licence server?"
   }
  ],
  "_doc_parsed": "parsed: for rules on SQL, the T-SQL parser facts that raise the finding instead of the regular expressions (construct labels from sqlscan, or called procedure names by prefix). When a parser is available the rule's patterns are not run on .sql files; the parser also applies the rule to SQL embedded in C#."

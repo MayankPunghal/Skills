@@ -196,6 +196,13 @@
    "brief": "5.1-7; 5.1-9",
    "scanned": "which checks are automated here, what AWS Transform / CAST / analyzers add, Linux build validation results",
    "segment": "delivery"
+  },
+  {
+   "id": "aws-landing",
+   "title": "Landing on AWS (lift-and-shift)",
+   "brief": "Lift-and-shift: what changes when the same servers move to Amazon EC2",
+   "scanned": "SMTP on port 25, UDP broadcast/multicast, IP allow-lists, caller-IP logic, listeners bound to fixed IPs, hosts-file reliance, localhost calls between services, NFS/SMB mounts, licence servers",
+   "segment": "landing"
   }
  ],
  "segments": [
@@ -238,6 +245,11 @@
    "id": "delivery",
    "title": "Delivery and quality",
    "description": "Build, CI/CD, tests, front end, parallel development, tooling."
+  },
+  {
+   "id": "landing",
+   "title": "Landing on AWS",
+   "description": "What changes when the same servers move from the current data centre to Amazon EC2 with the same operating system: network addresses, DNS, mail, file shares, licences and co-located services."
   }
  ]
 }
