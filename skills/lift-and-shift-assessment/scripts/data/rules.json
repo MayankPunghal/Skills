@@ -1,0 +1,2435 @@
+{
+ "_doc": "Line-based scan rules. types: cs vb markup config sql proj script js ci any. pat: regexes (any match flags the line). requires: file must also match this regex. not: line exclusion. sev: Blocker|High|Medium|Low|Info. conf: Confirmed|Likely|Needs verification. effort: key in estimation.json. baseline: true when the effort is already inside the project-conversion baseline (not added twice). db: impact per database target (blocker|limited|ok). refs: ids in references/sources.md. question: open question for the client when code alone cannot decide.",
+ "rules": [
+  {
+   "id": "WIN-REGISTRY",
+   "cat": "linux-readiness",
+   "title": "Windows registry access",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Win32\\.Registry\\b",
+    "\\bRegistry\\.(LocalMachine|CurrentUser|ClassesRoot|Users|GetValue|SetValue)\\b",
+    "\\bRegistryKey\\b"
+   ],
+   "why": "Microsoft.Win32.Registry throws PlatformNotSupportedException on Linux; there is no registry.",
+   "fix": "Move the values to configuration (appsettings / environment variables) backed by AWS Systems Manager Parameter Store.",
+   "alt": "IConfiguration + Parameter Store / Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2",
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-EVENTLOG",
+   "cat": "linux-readiness",
+   "title": "Windows Event Log",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bnew\\s+EventLog\\b",
+    "\\bEventLog\\.(WriteEntry|CreateEventSource|SourceExists|DeleteEventSource)\\b",
+    "\\bEventLogInstaller\\b",
+    "\\bEventLogEntryType\\b",
+    "EventLogTraceListener"
+   ],
+   "why": "The Windows Event Log does not exist on Linux (System.Diagnostics.EventLog is Windows-only).",
+   "fix": "Log through Microsoft.Extensions.Logging to stdout and ship to Amazon CloudWatch Logs.",
+   "alt": "ILogger + CloudWatch Logs (Serilog/NLog sinks)",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-WMI",
+   "cat": "linux-readiness",
+   "title": "WMI (System.Management)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.Management\\b",
+    "\\bManagementObjectSearcher\\b",
+    "\\bManagementClass\\b",
+    "\\bManagementObject\\b"
+   ],
+   "why": "WMI is Windows-only; System.Management throws on Linux.",
+   "fix": "Replace with cross-platform APIs (System.Environment, /proc, EC2 instance metadata) or remove.",
+   "alt": "Environment / RuntimeInformation / EC2 IMDS",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-PERFCOUNTER",
+   "cat": "linux-readiness",
+   "title": "Windows performance counters",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bPerformanceCounter(Category|Type|Installer)?\\b"
+   ],
+   "why": "Performance counters are Windows-only.",
+   "fix": "Use EventCounters / System.Diagnostics.Metrics with OpenTelemetry or CloudWatch metrics.",
+   "alt": "System.Diagnostics.Metrics + CloudWatch / OpenTelemetry",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-COM-INTEROP",
+   "cat": "linux-readiness",
+   "title": "COM interop",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\[ComImport\\]",
+    "\\bMarshal\\.(GetActiveObject|ReleaseComObject|FinalReleaseComObject)\\b",
+    "\\bType\\.GetTypeFromProgID\\b",
+    "\\bCreateObject\\s*\\(",
+    "<COMReference\\b",
+    "Include=\"Interop\\.",
+    "<HintPath>[^<]*\\\\Interop\\.[^<]*\\.dll"
+   ],
+   "why": "COM does not exist on Linux; the component behind it must be replaced or kept on Windows.",
+   "fix": "Identify the COM server, find a managed cross-platform library or service, or isolate it behind an API on a Windows host.",
+   "alt": "Managed library / service API; Windows EC2 sidecar as last resort",
+   "effort": "large-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Which COM components are installed on the current servers, and who owns them?",
+   "in_strings": true
+  },
+  {
+   "id": "WIN-PINVOKE-WIN32",
+   "cat": "linux-readiness",
+   "title": "P/Invoke into Windows system DLLs",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\[(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
+    "Declare\\s+(Auto\\s+|Ansi\\s+|Unicode\\s+)?(Function|Sub)\\s+\\w+\\s+Lib\\s+\"(?i:(user32|kernel32|advapi32|gdi32|shell32|netapi32|mpr|winspool))"
+   ],
+   "why": "Calls into Win32 system libraries cannot run on Linux.",
+   "fix": "Replace each call with a managed cross-platform API or remove the feature.",
+   "alt": "Managed BCL equivalents",
+   "effort": "medium-change",
+   "refs": [
+    "S17"
+   ]
+  },
+  {
+   "id": "WIN-PINVOKE-NATIVE",
+   "cat": "linux-readiness",
+   "title": "P/Invoke into other native libraries",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\[(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
+   ],
+   "why": "A native library must exist as a Linux .so build for the same API.",
+   "fix": "Confirm a Linux build of the native library exists (and its licence); otherwise replace.",
+   "alt": "Vendor Linux build or managed replacement",
+   "effort": "medium-change",
+   "refs": [
+    "S17"
+   ],
+   "question": "Do the vendors of these native libraries ship Linux builds?"
+  },
+  {
+   "id": "WIN-DIRSERVICES",
+   "cat": "auth",
+   "title": "System.DirectoryServices (Active Directory via ADSI)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.DirectoryServices(\\.AccountManagement|\\.ActiveDirectory)?\\b(?!\\.Protocols)",
+    "\\bDirectoryEntry\\b",
+    "\\bDirectorySearcher\\b",
+    "\\bPrincipalContext\\b",
+    "\\b(User|Group)Principal\\b"
+   ],
+   "why": "System.DirectoryServices and AccountManagement are Windows-only; only System.DirectoryServices.Protocols (LDAP) is cross-platform.",
+   "fix": "Rewrite directory lookups with System.DirectoryServices.Protocols (LDAP) against AWS Managed Microsoft AD / on-prem AD over VPN, or move to OIDC claims.",
+   "alt": "System.DirectoryServices.Protocols; Novell.Directory.Ldap.NETStandard; IdP claims",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ],
+   "question": "Will Active Directory stay on-premises (VPN / Direct Connect) or move to AWS Managed Microsoft AD?"
+  },
+  {
+   "id": "WIN-MSMQ",
+   "cat": "background",
+   "title": "MSMQ (System.Messaging)",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Messaging\\b",
+    "\\bMessageQueue\\b",
+    "msmqIntegrationBinding",
+    "netMsmqBinding"
+   ],
+   "why": "MSMQ is Windows-only and System.Messaging is not available on modern .NET.",
+   "fix": "Move the queue to Amazon SQS (or Amazon MQ for broker semantics); replace producers and consumers.",
+   "alt": "Amazon SQS / SNS / Amazon MQ; MassTransit or NServiceBus transports",
+   "effort": "large-change",
+   "refs": [
+    "S1"
+   ],
+   "question": "Which systems read or write these MSMQ queues besides this code base?"
+  },
+  {
+   "id": "WIN-SERVICE",
+   "cat": "background",
+   "title": "Windows Service (ServiceBase)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    ":\\s*ServiceBase\\b",
+    "Inherits\\s+(System\\.ServiceProcess\\.)?ServiceBase\\b",
+    "\\bServiceBase\\.Run\\b",
+    "\\b(ProjectInstaller|ServiceProcessInstaller|ServiceInstaller)\\b"
+   ],
+   "why": "Windows services do not exist on Linux.",
+   "fix": "Convert to a .NET Worker Service (BackgroundService) run as a systemd unit, an ECS service, or scheduled ECS task / Lambda.",
+   "alt": ".NET Worker Service + ECS/Fargate or systemd; EventBridge Scheduler for timed work",
+   "effort": "medium-change",
+   "baseline": true,
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-SERVICECONTROLLER",
+   "cat": "linux-readiness",
+   "title": "ServiceController (controls Windows services)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bServiceController\\b"
+   ],
+   "why": "Starting/stopping Windows services is Windows-only.",
+   "fix": "Replace with orchestration-level control (ECS service APIs) or remove.",
+   "alt": "AWS SDK (ECS/Systems Manager)",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-PROTECTEDDATA",
+   "cat": "linux-readiness",
+   "title": "DPAPI (ProtectedData)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bProtectedData\\.(Protect|Unprotect)\\b",
+    "\\bDataProtectionScope\\b"
+   ],
+   "why": "ProtectedData throws PlatformNotSupportedException on Linux, and data protected with machine DPAPI cannot be decrypted elsewhere.",
+   "fix": "Use ASP.NET Core Data Protection with a key ring in S3/Parameter Store protected by AWS KMS; plan re-encryption of stored data.",
+   "alt": "Microsoft.AspNetCore.DataProtection + AWS KMS / Secrets Manager",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Is any stored data encrypted with DPAPI (machine or user scope) that must be readable after migration?"
+  },
+  {
+   "id": "WIN-CNG-CSP",
+   "cat": "linux-readiness",
+   "title": "CNG / CSP key containers",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(CngKey|CngAlgorithm|CngProvider|CngKeyCreationParameters|CspParameters|CspKeyContainerInfo|DSACryptoServiceProvider)\\b"
+   ],
+   "why": "CNG and CSP key containers are Windows-only (PlatformNotSupportedException on Linux).",
+   "fix": "Use RSA.Create()/ECDsa.Create() with keys from AWS KMS, Secrets Manager or PEM files.",
+   "alt": "RSA/ECDsa.Create + AWS KMS",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-CERTSTORE",
+   "cat": "linux-readiness",
+   "title": "Windows certificate store",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bX509Store\\b",
+    "StoreLocation\\.LocalMachine",
+    "storeLocation=\"LocalMachine\"",
+    "findValue=\""
+   ],
+   "why": "Linux has no LocalMachine\\My store; certificates must be loaded from files or a secret store.",
+   "fix": "Load certificates from AWS Secrets Manager / ACM-exported PEM or PFX files; terminate TLS at the ALB with ACM where possible.",
+   "alt": "ACM at the load balancer; X509Certificate2 from Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ],
+   "question": "Which certificates are installed on the servers (TLS, client certs, signing) and where do their private keys live?"
+  },
+  {
+   "id": "WIN-ACL",
+   "cat": "linux-readiness",
+   "title": "Windows file ACLs",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(FileSecurity|DirectorySecurity|FileSystemAccessRule)\\b",
+    "\\.(Get|Set)AccessControl\\("
+   ],
+   "why": "Windows ACL APIs are Windows-only.",
+   "fix": "Remove or replace with POSIX permissions / IAM policies on S3/EFS.",
+   "alt": "IAM / S3 bucket policies / EFS access points",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "WIN-SHELL-EXEC",
+   "cat": "linux-readiness",
+   "title": "Runs Windows executables or shells",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "Process\\.Start\\(\\s*@?\"[^\"]*\\.(exe|bat|cmd|ps1|vbs)\"",
+    "FileName\\s*=\\s*@?\"[^\"]*\\.(exe|bat|cmd|ps1|vbs)\"",
+    "\"(cmd|cmd\\.exe|powershell|powershell\\.exe|cscript|wscript)\""
+   ],
+   "why": "Windows executables, batch files and VBScript do not run on Linux.",
+   "fix": "Replace the external tool with a library or a Linux equivalent; PowerShell 7 (pwsh) scripts can run on Linux.",
+   "alt": "Library call / pwsh / container sidecar",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ],
+   "question": "Which external tools are installed on the servers for this application?"
+  },
+  {
+   "id": "WEB-REPORTVIEWER",
+   "cat": "integrations",
+   "title": "ReportViewer control (SSRS/RDLC in Web Forms/WinForms)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "Microsoft\\.Reporting\\.(WebForms|WinForms)",
+    "<rsweb:ReportViewer",
+    "\\.rdlc\\b"
+   ],
+   "why": "The ReportViewer controls are .NET Framework only.",
+   "fix": "Render reports via the SSRS/PBIRS REST or URL access, or move RDLC rendering to a supported library.",
+   "alt": "SSRS REST API; Bold Reports; Telerik Reporting; QuestPDF for code-built documents",
+   "effort": "medium-change",
+   "refs": [
+    "S12"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "WCF-SERVICE",
+   "cat": "wcf-desktop",
+   "title": "WCF service (server side)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup"
+   ],
+   "pat": [
+    "\\[ServiceContract\\b",
+    "<ServiceContract\\b",
+    "<%@\\s*ServiceHost\\b",
+    "\\bnew\\s+ServiceHost\\b"
+   ],
+   "why": "WCF server is not part of .NET; CoreWCF supports a subset (BasicHttp, NetTcp, WSHttp and some WS-* features).",
+   "fix": "Port to CoreWCF when callers need the SOAP/NetTcp contract; otherwise re-expose as REST/gRPC.",
+   "alt": "CoreWCF / gRPC / ASP.NET Core Web API",
+   "effort": "per-file-wcf",
+   "baseline": true,
+   "refs": [
+    "S1",
+    "S23"
+   ],
+   "question": "Who consumes these WCF services (internal apps, partners) and which bindings/security modes do they use?",
+   "in_strings": true
+  },
+  {
+   "id": "WCF-CLIENT",
+   "cat": "connectivity",
+   "title": "WCF / SOAP client proxies",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    ":\\s*(System\\.ServiceModel\\.)?ClientBase<",
+    "\\bChannelFactory<",
+    "\\bSoapHttpClientProtocol\\b",
+    "<client>"
+   ],
+   "why": "WCF clients work on .NET via System.ServiceModel.* packages, but generated proxies and client config must be regenerated and the endpoint must be reachable from AWS.",
+   "fix": "Regenerate proxies with dotnet-svcutil; move endpoint config to appsettings; confirm network path.",
+   "alt": "System.ServiceModel.Http/NetTcp + dotnet-svcutil",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "DATA-OLEDB",
+   "cat": "data-access",
+   "title": "OLE DB / Jet / ACE (Access, Excel via OLE DB)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Data\\.OleDb\\b",
+    "\\bOleDb(Connection|Command|DataAdapter)\\b",
+    "Provider=Microsoft\\.(Jet|ACE)\\.OLEDB",
+    "Provider=SQLOLEDB",
+    "Provider=MSOLEDBSQL"
+   ],
+   "why": "OLE DB is Windows-only; Jet/ACE drivers do not exist on Linux.",
+   "fix": "Use native ADO.NET providers (Microsoft.Data.SqlClient) or file libraries (ClosedXML/ExcelDataReader) instead of Jet/ACE.",
+   "alt": "Microsoft.Data.SqlClient; ExcelDataReader / ClosedXML",
+   "effort": "medium-change",
+   "refs": [
+    "S3"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "DATA-ODBC",
+   "cat": "data-access",
+   "title": "ODBC",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSystem\\.Data\\.Odbc\\b",
+    "\\bOdbc(Connection|Command)\\b",
+    "Driver=\\{"
+   ],
+   "why": "ODBC works on Linux only if a Linux ODBC driver exists for the target database.",
+   "fix": "Confirm a Linux driver (unixODBC) or switch to a managed provider.",
+   "alt": "Managed ADO.NET provider",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "DATA-ORACLE-UNMANAGED",
+   "cat": "data-access",
+   "title": "Oracle unmanaged ODP.NET",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bOracle\\.DataAccess\\b"
+   ],
+   "why": "Oracle.DataAccess (unmanaged) needs the Windows Oracle client.",
+   "fix": "Move to Oracle.ManagedDataAccess.Core.",
+   "alt": "Oracle.ManagedDataAccess.Core",
+   "effort": "small-change",
+   "refs": [
+    "S3"
+   ]
+  },
+  {
+   "id": "DATA-DISTRIBUTED-TX",
+   "cat": "data-access",
+   "title": "TransactionScope / distributed transactions",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bnew\\s+(System\\.Transactions\\.)?TransactionScope\\b",
+    "\\bEnlistDistributedTransaction\\b",
+    "\\bTransactionInterop\\b",
+    "\\bnew\\s+(System\\.Transactions\\.)?CommittableTransaction\\b",
+    "\\bTransactionManager\\.ImplicitDistributedTransactions\\b"
+   ],
+   "why": "Distributed (MSDTC) transactions are supported on .NET only on Windows; a TransactionScope spanning two connections/resources will fail on Linux.",
+   "fix": "Confirm each scope uses one connection; otherwise redesign (outbox pattern, sagas).",
+   "alt": "Single-connection transactions / outbox",
+   "effort": "small-change",
+   "refs": [
+    "S3",
+    "S12"
+   ]
+  },
+  {
+   "id": "DATA-SQLDEPENDENCY",
+   "cat": "data-access",
+   "title": "SqlDependency / SqlCacheDependency",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSqlDependency\\b",
+    "\\bSqlCacheDependency\\b",
+    "<sqlCacheDependency"
+   ],
+   "why": "Query notifications need SQL Server Service Broker (no PostgreSQL equivalent); SqlCacheDependency is System.Web only.",
+   "fix": "Replace with explicit cache invalidation or events (ElastiCache, SNS).",
+   "alt": "ElastiCache + explicit invalidation",
+   "effort": "small-change",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S14"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "DATA-INTEGRATED-SECURITY",
+   "cat": "auth",
+   "title": "Windows-integrated database authentication",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb",
+    "any"
+   ],
+   "pat": [
+    "(?i)Integrated\\s+Security\\s*=\\s*(SSPI|true|yes)",
+    "(?i)Trusted_Connection\\s*=\\s*(yes|true)"
+   ],
+   "why": "Windows authentication to SQL Server from Linux needs Kerberos (domain-joined host or keytab); PostgreSQL uses password/IAM auth instead.",
+   "fix": "Switch to SQL authentication with credentials in Secrets Manager (rotation), or set up Kerberos with AWS Managed Microsoft AD.",
+   "alt": "SQL auth + Secrets Manager rotation; IAM database auth for PostgreSQL",
+   "effort": "small-change",
+   "refs": [
+    "S8",
+    "S11"
+   ],
+   "question": "Must database access keep using Windows (Kerberos) identities for audit/compliance?",
+   "in_strings": true
+  },
+  {
+   "id": "DB-CLR",
+   "cat": "database",
+   "title": "SQL CLR assemblies",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+ASSEMBLY\\b",
+    "(?i)\\bEXTERNAL\\s+NAME\\b",
+    "(?i)'clr enabled'"
+   ],
+   "why": "CLR assemblies run inside SQL Server; PostgreSQL has no CLR, so each routine is rewritten.",
+   "fix": "Rewrite CLR routines in PL/pgSQL, or move the logic to the application (preferred when it is not set-based).",
+   "alt": "PL/pgSQL function / application code",
+   "effort": "db-object-large",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "CLR"
+    ]
+   }
+  },
+  {
+   "id": "DB-LINKED-SERVER",
+   "cat": "database",
+   "title": "Linked servers / distributed queries",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bOPENQUERY\\s*\\(",
+    "(?i)\\bOPENDATASOURCE\\s*\\(",
+    "(?i)\\bsp_addlinkedserver\\b",
+    "(?i)\\bOPENROWSET\\s*\\((?!\\s*BULK)",
+    "\\[[\\w\\-]+\\]\\.\\[[\\w\\-]+\\]\\.\\[[\\w]+\\]\\.\\[[\\w]+\\]"
+   ],
+   "why": "PostgreSQL has no linked servers; remote data needs postgres_fdw or application-level integration.",
+   "fix": "Inventory each linked server; replace with application-level integration or AWS DMS replication where possible.",
+   "alt": "postgres_fdw / application integration / AWS DMS",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "question": "What do the linked servers point at, and will those systems also move to AWS?",
+   "parsed": {
+    "constructs": [
+     "OPENQUERY/OPENROWSET",
+     "linked server"
+    ]
+   }
+  },
+  {
+   "id": "DB-XP-CMDSHELL",
+   "cat": "database",
+   "title": "xp_cmdshell / OLE automation / file-system extended procedures",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bxp_cmdshell\\b",
+    "(?i)\\bxp_(fileexist|dirtree|subdirs|regread|regwrite)\\b",
+    "(?i)\\bsp_OA(Create|Method|GetProperty|SetProperty|Destroy)\\b"
+   ],
+   "why": "Extended stored procedures and OS access do not exist in PostgreSQL.",
+   "fix": "Move OS/file work into the application or a Lambda/ECS task; use S3 integration for files.",
+   "alt": "Lambda / ECS task / S3 for files",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "calls": [
+     "xp_cmdshell",
+     "xp_fileexist",
+     "xp_dirtree",
+     "xp_subdirs",
+     "xp_regread",
+     "xp_regwrite"
+    ]
+   }
+  },
+  {
+   "id": "DB-FILESTREAM",
+   "cat": "database",
+   "title": "FILESTREAM / FileTable",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bFILESTREAM\\b",
+    "(?i)\\bFILETABLE\\b",
+    "(?i)\\bAS\\s+FileTable\\b"
+   ],
+   "why": "FILESTREAM and FileTables have no PostgreSQL equivalent.",
+   "fix": "Store blobs in Amazon S3 with keys in the database.",
+   "alt": "Amazon S3",
+   "effort": "db-object-large",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "FILESTREAM",
+     "fn: PATHNAME",
+     "fn: GET_FILESTREAM_TRANSACTION_CONTEXT"
+    ]
+   }
+  },
+  {
+   "id": "DB-SERVICE-BROKER",
+   "cat": "database",
+   "title": "Service Broker",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+(QUEUE|SERVICE|CONTRACT|MESSAGE\\s+TYPE)\\b",
+    "(?i)\\bBEGIN\\s+DIALOG\\b",
+    "(?i)\\bSEND\\s+ON\\s+CONVERSATION\\b",
+    "(?i)\\bRECEIVE\\s+(TOP\\s*\\(|\\*|\\w)",
+    "(?i)\\bENABLE_BROKER\\b"
+   ],
+   "why": "Service Broker has no PostgreSQL equivalent (LISTEN/NOTIFY is not a durable queue).",
+   "fix": "Replace with Amazon SQS/SNS or an outbox table polled by a worker.",
+   "alt": "Amazon SQS / outbox pattern",
+   "effort": "db-object-large",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "Service Broker"
+    ]
+   }
+  },
+  {
+   "id": "DB-MSDTC",
+   "cat": "database",
+   "title": "Distributed transactions in T-SQL",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bBEGIN\\s+DISTRIBUTED\\s+TRAN"
+   ],
+   "why": "MSDTC distributed transactions do not exist in PostgreSQL (two-phase commit is a different mechanism).",
+   "fix": "Avoid cross-server transactions; redesign with sagas/outbox.",
+   "alt": "Outbox / saga",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "distributed transaction"
+    ]
+   }
+  },
+  {
+   "id": "DB-SQL-AGENT",
+   "cat": "database",
+   "title": "SQL Server Agent jobs",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_add_job(step|schedule)?\\b",
+    "(?i)\\bsp_add_schedule\\b",
+    "(?i)\\bsp_start_job\\b",
+    "(?i)msdb\\.(dbo)?\\.sysjobs"
+   ],
+   "why": "SQL Server Agent has no PostgreSQL equivalent (pg_cron covers simple schedules).",
+   "fix": "Move each job to EventBridge Scheduler + Lambda/ECS task, or pg_cron for pure SQL jobs.",
+   "alt": "EventBridge Scheduler + Lambda / ECS",
+   "effort": "db-object-small",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ],
+   "question": "Which SQL Agent jobs run on the current server (the repository may not contain all of them)?",
+   "parsed": {
+    "calls": [
+     "sp_add_job",
+     "sp_add_jobstep",
+     "sp_add_jobschedule",
+     "sp_add_schedule",
+     "sp_start_job",
+     "sp_update_job"
+    ]
+   }
+  },
+  {
+   "id": "DB-CROSS-DATABASE",
+   "cat": "database",
+   "title": "Cross-database references (three-part names)",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\b(?!dbo\\b|sys\\b|INFORMATION_SCHEMA\\b)\\[?[A-Za-z_][\\w]*\\]?\\.\\[?dbo\\]?\\.\\[?[A-Za-z_][\\w]*\\]?"
+   ],
+   "not": "(?i)^\\s*(--|/\\*)",
+   "why": "PostgreSQL cannot query across databases; three-part names fail.",
+   "fix": "Put the related data in schemas of one database, use postgres_fdw, or remove the coupling in the application.",
+   "alt": "Schemas in one database / postgres_fdw",
+   "effort": "db-object-small",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "cross-database"
+    ]
+   }
+  },
+  {
+   "id": "DB-BULK-FILE",
+   "cat": "database",
+   "title": "BULK INSERT / OPENROWSET(BULK) from server files",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bBULK\\s+INSERT\\b",
+    "(?i)\\bOPENROWSET\\s*\\(\\s*BULK\\b",
+    "(?i)\\bbcp\\s+\\S+\\s+(in|out|queryout)\\b"
+   ],
+   "why": "BULK INSERT and OPENROWSET(BULK) read server files; PostgreSQL uses COPY (client-side) or S3-based loads.",
+   "fix": "Load files through the application, COPY, or AWS Glue.",
+   "alt": "COPY / aws_s3 import / AWS Glue",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "BULK INSERT",
+     "OPENROWSET BULK"
+    ]
+   }
+  },
+  {
+   "id": "DB-FULLTEXT",
+   "cat": "database",
+   "title": "Full-text search",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bCREATE\\s+FULLTEXT\\b",
+    "(?i)\\b(CONTAINS|FREETEXT|CONTAINSTABLE|FREETEXTTABLE)\\s*\\("
+   ],
+   "why": "SQL Server full-text search is a different engine from PostgreSQL full-text search.",
+   "fix": "Move to PostgreSQL full-text (tsvector) or Amazon OpenSearch.",
+   "alt": "Amazon OpenSearch Service",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S14"
+   ],
+   "parsed": {
+    "constructs": [
+     "full-text"
+    ]
+   }
+  },
+  {
+   "id": "DB-SERVER-CONFIG",
+   "cat": "database",
+   "title": "Server-level configuration / privileges",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_configure\\b",
+    "(?i)\\bTRUSTWORTHY\\s+ON\\b",
+    "(?i)\\bCREATE\\s+TRIGGER\\s+\\w+\\s+ON\\s+ALL\\s+SERVER\\b",
+    "(?i)\\bCREATE\\s+ENDPOINT\\b",
+    "(?i)\\bsp_add(publication|subscription|article)\\b",
+    "(?i)\\bsp_replicationdboption\\b"
+   ],
+   "why": "Server-level settings, triggers, endpoints and replication are SQL Server administration objects with no PostgreSQL counterpart.",
+   "fix": "Translate needed settings to PostgreSQL parameters; drop the server-level objects.",
+   "alt": "PostgreSQL parameter groups",
+   "effort": "db-object-medium",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S12",
+    "S14"
+   ],
+   "parsed": {
+    "calls": [
+     "sp_configure"
+    ]
+   }
+  },
+  {
+   "id": "DB-DATABASE-MAIL",
+   "cat": "integrations",
+   "title": "Database Mail",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\bsp_send_dbmail\\b"
+   ],
+   "why": "Database Mail does not exist in PostgreSQL.",
+   "fix": "Send email from the application through Amazon SES.",
+   "alt": "Amazon SES",
+   "effort": "db-object-small",
+   "db": {
+    "pg": "redesign"
+   },
+   "refs": [
+    "S11",
+    "S14"
+   ],
+   "parsed": {
+    "calls": [
+     "sp_send_dbmail"
+    ]
+   }
+  },
+  {
+   "id": "AUTH-WINDOWS",
+   "cat": "auth",
+   "title": "Windows authentication / impersonation in IIS",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<authentication\\s+mode=\"Windows\"",
+    "<windowsAuthentication\\s+enabled=\"true\"",
+    "<identity\\s+impersonate=\"true\""
+   ],
+   "why": "On Linux, Windows auth needs the Negotiate handler with Kerberos (keytab, SPNs, LDAP for roles); impersonation is Windows-only.",
+   "fix": "Move users to an OIDC identity provider (IAM Identity Center, Cognito, Entra ID via federation) or configure Negotiate/Kerberos with AWS Managed Microsoft AD.",
+   "alt": "OIDC (Cognito / Entra ID / ADFS OIDC); Negotiate + keytab",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ],
+   "question": "Do users sign in with domain accounts, and is a move to SSO/OIDC acceptable?"
+  },
+  {
+   "id": "AUTH-IMPERSONATION",
+   "cat": "auth",
+   "title": "Windows identity / impersonation in code",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bWindowsIdentity\\b",
+    "\\bWindowsImpersonationContext\\b",
+    "\\.Impersonate\\(",
+    "\\bLogonUser\\b",
+    "\\bWindowsPrincipal\\b",
+    "\\bRunImpersonated\\b"
+   ],
+   "why": "WindowsIdentity and impersonation are Windows-only.",
+   "fix": "Use claims from the identity provider; access resources with IAM roles instead of impersonated accounts.",
+   "alt": "Claims + IAM roles",
+   "effort": "medium-change",
+   "refs": [
+    "S8"
+   ]
+  },
+  {
+   "id": "AUTH-MACHINEKEY",
+   "cat": "auth",
+   "title": "machineKey configuration",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<machineKey\\b"
+   ],
+   "why": "machineKey protects auth cookies, ViewState and anti-forgery tokens; ASP.NET Core uses the Data Protection key ring, and web farms need shared keys.",
+   "fix": "Store keys in Secrets Manager (never in config); share a Data Protection key ring (S3 + KMS) across instances; plan cookie compatibility during cut-over.",
+   "alt": "Data Protection + S3/KMS key ring",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "AUTH-WSFED",
+   "cat": "auth",
+   "title": "WS-Federation / ADFS (WIF)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bSystem\\.IdentityModel\\.Services\\b",
+    "<system\\.identityModel",
+    "\\bWSFederationAuthenticationModule\\b",
+    "\\bSessionAuthenticationModule\\b",
+    "\\bWsFederation\\b"
+   ],
+   "why": "Windows Identity Foundation is .NET Framework only.",
+   "fix": "Use Microsoft.AspNetCore.Authentication.WsFederation or switch the relying party to OIDC.",
+   "alt": "ASP.NET Core WsFederation / OIDC",
+   "effort": "medium-change",
+   "refs": [
+    "S9"
+   ],
+   "question": "Which identity provider (ADFS version, Entra ID) issues tokens, and will it be reachable from AWS?",
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-DEFAULT-CREDENTIALS",
+   "cat": "auth",
+   "title": "Outbound calls with Windows default credentials",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bCredentialCache\\.Default(Network)?Credentials\\b",
+    "UseDefaultCredentials\\s*=\\s*true",
+    "useDefaultCredentials=\"true\""
+   ],
+   "why": "On Linux the process has no Windows identity; integrated auth to on-prem services needs Kerberos configuration.",
+   "fix": "Use explicit service credentials from Secrets Manager or Kerberos keytabs.",
+   "alt": "Secrets Manager credentials",
+   "effort": "small-change",
+   "refs": [
+    "S8"
+   ]
+  },
+  {
+   "id": "AUTH-EXTERNAL-IDP",
+   "cat": "auth",
+   "title": "External identity provider (OpenID Connect / Azure AD / Entra ID)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bUseOpenIdConnectAuthentication\\b",
+    "\\bOpenIdConnectAuthenticationOptions\\b",
+    "\\bUseWindowsAzureActiveDirectoryBearerAuthentication\\b",
+    "\"ida:(ClientId|Tenant|AADInstance|PostLogoutRedirectUri)\"",
+    "\\bMicrosoft\\.Identity\\.Web\\b",
+    "\\bAddMicrosoftIdentityWebApp\\b"
+   ],
+   "why": "Sign-in is delegated to an external IdP: the OWIN middleware must be replaced, and redirect URIs, client secrets and allowed origins must be registered for the new AWS host names.",
+   "fix": "Port to ASP.NET Core OpenID Connect (or Microsoft.Identity.Web); register AWS redirect URIs; move client secrets to Secrets Manager.",
+   "alt": "Microsoft.AspNetCore.Authentication.OpenIdConnect / Microsoft.Identity.Web; Amazon Cognito federation",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ],
+   "question": "Which identity provider tenant/app registrations does each application use, and who can add the new redirect URIs?"
+  },
+  {
+   "id": "CFG-HARDCODED-SECRET",
+   "cat": "configuration-secrets",
+   "title": "Hard-coded credential or key in source",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "js"
+   ],
+   "pat": [
+    "(?i)\\b\\w*(password|passwd|pwd|secret|apikey|api_key|accesskey|access_key|clientsecret|client_secret|token)\\w*\\s*(=|:)\\s*@?\"[^\"\\s]{6,}\""
+   ],
+   "not": "(?i)(\"\\s*\\+|string\\.Empty|placeholder|example|\\{0\\}|Resources\\.|ErrorMessage|DisplayName|\\[Display|PasswordChar|Text\\s*=\\s*\"|Label|Required|\"(your[-_ ]|<|\\{|enter|change|todo|xxx|sample|dummy|placeholder|insert|replace))",
+   "why": "Credentials in source code travel with every clone and cannot be rotated.",
+   "fix": "Move to AWS Secrets Manager; rotate the exposed credential.",
+   "alt": "AWS Secrets Manager",
+   "effort": "trivial",
+   "refs": [
+    "S21"
+   ]
+  },
+  {
+   "id": "CFG-PROTECTED-SECTION",
+   "cat": "configuration-secrets",
+   "title": "DPAPI/RSA-protected configuration sections",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "configProtectionProvider=",
+    "\\b(DataProtection|Rsa)ProtectedConfigurationProvider\\b"
+   ],
+   "why": "Protected config sections are machine-bound and RsaProtectedConfigurationProvider throws on .NET.",
+   "fix": "Move the protected values to Secrets Manager / Parameter Store (SecureString).",
+   "alt": "Secrets Manager",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "CFG-TRANSFORMS",
+   "cat": "configuration-secrets",
+   "title": "web.config / app.config transforms",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "xmlns:xdt=\"http://schemas\\.microsoft\\.com/XML-Document-Transform\""
+   ],
+   "why": "Per-environment transforms become appsettings.{Environment}.json + environment variables.",
+   "fix": "Map each transform to environment configuration and Parameter Store paths.",
+   "alt": "appsettings.{env}.json + Parameter Store",
+   "effort": "trivial",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "NET-UNC-SHARE",
+   "cat": "file-handling",
+   "title": "UNC network share paths",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "sql",
+    "script"
+   ],
+   "pat": [
+    "@\"\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\",
+    "\"\\\\\\\\\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\\\\\",
+    "=\"\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\",
+    "'\\\\\\\\[A-Za-z0-9_.$\\-]+\\\\"
+   ],
+   "why": "SMB shares on the on-prem network are unreachable from AWS without VPN/Direct Connect, and Linux needs a mount instead of UNC paths.",
+   "fix": "Move the files to Amazon S3, Amazon EFS, or FSx for Windows File Server / FSx for NetApp ONTAP (SMB); use configuration, not literals.",
+   "alt": "Amazon S3 / EFS / FSx",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "What lives on these shares, how big is it, and which other systems read or write it?"
+  },
+  {
+   "id": "NET-SMTP",
+   "cat": "integrations",
+   "title": "SMTP email sending",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bnew\\s+SmtpClient\\b",
+    "<smtp\\b",
+    "<network\\s+host="
+   ],
+   "why": "On-prem SMTP relays are not reachable from AWS without a network path; EC2 throttles outbound port 25.",
+   "fix": "Send through Amazon SES (SMTP interface or API) with verified domains (SPF/DKIM/DMARC).",
+   "alt": "Amazon SES; MailKit as client",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which SMTP relay is used today and are there allow-listed sender IPs?",
+   "in_strings": true
+  },
+  {
+   "id": "NET-FTP",
+   "cat": "integrations",
+   "title": "FTP/SFTP transfers",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bFtpWebRequest\\b",
+    "ftp://",
+    "sftp://",
+    "\\bWinSCP\\b",
+    "\\bFluentFTP\\b",
+    "\\bSshNet\\b|\\bRenci\\.SshNet\\b"
+   ],
+   "why": "File-transfer partners usually allow-list source IPs; the egress IP changes on AWS.",
+   "fix": "Use fixed egress IPs (NAT gateway Elastic IPs) and notify partners; consider AWS Transfer Family for inbound.",
+   "alt": "AWS Transfer Family; NAT gateway EIPs",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which partners exchange files, and do they allow-list our IP addresses?",
+   "in_strings": true
+  },
+  {
+   "id": "NET-PROXY",
+   "cat": "connectivity",
+   "title": "Explicit HTTP proxy configuration",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "<defaultProxy\\b",
+    "<proxy\\s+(usesystemdefault|proxyaddress)",
+    "\\bnew\\s+WebProxy\\b"
+   ],
+   "why": "Corporate proxies are usually not reachable or not wanted from AWS.",
+   "fix": "Remove or make egress configurable (VPC endpoints / NAT).",
+   "alt": "VPC endpoints / NAT gateway",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "HV-HARDWARE-ID",
+   "cat": "hypervisor",
+   "title": "Hardware / MAC / BIOS identifiers",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\.GetPhysicalAddress\\(",
+    "Win32_(BaseBoard|BIOS|Processor|DiskDrive|NetworkAdapter|ComputerSystemProduct|PhysicalMedia)",
+    "\\bProcessorId\\b",
+    "\\bHardwareId\\b"
+   ],
+   "why": "Licensing or identity tied to hardware/MAC/BIOS breaks when VMs move hypervisor or instances are replaced.",
+   "fix": "Find what the identifier is used for (often licensing); move to instance-independent identity or re-license.",
+   "alt": "Instance-independent IDs / vendor cloud licences",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Is any software licensed to a MAC address, host ID or BIOS serial on the current VMs?",
+   "in_strings": true
+  },
+  {
+   "id": "HV-MACHINE-NAME",
+   "cat": "hypervisor",
+   "title": "Logic keyed on machine name / host name",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bEnvironment\\.MachineName\\b",
+    "\\bDns\\.GetHostName\\(",
+    "\\bSystem\\.Net\\.Dns\\.GetHostEntry\\("
+   ],
+   "why": "Host names change on AWS (auto scaling, containers); logic that switches on server name breaks.",
+   "fix": "Use explicit configuration/environment instead of host names.",
+   "alt": "Environment configuration",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "HV-LOCAL-DEVICE",
+   "cat": "hypervisor",
+   "title": "Local devices (serial/COM/LPT ports, dongles, scanners)",
+   "sev": "High",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bSerialPort\\b",
+    "\"(COM\\d+|LPT\\d)\"",
+    "\\b(HASP|Sentinel|Aladdin)\\b",
+    "\\bTwain\\b|\\bWIA\\b"
+   ],
+   "why": "Physical devices attached to an on-prem host cannot follow the workload to AWS.",
+   "fix": "Move the device interaction to an edge component (e.g. on-prem agent, IoT Greengrass) or retire it.",
+   "alt": "Edge agent / AWS IoT Greengrass",
+   "effort": "large-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Are any devices physically attached to the servers (ports, dongles, scanners, printers)?"
+  },
+  {
+   "id": "FILE-DRIVE-LETTER",
+   "cat": "file-handling",
+   "title": "Hard-coded drive-letter paths",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "sql",
+    "script"
+   ],
+   "pat": [
+    "@\"[A-Za-z]:\\\\",
+    "\"[A-Za-z]:\\\\\\\\",
+    "=\"[A-Za-z]:\\\\",
+    "'[A-Za-z]:\\\\"
+   ],
+   "why": "Linux has no drive letters; these paths fail on Linux and on any new host.",
+   "fix": "Make paths configurable and root them in a mounted volume / S3.",
+   "alt": "Configuration + EFS/S3",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "FILE-WIN-FOLDERS",
+   "cat": "file-handling",
+   "title": "Windows special folders / %VARIABLES%",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "%(APPDATA|LOCALAPPDATA|PROGRAMDATA|TEMP|TMP|WINDIR|SystemRoot|USERPROFILE|ProgramFiles|ProgramFiles\\(x86\\)|ALLUSERSPROFILE)%",
+    "Environment\\.SpecialFolder\\.(CommonApplicationData|ProgramFiles|ProgramFilesX86|Windows|System|SystemX86|CommonDocuments|MyDocuments|Desktop)"
+   ],
+   "why": "These locations do not exist (or map to unexpected paths) on Linux/containers.",
+   "fix": "Use configured paths on mounted storage.",
+   "alt": "Configuration + mounted volumes",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "FILE-LOCAL-WRITE",
+   "cat": "state-scale",
+   "title": "Writes to the local file system",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bFile\\.(WriteAll(Text|Bytes|Lines)|AppendAll(Text|Lines)|AppendText|Create|CreateText|Copy|Move|Delete|Replace)\\(",
+    "\\bnew\\s+StreamWriter\\(",
+    "\\bnew\\s+FileStream\\(",
+    "\\bDirectory\\.(CreateDirectory|Delete|Move)\\(",
+    "\\.SaveAs\\("
+   ],
+   "why": "Local disk is not shared between instances and is lost with containers; files written here break horizontal scaling.",
+   "fix": "Write durable files to Amazon S3 (or EFS when a file system is required); keep only temp files locally.",
+   "alt": "Amazon S3 / EFS",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "IIS-REWRITE",
+   "cat": "hosting",
+   "title": "IIS URL Rewrite rules",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<rewrite>",
+    "<rule\\s+name="
+   ],
+   "why": "IIS URL Rewrite is an IIS module; rules must move to ASP.NET Core rewrite middleware or the load balancer.",
+   "fix": "Translate rules to UseRewriter (it can import IIS rules) or ALB listener rules / CloudFront functions.",
+   "alt": "Microsoft.AspNetCore.Rewrite / ALB rules",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-MODULES-HANDLERS",
+   "cat": "hosting",
+   "title": "IIS modules and handlers registered in config",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<(httpModules|httpHandlers)>",
+    "<add\\s+name=\"[^\"]+\"\\s+type=\"(?!System\\.Web\\.Routing|System\\.Web\\.Handlers\\.TransferRequestHandler)[^\"]+\""
+   ],
+   "requires": "<(modules|handlers|httpModules|httpHandlers)\\b",
+   "why": "Module/handler registrations configure IIS; each needs an ASP.NET Core equivalent.",
+   "fix": "Map each registered module/handler to middleware or remove.",
+   "alt": "Middleware",
+   "effort": "small-change",
+   "baseline": true,
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-SESSION-STATE",
+   "cat": "state-scale",
+   "title": "Session state mode",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "config"
+   ],
+   "pat": [
+    "<sessionState\\b"
+   ],
+   "why": "In-process session needs sticky sessions and is lost on restart; StateServer/SQLServer modes are System.Web features.",
+   "fix": "Use ASP.NET Core distributed session backed by ElastiCache (Redis/Valkey) or DynamoDB; reduce session usage.",
+   "alt": "ElastiCache (Valkey/Redis) / DynamoDB",
+   "effort": "small-change",
+   "refs": [
+    "S9"
+   ]
+  },
+  {
+   "id": "IIS-PUBLISH",
+   "cat": "hosting",
+   "title": "IIS / MSDeploy publishing",
+   "sev": "Info",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "<WebPublishMethod>(MSDeploy|FileSystem|Package)</WebPublishMethod>",
+    "<MSDeployServiceURL>"
+   ],
+   "why": "Deployment targets IIS today.",
+   "fix": "Replace with container images (ECR) or Linux packages deployed by CodePipeline/GitHub Actions.",
+   "alt": "ECR + ECS/EKS; CodeDeploy",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "BG-TASK-SCHEDULER",
+   "cat": "background",
+   "title": "Windows Task Scheduler",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Win32\\.TaskScheduler\\b",
+    "(?i)\\bschtasks(\\.exe)?\\b",
+    "\\bTaskService\\b",
+    "(?i)Register-ScheduledTask"
+   ],
+   "why": "Task Scheduler is Windows-only; jobs scheduled on the server are often undocumented.",
+   "fix": "Move schedules to EventBridge Scheduler (cron) triggering ECS tasks/Lambda.",
+   "alt": "Amazon EventBridge Scheduler",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "List every scheduled task on the current servers (the repository rarely contains all of them).",
+   "in_strings": true
+  },
+  {
+   "id": "BG-HANGFIRE-QUARTZ",
+   "cat": "background",
+   "title": "Hangfire / Quartz.NET job schedulers",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bHangfire\\b",
+    "\\bQuartz\\b"
+   ],
+   "why": "Both run on .NET 10; scaled-out instances need clustered/shared job storage and dashboard authorization.",
+   "fix": "Use persistent job storage (SQL/Redis) and clustering; secure the dashboard.",
+   "alt": "Hangfire.AspNetCore / Quartz clustering",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "LOG-FILE-TARGETS",
+   "cat": "logging",
+   "title": "File-based logging targets",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "config",
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "(Rolling)?FileAppender",
+    "xsi:type=\"File\"",
+    "\\.WriteTo\\.(File|RollingFile)\\(",
+    "EventLogAppender",
+    "xsi:type=\"EventLog\""
+   ],
+   "why": "Log files on instance disks are lost with containers and are not centralised; Event Log targets fail on Linux.",
+   "fix": "Log to stdout in JSON and collect with CloudWatch Logs (awslogs / FireLens) or use CloudWatch sinks.",
+   "alt": "CloudWatch Logs (AWS.Logger.*), FireLens",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "INT-PRINTING",
+   "cat": "integrations",
+   "title": "Printing",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bPrintDocument\\b",
+    "\\bPrinterSettings\\b",
+    "\\bSystem\\.Printing\\b",
+    "\\b(Local)?PrintServer\\b",
+    "\\bPrintQueue\\b"
+   ],
+   "why": "Windows printing APIs and on-prem printers are not available from Linux in AWS.",
+   "fix": "Generate PDFs and send them to a print service / on-prem print agent.",
+   "alt": "PDF generation + on-prem print agent",
+   "effort": "medium-change",
+   "refs": [
+    "S6"
+   ],
+   "question": "Which printers are used from the servers, and where are they?"
+  },
+  {
+   "id": "INT-FAX",
+   "cat": "integrations",
+   "title": "Fax",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bFAXCOMEXLib\\b",
+    "\\bFAXCOMLib\\b",
+    "\\bFaxServer\\b",
+    "\\bnew\\s+FaxDocument(Class)?\\s*\\("
+   ],
+   "why": "Windows Fax Service (COM) is not available on Linux/AWS.",
+   "fix": "Use a cloud fax API.",
+   "alt": "Cloud fax provider API",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-OFFICE-INTEROP",
+   "cat": "integrations",
+   "title": "Office interop automation",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.Office\\.Interop\\.\\w+",
+    "\\bMicrosoft\\.Office\\.Core\\b"
+   ],
+   "why": "Office automation needs Office installed on Windows (and is unsupported on servers).",
+   "fix": "Use Open XML-based libraries.",
+   "alt": "Open XML SDK / ClosedXML / NPOI / EPPlus (commercial)",
+   "effort": "medium-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-CRYSTAL",
+   "cat": "integrations",
+   "title": "Crystal Reports",
+   "sev": "Blocker",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "proj",
+    "config"
+   ],
+   "pat": [
+    "\\bCrystalDecisions\\.",
+    "\\.rpt\"",
+    "<CR:CrystalReportViewer"
+   ],
+   "why": "The Crystal Reports .NET runtime is Windows/.NET Framework only.",
+   "fix": "Re-implement reports (SSRS/PBIRS, a reporting library, or a BI tool); keep a Windows report host as an interim.",
+   "alt": "SSRS / Power BI Report Server; Telerik / Stimulsoft / FastReport (commercial); QuestPDF",
+   "effort": "per-report",
+   "refs": [
+    "S12"
+   ],
+   "question": "How many Crystal reports are in use, and can any be retired?",
+   "in_strings": true
+  },
+  {
+   "id": "INT-SSRS-CLIENT",
+   "cat": "integrations",
+   "title": "SSRS web-service clients",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "\\bReportExecution(2005|Service)\\b",
+    "\\bReportingService20(05|06|10)\\b",
+    "/ReportServer"
+   ],
+   "why": "Calls an SSRS server, which depends on SQL Server; reports need a new home when SQL Server goes.",
+   "fix": "Decide where reports run; regenerate SOAP clients or use the REST API.",
+   "alt": "Amazon QuickSight / paginated reporting / SSRS on EC2",
+   "effort": "small-change",
+   "refs": [
+    "S12"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "INT-SHAREPOINT-EXCHANGE",
+   "cat": "integrations",
+   "title": "SharePoint server object model / Exchange EWS",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.SharePoint\\b(?!\\.Client)",
+    "\\bMicrosoft\\.Exchange\\.WebServices\\b"
+   ],
+   "why": "The SharePoint server object model is on-prem/Windows only; EWS is being retired in favour of Microsoft Graph.",
+   "fix": "Use Microsoft Graph / CSOM REST APIs with app credentials.",
+   "alt": "Microsoft Graph",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "TZ-LOCAL-TIME",
+   "cat": "time-culture",
+   "title": "Server-local time (DateTime.Now / Today)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bDateTime\\.(Now|Today)\\b",
+    "\\bDate\\.Now\\b",
+    "\\bTimeZoneInfo\\.Local\\b"
+   ],
+   "why": "AWS hosts and containers run in UTC; logic that relied on the on-prem server's local time zone shifts (cut-offs, reports, schedules).",
+   "fix": "Decide the business time zone explicitly; use DateTime.UtcNow / TimeProvider and convert at the edges, or set TZ deliberately.",
+   "alt": "TimeProvider + explicit business time zone",
+   "effort": "per-occurrence-small",
+   "refs": [
+    "S7"
+   ],
+   "question": "Which time zone are the current servers set to, and which business rules depend on it?"
+  },
+  {
+   "id": "TZ-SQL-LOCAL-TIME",
+   "cat": "time-culture",
+   "title": "Database-server local time (GETDATE)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "sql"
+   ],
+   "pat": [
+    "(?i)\\b(GETDATE|SYSDATETIME|CURRENT_TIMESTAMP)\\b"
+   ],
+   "why": "GETDATE() uses the server's local time; PostgreSQL servers default to UTC, so results shift.",
+   "fix": "Store UTC (GETUTCDATE/SYSUTCDATETIME, now() AT TIME ZONE 'UTC') and convert at the edge.",
+   "alt": "UTC storage",
+   "effort": "db-object-small",
+   "db": {
+    "pg": "rework"
+   },
+   "refs": [
+    "S11"
+   ]
+  },
+  {
+   "id": "BUILD-PRIVATE-FEED",
+   "cat": "build-delivery",
+   "title": "Private NuGet feeds",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "any"
+   ],
+   "pat": [
+    "<add\\s+key=\"[^\"]+\"\\s+value=\"(?!https://api\\.nuget\\.org)(https?://|\\\\\\\\|[A-Za-z]:\\\\)[^\"]+\"\\s*(protocolVersion=\"\\d\"\\s*)?/>"
+   ],
+   "requires": "<packageSources>",
+   "why": "Private packages must be available to the new build system (and uploaded to AWS Transform when it is used).",
+   "fix": "Host private packages in AWS CodeArtifact; port private packages first.",
+   "alt": "AWS CodeArtifact",
+   "effort": "small-change",
+   "refs": [
+    "S17"
+   ],
+   "question": "Where are the private NuGet packages built, and do we get their source?"
+  },
+  {
+   "id": "HOST-HTTPSYS-IIS-INPROC",
+   "cat": "linux-readiness",
+   "title": "Http.sys or in-process IIS hosting",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bUseHttpSys\\s*\\(",
+    "\\bHttpSysOptions\\b",
+    "\\bUseIIS\\s*\\(\\s*\\)",
+    "\\bIISServerOptions\\b"
+   ],
+   "why": "Http.sys and the in-process IIS server exist only on Windows; the host fails to start on Linux.",
+   "fix": "Host on Kestrel (behind a load balancer or reverse proxy); move Http.sys settings (URL ACLs, Windows auth, request limits) to Kestrel / the proxy.",
+   "alt": "Kestrel + ALB / NGINX / YARP",
+   "effort": "small-change",
+   "refs": [
+    "S2",
+    "S9"
+   ]
+  },
+  {
+   "id": "HOST-WINDOWS-SERVICE-LIFETIME",
+   "cat": "linux-readiness",
+   "title": "Generic host run as a Windows service",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bUseWindowsService\\s*\\(",
+    "\\bAddWindowsService\\s*\\(",
+    "\\bWindowsServiceLifetime\\b"
+   ],
+   "why": "The Windows service lifetime is Windows-only (it is a no-op elsewhere, so the process is no longer supervised as a service).",
+   "fix": "Run as a container task (ECS) or a systemd unit: UseSystemd(), health checks and restart policy in the orchestrator.",
+   "alt": "Amazon ECS service / systemd (UseSystemd)",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "API-NAMED-SYNC",
+   "cat": "linux-readiness",
+   "title": "Named EventWaitHandle / Semaphore (cross-process signalling)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bnew\\s+(EventWaitHandle|Semaphore)\\s*\\([^;]*?,\\s*@?\\\"[^\\\"]+\\\"",
+    "\\b(EventWaitHandle|Semaphore)\\.(Try)?OpenExisting\\s*\\(",
+    "\\bnew\\s+Mutex\\s*\\([^;]*\\\"Global\\\\\\\\"
+   ],
+   "why": "Named semaphores and named wait handles throw PlatformNotSupportedException on Linux; named mutexes work but the Global\\ / Local\\ session prefixes have no Windows-session meaning, and none of them coordinate across containers.",
+   "fix": "Use a distributed lock / queue (Redis, DynamoDB conditional write, SQS) for cross-process or cross-instance coordination; a plain lock / SemaphoreSlim inside one process.",
+   "alt": "Redis lock (RedLock.net), DynamoDB lock client, SQS",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "INT-SMTP-PICKUP-IIS",
+   "cat": "linux-readiness",
+   "title": "SMTP pickup directory from IIS",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "PickupDirectoryFromIis"
+   ],
+   "why": "PickupDirectoryFromIis reads the IIS SMTP service metabase: Windows + IIS 6 SMTP only.",
+   "fix": "Send through SMTP (Amazon SES SMTP interface) or the SES API.",
+   "alt": "Amazon SES",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-REG-FILE",
+   "cat": "linux-readiness",
+   "title": "Registry import files (.reg)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "script"
+   ],
+   "pat": [
+    "^\\s*Windows Registry Editor Version",
+    "^\\s*REGEDIT4\\b"
+   ],
+   "why": "The deployment writes settings into the Windows registry; nothing on Linux reads them.",
+   "fix": "Move the settings to configuration (appsettings / environment / Parameter Store).",
+   "alt": "AWS Systems Manager Parameter Store",
+   "effort": "trivial",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "BUILD-GAC-REFERENCE",
+   "cat": "linux-readiness",
+   "title": "Assembly referenced from the GAC (strong-named, no HintPath)",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "proj"
+   ],
+   "pat": [
+    "<Reference\\s+Include=\\\"(?!System[,.\\\"]|System\\.|Microsoft\\.CSharp|Microsoft\\.VisualBasic|mscorlib|WindowsBase|PresentationCore|PresentationFramework)[^\\\"]+,\\s*Version=[^\\\"]+PublicKeyToken=[0-9a-fA-F]{16}[^\\\"]*\\\"\\s*/>"
+   ],
+   "why": "A strong-named reference with no HintPath is resolved from the Global Assembly Cache of the build machine (vendor SDKs, report viewers, Office PIAs). There is no GAC on .NET 10 or Linux; the build fails until the assembly comes from a package or a lib folder.",
+   "fix": "Find the NuGet package (or a .NET-compatible version) for each GAC assembly; otherwise replace the component.",
+   "alt": "",
+   "effort": "small-change",
+   "refs": [
+    "S1",
+    "S3"
+   ],
+   "question": "Which installer put these assemblies in the GAC of the build / web servers, and is a .NET (Core) version available?"
+  },
+  {
+   "id": "WIN-PROCESS-USER",
+   "cat": "linux-readiness",
+   "title": "Starts a process as another Windows user",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\b(LoadUserProfile|PasswordInClearText)\\s*=",
+    "\\.StartInfo\\.(UserName|Password|Domain|LoadUserProfile)\\b",
+    "ProcessStartInfo[^;]*\\b(UserName|Domain)\\s*="
+   ],
+   "why": "ProcessStartInfo.UserName / Password / Domain / LoadUserProfile are Windows-only; on Linux the process starts as the current user or throws.",
+   "fix": "Run the work in a container or task with its own IAM role / Linux user, or call the tool through an API instead of impersonating a user.",
+   "alt": "Separate container / ECS task role",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-NAMED-MMF",
+   "cat": "linux-readiness",
+   "title": "Named memory-mapped files (shared memory between processes)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bMemoryMappedFile\\.(CreateOrOpen|OpenExisting)\\s*\\(",
+    "\\bMemoryMappedFile\\.CreateNew\\s*\\(\\s*(@?\\\"|[A-Za-z_][\\w.]*\\s*,)(?!\\s*null)"
+   ],
+   "why": "Named memory maps throw PlatformNotSupportedException on Linux (only anonymous or file-backed maps without a name work), and shared memory does not cross containers.",
+   "fix": "Use a file-backed map without a name, or an external cache (ElastiCache Redis) for data shared between processes or instances.",
+   "alt": "File-backed map / Redis",
+   "effort": "small-change",
+   "refs": [
+    "S2"
+   ]
+  },
+  {
+   "id": "WIN-DRIVEINFO",
+   "cat": "linux-readiness",
+   "title": "Enumerates drives (DriveInfo, GetLogicalDrives)",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb"
+   ],
+   "pat": [
+    "\\bDriveInfo\\.GetDrives\\s*\\(",
+    "\\bnew\\s+(System\\.IO\\.)?DriveInfo\\s*\\(",
+    "\\b(Environment|Directory)\\.GetLogicalDrives\\s*\\("
+   ],
+   "why": "Linux has mount points, not drive letters: the list contains /, /proc, /sys and similar, and code that looks for C: or D: finds nothing.",
+   "fix": "Use a configured data path (mounted volume / EFS) and check free space on that path only.",
+   "alt": "Configured path on a mounted volume",
+   "effort": "trivial",
+   "refs": [
+    "S7"
+   ]
+  },
+  {
+   "id": "BUILD-INSTALLER",
+   "cat": "build-delivery",
+   "title": "Windows installers (InstallUtil installers, setup / WiX projects)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\[\\s*(System\\.ComponentModel\\.)?RunInstaller\\s*\\(\\s*true",
+    ":\\s*(System\\.Configuration\\.Install\\.)?Installer\\b",
+    "\\b(ServiceProcessInstaller|ServiceInstaller)\\b",
+    "(?i)Include=\"[^\"]+\\.(vdproj|wixproj|wxs|isproj)\""
+   ],
+   "why": "System.Configuration.Install (InstallUtil) does not exist on .NET, and MSI / setup projects install onto Windows servers; containers replace both.",
+   "fix": "Deliver as a container image built in CI; replace installer custom actions with start-up configuration or infrastructure as code.",
+   "alt": "Container image + IaC",
+   "effort": "small-change",
+   "refs": [
+    "S1"
+   ],
+   "in_strings": true
+  },
+  {
+   "id": "LS-SMTP-PORT25",
+   "cat": "aws-landing",
+   "title": "SMTP sent on port 25",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)<network\\b[^>]*\\bport=\\\"25\\\"",
+    "(?i)\\bSmtpClient\\s*\\([^)]*,\\s*25\\s*\\)",
+    "(?i)\\bsmtp\\w*\\.Port\\s*=\\s*25\\b",
+    "(?i)[\\\"']?smtp_?\\w*port[\\\"']?\\s*[:=]\\s*[\\\"']?25\\b",
+    "(?i)key=\\\"[^\\\"]*smtp[^\\\"]*port[^\\\"]*\\\"\\s+value=\\\"25\\\"",
+    "(?i)\\bsmtplib\\.SMTP\\([^)]*,\\s*25\\s*\\)"
+   ],
+   "why": "Amazon EC2 restricts outbound traffic on port 25 by default, so mail sent straight to a relay on port 25 stops after the move.",
+   "fix": "Ask AWS to lift the port 25 restriction for the account (request form), or send through the relay on port 587/465, or through Amazon SES.",
+   "alt": "Amazon SES SMTP interface on 587",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which SMTP relay does this application use, where will it run after the move, and should we request removal of the EC2 port 25 restriction?",
+   "in_strings": true
+  },
+  {
+   "id": "LS-BROADCAST-MULTICAST",
+   "cat": "aws-landing",
+   "title": "UDP broadcast or multicast",
+   "sev": "Blocker",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "any"
+   ],
+   "pat": [
+    "\\bJoinMulticastGroup\\b",
+    "\\bEnableBroadcast\\s*=\\s*true",
+    "\\bIPAddress\\.Broadcast\\b",
+    "\\bMulticastOption\\b",
+    "[\\\"']255\\.255\\.255\\.255[\\\"']",
+    "[\\\"'](22[4-9]|23\\d)\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}[\\\"']",
+    "\\bIP_ADD_MEMBERSHIP\\b",
+    "\\bSO_BROADCAST\\b"
+   ],
+   "why": "An Amazon VPC does not carry broadcast traffic, and multicast only works through a Transit Gateway multicast domain. Discovery or messaging built on them stops working on EC2.",
+   "fix": "Replace with unicast and a configured address list or service discovery (AWS Cloud Map), or set up Transit Gateway multicast for the subnets involved.",
+   "alt": "AWS Cloud Map; Transit Gateway multicast",
+   "effort": "medium-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which components send or listen for UDP broadcast/multicast, and must they keep working across subnets after the move?"
+  },
+  {
+   "id": "LS-IP-ALLOWLIST",
+   "cat": "aws-landing",
+   "title": "IP allow-list (ours or a partner's)",
+   "sev": "High",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "js",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\b(white-?list(ed|ing)?|allow-?list(ed|ing)?)\\b.{0,60}\\b(ip|ips|address(es)?|addr|cidr)\\b",
+    "(?i)\\b(ip|ips|address(es)?|cidr)\\b.{0,60}\\b(white-?list(ed|ing)?|allow-?list(ed|ing)?)\\b",
+    "(?i)<ipSecurity\\b",
+    "(?i)<add\\s+ipAddress=\\\"\\d"
+   ],
+   "why": "When the servers move, their public and private IP addresses change. Partners that allow-list our outbound IP (payment gateways, suppliers, SFTP hosts), and our own IP checks, reject the new addresses.",
+   "fix": "List every allow-listed address; give the EC2 servers fixed egress IPs (Elastic IPs or a NAT gateway) and get partners to add them before cut-over; update our own allow-lists.",
+   "alt": "Elastic IPs / NAT gateway with fixed EIPs",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which partners allow-list the client's current public IP addresses, and which internal allow-lists (firewalls, IIS IP restrictions, database logins) name on-prem addresses?"
+  },
+  {
+   "id": "LS-CLIENT-IP-LOGIC",
+   "cat": "aws-landing",
+   "title": "Logic based on the caller's IP address",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "markup",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "\\bRemoteIpAddress\\b",
+    "\\bUserHostAddress\\b",
+    "[\\\"']REMOTE_ADDR[\\\"']",
+    "\\brequest\\.remote_addr\\b",
+    "\\breq\\.(ip|connection\\.remoteAddress)\\b"
+   ],
+   "not": "(?i)x-forwarded-for|ForwardedHeaders",
+   "why": "Behind a load balancer, NAT or proxy on AWS the caller's address arrives in X-Forwarded-For, so IP checks, rate limits, geo lookups and audit logs see the wrong address.",
+   "fix": "Read the client IP from X-Forwarded-For (ASP.NET Core ForwardedHeaders middleware, or the proxy's header in IIS) and trust only the load balancer's addresses.",
+   "alt": "ForwardedHeaders middleware",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Will a load balancer or reverse proxy sit in front of this application on AWS?"
+  },
+  {
+   "id": "LS-STATIC-BIND",
+   "cat": "aws-landing",
+   "title": "Listener bound to a fixed on-prem IP address",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "\\bIPAddress\\.Parse\\(\\s*\\\"(10|172\\.(1[6-9]|2\\d|3[01])|192\\.168)\\.",
+    "(?i)bindingInformation=\\\"(\\d{1,3}\\.){3}\\d{1,3}:",
+    "(?i)[\\\"'](Urls|urls|ASPNETCORE_URLS)[\\\"']?\\s*[:=]\\s*[\\\"']https?://(\\d{1,3}\\.){3}\\d{1,3}",
+    "(?i)\\.listen\\(\\s*\\d+\\s*,\\s*[\\\"'](10|172|192)\\.",
+    "(?i)\\bhost\\s*=\\s*[\\\"'](10|192\\.168|172\\.(1[6-9]|2\\d|3[01]))\\.[\\d.]+[\\\"']\\s*,\\s*port"
+   ],
+   "why": "The server's IP address changes on EC2; a listener bound to the old address fails to start.",
+   "fix": "Bind to all interfaces (0.0.0.0 / *) or read the address from configuration set per environment.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ]
+  },
+  {
+   "id": "LS-HOSTS-FILE",
+   "cat": "aws-landing",
+   "title": "Relies on the server's hosts file",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "(?i)drivers[\\\\/]+etc[\\\\/]+hosts\\b",
+    "(?i)(?<![\\w.])/etc/hosts\\b"
+   ],
+   "why": "Name overrides in a server's hosts file do not move with the code; on EC2 the names resolve differently or not at all.",
+   "fix": "Move the entries into DNS (Route 53 private hosted zone) or into configuration.",
+   "alt": "Route 53 private hosted zone",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Do the current servers have hosts-file entries the applications depend on? Please export them."
+  },
+  {
+   "id": "LS-LOCALHOST-SERVICE",
+   "cat": "aws-landing",
+   "title": "Calls another service on the same machine (localhost)",
+   "sev": "Low",
+   "conf": "Needs verification",
+   "types": [
+    "config",
+    "cs",
+    "vb",
+    "js",
+    "any"
+   ],
+   "pat": [
+    "(?i)[\\\"'=]\\s*https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?/(?!swagger)",
+    "(?i)\\b(data\\s*source|server)\\s*=\\s*(localhost|127\\.0\\.0\\.1|\\(local\\)|\\.)\\s*[;,\\\"]"
+   ],
+   "not": "(?i)launchSettings|applicationUrl|\\.Development\\.|swagger",
+   "why": "Services that share one server today only keep working if they move together onto the same EC2 instance; otherwise the localhost address must point at the other server.",
+   "fix": "Keep these services in the same move group and on the same instance, or put the address in configuration per environment.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which services share a server today and must move to the same EC2 instance?"
+  },
+  {
+   "id": "LS-NETWORK-MOUNT",
+   "cat": "aws-landing",
+   "title": "Network file system mount (NFS / SMB / CIFS)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "script",
+    "config",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\bmount\\s+(-t\\s+)?(nfs4?|cifs|smb3?)\\b",
+    "(?i)\\b(nfs|cifs|smb)://",
+    "(?i)\\bnet\\s+use\\s+[a-z]:",
+    "(?i)New-PSDrive\\b.*-Root\\s+[\\\"']?\\\\\\\\",
+    "(?i)\\b_netdev\\b"
+   ],
+   "why": "File shares mounted from on-prem storage are not reachable from EC2 unless they move too or a network path is kept.",
+   "fix": "Move the share to Amazon FSx (Windows File Server / NetApp ONTAP) or Amazon EFS, or keep it on-prem over VPN/Direct Connect during the transition.",
+   "alt": "Amazon FSx; Amazon EFS",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which file shares do the servers mount, how large are they, and where do they live (the Proxmox host, a NAS, a file server)?"
+  },
+  {
+   "id": "LS-LICENSE-SERVER",
+   "cat": "aws-landing",
+   "title": "Licence server or node-locked licence",
+   "sev": "Medium",
+   "conf": "Needs verification",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script",
+    "any"
+   ],
+   "pat": [
+    "(?i)\\blicen[cs]e[\\s_-]*server\\b",
+    "(?i)\\b(FlexLM|FlexNet|lmgrd|RLM|HASP|Sentinel\\s*(LDK|RMS)|CodeMeter|Wibu)\\b",
+    "(?i)\\bLicenseKey\\b.*\\b(machine|host|mac)\\b"
+   ],
+   "why": "Licences tied to a machine, MAC address or an on-prem licence server can stop validating on new EC2 hardware.",
+   "fix": "Ask the vendor to re-issue licences for the new instances, or move the licence server with the application.",
+   "alt": "",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which third-party components are licensed per machine or through a licence server?"
+  },
+  {
+   "id": "LS-ODBC-DSN",
+   "cat": "aws-landing",
+   "title": "Machine-level ODBC data source (DSN)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "(?i)\\b(DSN|FILEDSN)\\s*=\\s*[A-Za-z_][\\w .-]*\\s*[;\"']"
+   ],
+   "why": "A DSN is defined on the server (ODBC administrator), not in the code. A new EC2 host does not have it until someone creates it.",
+   "fix": "List each DSN (driver, server, database) so DevOps can create it on the EC2 host, or replace it with a DSN-less connection string held in a CI variable.",
+   "alt": "DSN-less connection string",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which ODBC data sources (32 / 64-bit) exist on the servers, and which drivers do they use?",
+   "in_strings": true
+  },
+  {
+   "id": "LS-CERT-THUMBPRINT",
+   "cat": "aws-landing",
+   "title": "Certificate selected by thumbprint",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "(?i)\\bFindByThumbprint\\b",
+    "(?i)\\bthumbprint\\b[\"']?\\s*[=:]\\s*[\"'][0-9A-Fa-f ]{20,}",
+    "(?i)\\bfindValue=\"[0-9A-Fa-f ]{20,}\\\""
+   ],
+   "why": "The certificate must be present in the same store on the new server with its private key, and the thumbprint changes if the certificate is reissued.",
+   "fix": "Install the certificate on the EC2 host (export PFX with private key from the old server), and keep the thumbprint in a CI variable.",
+   "alt": "AWS Certificate Manager at a load balancer",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which certificates do the servers use (TLS, signing, client authentication), who issued them, and when do they expire?"
+  },
+  {
+   "id": "LS-LOCAL-DB-FILE",
+   "cat": "aws-landing",
+   "title": "Database file kept on the server disk",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "(?i)\\bAttachDbFilename\\b",
+    "(?i)\\(localdb\\)",
+    "(?i)\\bSQL\\s*Server\\s*Compact\\b",
+    "(?i)Data Source\\s*=\\s*[^;\"']*\\.(sdf|mdf|sqlite3?|db)\\b"
+   ],
+   "why": "Data in a file on the server disk moves only if the file is copied with the application, and is lost if the instance is replaced.",
+   "fix": "Copy the file to an EBS volume and back it up, or move the data to the database server.",
+   "alt": "Move the data to SQL Server on EC2",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which database files (SQL Compact, SQLite, .mdf) are kept on the application servers, and how are they backed up?",
+   "in_strings": true
+  }
+ ]
+}

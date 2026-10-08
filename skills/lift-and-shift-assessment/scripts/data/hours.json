@@ -1,0 +1,188 @@
+{
+ "_doc": "Hours of lift-and-shift-assessment, developer working hours assuming AI-assisted work. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so.",
+ "activity_thresholds": {
+  "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",
+  "active_commits_per_week": 3,
+  "hot_commits_per_week": 15
+ },
+ "day_hours": 8,
+ "contingency_pct": 20,
+ "items": {
+  "cicd_secrets": {
+   "label": "CI/CD pipeline + Secrets Manager",
+   "lines": [
+    {
+     "id": "secrets_config",
+     "label": "Secrets and settings moved to Secrets Manager",
+     "driver": "env_vars",
+     "unit": "environment variable or secret",
+     "rate": [
+      0.45,
+      0.65
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "config_files",
+     "label": "Config files with hard-coded values externalised",
+     "driver": "config_files",
+     "unit": "config file",
+     "rate": [
+      0.3,
+      0.5
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "connection_values",
+     "label": "DNS names and connection values replacing addresses",
+     "driver": "endpoints",
+     "unit": "internal address or host name",
+     "rate": [
+      0.75,
+      1.25
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "third_party_rekey",
+     "label": "Third-party keys and licences re-keyed on AWS",
+     "driver": "rekey",
+     "unit": "integration or licensed component",
+     "rate": [
+      1.2,
+      2.0
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "pipeline_solution",
+     "label": "CI/CD pipeline per solution",
+     "driver": "solutions",
+     "unit": "solution",
+     "rate": [
+      3.0,
+      5.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "pipeline_deployable",
+     "label": "Pipeline job per deployable",
+     "driver": "solution_deployables",
+     "unit": "deployable",
+     "rate": [
+      0.5,
+      1.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    }
+   ]
+  },
+  "build_artifacts": {
+   "label": "Build check + deployable artifacts",
+   "lines": [
+    {
+     "id": "build_project",
+     "label": "Restore and build check",
+     "driver": "projects",
+     "unit": "project",
+     "rate": [
+      0.25,
+      0.5
+     ],
+     "basis": "inferred",
+     "scope": "project"
+    },
+    {
+     "id": "build_solution",
+     "label": "Clean-agent build of the solution",
+     "driver": "solutions",
+     "unit": "solution",
+     "rate": [
+      0.5,
+      1.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "artifact",
+     "label": "Deployable artifact and hand-over notes",
+     "driver": "deployables",
+     "unit": "deployable",
+     "rate": [
+      0.5,
+      1.0
+     ],
+     "basis": "inferred",
+     "scope": "project"
+    }
+   ]
+  },
+  "retarget": {
+   "label": "Framework retarget",
+   "lines": [
+    {
+     "id": "retarget_project",
+     "label": "Target framework change and rebuild",
+     "driver": "retarget_projects",
+     "unit": "project",
+     "rate": [
+      0.25,
+      0.5
+     ],
+     "basis": "inferred",
+     "scope": "project"
+    },
+    {
+     "id": "retarget_regression",
+     "label": "Regression pass after the retarget",
+     "driver": "retarget_solutions",
+     "unit": "solution",
+     "rate": [
+      1.0,
+      2.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    }
+   ]
+  },
+  "validation_cutover": {
+   "label": "Test-launch validation + cutover support",
+   "lines": [
+    {
+     "id": "validation",
+     "label": "Test-launch validation on the AWS instance",
+     "driver": "workloads",
+     "unit": "workload (deployable x environment)",
+     "rate": [
+      1.0,
+      1.5
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "cutover",
+     "label": "Cutover and migration-defect support",
+     "driver": "workloads",
+     "unit": "workload (deployable x environment)",
+     "rate": [
+      0.75,
+      1.0
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    }
+   ]
+  }
+ }
+}

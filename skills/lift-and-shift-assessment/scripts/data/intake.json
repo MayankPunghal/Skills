@@ -1,0 +1,124 @@
+{
+ "_doc": "Intake questionnaire: EVERY input the assessment needs that the code cannot show. Guardrail: scan_repo.py, solutions.py, build_check.py, config_template.py, estimate_hours.py and build_doc.py refuse to run while a question that applies is unanswered. The agent asks each question in plain words with the multiple-choice tool and records ONLY what the user said; it never fills an answer in, and 'unknown' is accepted only when the user says it. stage: before_scan (asked right after discovery), after_scan (asked after scan_repo.py and map_infra.py, only when the scan found the thing the question is about: when_found), after_build (asked after the static build check). when: ask only if another answer has this value (a list means any of them; a multi answer matches when it contains the value). when_found: ask only if the scan, the build check or the third-party step produced one of these signals (rule ids; or the named signals build-blocked, inbound-public, licensed-components, rekey-integrations, scheduled-jobs). free_text: any text; 'unknown' is also accepted. affects: what the answer changes in the estimate or the document.",
+ "questions": [
+  {"id": "engagement_title", "group": "Engagement", "stage": "before_scan", "free_text": true, "example": "Acme AWS lift-and-shift", "ask": "What is the engagement called in the document?", "affects": "Document control: Engagement"},
+  {"id": "phase_covered", "group": "Engagement", "stage": "before_scan", "free_text": true, "example": "Phase 1: Migration (rehost to AWS on Windows)", "ask": "Which phase does this document cover, and is it one of several?", "affects": "Document control: Phase covered"},
+  {"id": "prepared_by", "group": "Engagement", "stage": "before_scan", "free_text": true, "example": "A. Developer", "ask": "Who is the author shown in the document control table?", "affects": "Document control: Created By"},
+  {"id": "scope_confirm", "group": "Scope", "stage": "before_scan", "ask": "Discovery found the repositories and solutions listed by the agent. Are all of them in scope?", "options": [
+    {"value": "all", "label": "All are in scope"}, {"value": "some_excluded", "label": "Some are out of scope", "help": "You name them next."}],
+   "affects": "Which solutions are inventoried, counted and priced"},
+  {"id": "scope_exclusions", "group": "Scope", "stage": "before_scan", "when": {"scope_confirm": "some_excluded"}, "free_text": true, "example": "legacy-reports, Tools.sln", "ask": "Which repositories or solutions are out of scope?", "affects": "solutions.py skips them; document scope box"},
+  {"id": "work_items", "group": "Scope", "stage": "before_scan", "multi": true, "ask": "Which work is the dev team doing in this migration? (each one adds its hours to the estimate)", "options": [
+    {"value": "build_artifacts", "label": "Build check + deployable artifacts", "help": "Make sure every solution builds on a clean agent, then produce the artifacts DevOps deploys on IIS / as Windows services."},
+    {"value": "cicd_secrets", "label": "CI/CD pipeline + Secrets Manager", "help": "Pipeline per solution, secrets and connection values moved into AWS Secrets Manager, DNS names instead of IPs. Also generates the tokenised config files and CI variable list."},
+    {"value": "retarget", "label": "Framework retarget", "help": "For example .NET Framework 4.7.2 or 4.8 to 4.8.1: a project-file change, a rebuild and a regression pass, no C# change."},
+    {"value": "validation_cutover", "label": "Test-launch validation + cutover support", "help": "Check the application starts clean on the AWS instance, triage migration-side defects, support the cutover."}],
+   "affects": "Which estimate lines and document sections exist"},
+  {"id": "retarget_to", "group": "Scope", "stage": "before_scan", "when": {"work_items": "retarget"}, "ask": "Which framework version do the projects move to?", "options": [
+    {"value": "4.8.1", "label": ".NET Framework 4.8.1"}, {"value": "4.8", "label": ".NET Framework 4.8"}, {"value": "unknown", "label": "Not decided", "help": "Stays UNKNOWN in the document; the retarget hours are still counted."}],
+   "affects": "Which projects need the retarget; section 5.4"},
+  {"id": "regression_tests", "group": "Scope", "stage": "before_scan", "when": {"work_items": "retarget"}, "ask": "Do automated regression tests exist for the applications that are retargeted?", "options": [
+    {"value": "yes", "label": "Yes, they run in CI"}, {"value": "partial", "label": "Some"}, {"value": "no", "label": "No, manual testing only"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 5.4 regression statement"},
+  {"id": "estimate_basis", "group": "Estimate", "stage": "before_scan", "ask": "The hours are developer working hours, AI-assisted, 8 hours per dev day, with a 20% buffer, calibrated to the sample estimate. Is that the basis to use?", "options": [
+    {"value": "as_agreed", "label": "Yes, as agreed"}, {"value": "other", "label": "No, a different basis", "help": "The rates are not recalibrated; the document says so."}],
+   "affects": "Every hour; the basis statement in section 10"},
+  {"id": "environments", "group": "Environments and servers", "stage": "before_scan", "free_text": true, "example": "dev, staging, prod", "ask": "Which environments move (for example dev, staging, prod)? Say 'unknown' if you do not know yet.", "affects": "Workloads = deployables x environments; waves; section 1.1 table. Unknown: 1 environment per deployable is assumed, flagged UNKNOWN, and the document cannot be finalised until you confirm"},
+  {"id": "environments_differ", "group": "Environments and servers", "stage": "before_scan", "ask": "Does every solution exist in every environment listed?", "options": [
+    {"value": "all", "label": "Yes, all of them"}, {"value": "differ", "label": "No, they differ per solution", "help": "You give each solution's own list; the agent records it with intake.py --solution."}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Workload count per solution"},
+  {"id": "server_list", "group": "Environments and servers", "stage": "before_scan", "ask": "Is there a server list (server, OS version, specs, IP address, IIS app pools) per environment?", "options": [
+    {"value": "provided", "label": "Yes, I will give the file or the details", "help": "You give the path or the text next."}, {"value": "none", "label": "No such list exists"}, {"value": "later", "label": "It exists but I do not have it yet"}],
+   "affects": "Section 1.1 environment table; server mapping"},
+  {"id": "server_list_detail", "group": "Environments and servers", "stage": "before_scan", "when": {"server_list": "provided"}, "free_text": true, "example": "C:/clients/acme/servers.csv", "ask": "Where is the server list (file path), or what are the servers?", "affects": "Section 1.1 table"},
+  {"id": "current_hosting", "group": "Environments and servers", "stage": "before_scan", "ask": "What do the servers run on today?", "options": [
+    {"value": "Hyper-V", "label": "Hyper-V"}, {"value": "VMware", "label": "VMware"}, {"value": "Proxmox", "label": "Proxmox"}, {"value": "bare metal", "label": "Bare metal"}, {"value": "other", "label": "Another platform", "help": "You name it next."}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 3 Relocate verdict (VMware only); section 6"},
+  {"id": "windows_versions", "group": "Environments and servers", "stage": "before_scan", "free_text": true, "example": "Windows Server 2019 and 2022", "ask": "Which Windows Server versions do the source servers run?", "affects": "Section 6 MGN support statement"},
+  {"id": "aws_landing_zone", "group": "Target AWS", "stage": "before_scan", "ask": "Is the AWS account and landing zone (VPC, subnets, security baseline) ready?", "options": [
+    {"value": "ready", "label": "Ready"}, {"value": "in_progress", "label": "In progress"}, {"value": "not_started", "label": "Not started"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Wave 0 entry criteria"},
+  {"id": "aws_connectivity", "group": "Target AWS", "stage": "before_scan", "ask": "How will AWS reach the current network while servers are split between the two?", "options": [
+    {"value": "vpn", "label": "Site-to-site VPN"}, {"value": "direct_connect", "label": "AWS Direct Connect"}, {"value": "none", "label": "No link planned"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 7 connectivity; Wave 0 exit criteria"},
+  {"id": "aws_region", "group": "Target AWS", "stage": "before_scan", "free_text": true, "example": "ap-south-1", "ask": "Which AWS region is the target?", "affects": "Section 7"},
+  {"id": "database_location", "group": "Target AWS", "stage": "before_scan", "ask": "Where do the databases live after Phase 1?", "options": [
+    {"value": "stay", "label": "They stay where they are today (hybrid)"}, {"value": "move_with", "label": "They move with the applications"}, {"value": "move_separately", "label": "They move separately (DB team)"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 2 'does not do' list; section 5.3; section 8.3 sequencing"},
+  {"id": "devops_mechanism", "group": "DevOps decisions", "stage": "before_scan", "ask": "How will the servers move to AWS?", "options": [
+    {"value": "mgn", "label": "Block-level replication (AWS MGN)", "help": "The whole server is replicated; IIS, tasks and registry move as they are."},
+    {"value": "rebuild", "label": "Rebuild on a fresh Windows image", "help": "Deploy from CI onto a clean Windows Server image."},
+    {"value": "both", "label": "Replicate first, rebuild later"}, {"value": "unknown", "label": "Not decided yet", "help": "Stays UNKNOWN in the document; the migration steps follow the proposal and say so."}],
+   "affects": "Sections 6 and 8"},
+  {"id": "wave_strategy", "group": "DevOps decisions", "stage": "before_scan", "ask": "How should the cutover waves be formed? (the dev team proposes; confirm or change)", "options": [
+    {"value": "rehearsal_batches", "label": "A rehearsal wave on the smallest solution, then batches", "help": "Proposed default."},
+    {"value": "by_environment", "label": "By environment: lower environments first, production last"}, {"value": "single", "label": "One cutover for everything"}, {"value": "other", "label": "Something else", "help": "You describe it next."}],
+   "affects": "Section 9"},
+  {"id": "wave_detail", "group": "DevOps decisions", "stage": "before_scan", "when": {"wave_strategy": ["rehearsal_batches", "other"]}, "free_text": true, "example": "at most 10 workloads per wave", "ask": "How big is a wave (maximum workloads), or what is the wave rule?", "affects": "Section 9 wave count"},
+  {"id": "maintenance_windows", "group": "DevOps decisions", "stage": "before_scan", "free_text": true, "example": "Saturday 22:00 to 04:00", "ask": "Are there restrictions on when a cutover can happen (maintenance windows, freezes)?", "affects": "Section 9 runbook"},
+  {"id": "hypercare_days", "group": "DevOps decisions", "stage": "before_scan", "free_text": true, "example": "14", "ask": "How many days of observation after each cutover before the source server is released?", "affects": "Section 8 post-cutover step; Section 11"},
+  {"id": "parallel_run_days", "group": "DevOps decisions", "stage": "before_scan", "free_text": true, "example": "30", "ask": "How long do the source servers run in parallel after the last wave before decommissioning?", "affects": "Section 9 decommission row"},
+  {"id": "devops_notes", "group": "DevOps decisions", "stage": "before_scan", "free_text": true, "example": "ALB in front of IIS, dev first, source VMs kept 30 days", "ask": "Anything else DevOps already decided for the target architecture, waves or decommissioning? Say 'none' if not.", "affects": "Section 7 beside the proposal"},
+  {"id": "ci_platform_today", "group": "Build and CI/CD", "stage": "before_scan", "when": {"work_items": ["build_artifacts", "cicd_secrets"]}, "ask": "Which CI platform builds the code today?", "options": [
+    {"value": "gitlab", "label": "GitLab CI"}, {"value": "azure_devops", "label": "Azure DevOps"}, {"value": "jenkins", "label": "Jenkins"}, {"value": "github_actions", "label": "GitHub Actions"}, {"value": "teamcity", "label": "TeamCity"}, {"value": "none", "label": "None, builds are manual"}, {"value": "other", "label": "Another"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 5.1; pipeline lines"},
+  {"id": "build_agent", "group": "Build and CI/CD", "stage": "before_scan", "when": {"work_items": ["build_artifacts", "cicd_secrets"]}, "ask": "Does a Windows build agent with MSBuild (Visual Studio Build Tools) and the .NET Framework targeting packs exist?", "options": [
+    {"value": "yes", "label": "Yes"}, {"value": "no", "label": "No, it must be created"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 5.1 prerequisites"},
+  {"id": "artifact_format", "group": "Build and CI/CD", "stage": "before_scan", "when": {"work_items": "build_artifacts"}, "ask": "In what form does DevOps want the deployable artifacts?", "options": [
+    {"value": "zip", "label": "Zip of the publish output"}, {"value": "msdeploy", "label": "Web Deploy package"}, {"value": "msi", "label": "Installer (MSI)"}, {"value": "other", "label": "Another form"}, {"value": "unknown", "label": "Not agreed yet"}],
+   "affects": "Section 8 steps; artifact line"},
+  {"id": "ci_platform_target", "group": "Build and CI/CD", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "ask": "On which platform are the new pipelines built?", "options": [
+    {"value": "gitlab", "label": "GitLab CI"}, {"value": "azure_devops", "label": "Azure DevOps"}, {"value": "jenkins", "label": "Jenkins"}, {"value": "github_actions", "label": "GitHub Actions"}, {"value": "aws_codepipeline", "label": "AWS CodePipeline"}, {"value": "other", "label": "Another"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 7.1; pipeline lines"},
+  {"id": "pipeline_scope", "group": "Build and CI/CD", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "ask": "Do all solutions get a pipeline?", "options": [
+    {"value": "all", "label": "All solutions"}, {"value": "selected", "label": "Only some", "help": "You name them next; only those get the pipeline lines."}],
+   "affects": "Pipeline lines are counted only for these solutions"},
+  {"id": "pipeline_solutions", "group": "Build and CI/CD", "stage": "before_scan", "when": {"pipeline_scope": "selected"}, "free_text": true, "example": "Hub, UpdateServices", "ask": "Which solutions get a pipeline?", "affects": "Pipeline lines"},
+  {"id": "secrets_injection", "group": "Secrets", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "ask": "How do the secrets reach the applications?", "options": [
+    {"value": "bootstrap_env", "label": "A bootstrap sets machine environment variables from Secrets Manager", "help": "No code change, if the code already reads environment variables."},
+    {"value": "config_tokens", "label": "Tokenised config files rendered at deploy time"},
+    {"value": "sdk", "label": "The application reads Secrets Manager itself", "help": "A C# change: outside this estimate; the document says so."}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 7.1 injection row"},
+  {"id": "secrets_rotation", "group": "Secrets", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "ask": "Is secret rotation part of this phase?", "options": [
+    {"value": "migration_and_scheduled", "label": "Rotate at migration, then on a schedule"}, {"value": "migration_only", "label": "Rotate once at migration"}, {"value": "out", "label": "Out of scope"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 5.2 and 7.1 rotation row"},
+  {"id": "secrets_owner", "group": "Secrets", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "free_text": true, "example": "DevOps creates the secrets, the client supplies the values", "ask": "Who creates the secrets in Secrets Manager and who supplies the values?", "affects": "Section 7.1; 8.1 prerequisites"},
+  {"id": "existing_vault", "group": "Secrets", "stage": "before_scan", "when": {"work_items": "cicd_secrets"}, "free_text": true, "example": "none, values are set by hand on the servers", "ask": "Where are secrets kept today (a vault, machine variables, config files)?", "affects": "Section 5.2"},
+  {"id": "test_environment", "group": "Validation and cutover", "stage": "before_scan", "when": {"work_items": "validation_cutover"}, "ask": "Is an isolated environment available for the test launch?", "options": [
+    {"value": "yes", "label": "Yes"}, {"value": "no", "label": "No, it must be created"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 8 test launch; section 11"},
+  {"id": "smoke_tests", "group": "Validation and cutover", "stage": "before_scan", "when": {"work_items": "validation_cutover"}, "ask": "Do smoke or acceptance test scripts exist for the applications?", "options": [
+    {"value": "yes", "label": "Yes"}, {"value": "partial", "label": "For some"}, {"value": "no", "label": "No"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 11"},
+  {"id": "testing_by", "group": "Validation and cutover", "stage": "before_scan", "when": {"work_items": "validation_cutover"}, "free_text": true, "example": "the client's QA team", "ask": "Who executes the functional and acceptance testing after the test launch?", "affects": "Heading of section 11"},
+  {"id": "cutover_support_hours", "group": "Validation and cutover", "stage": "before_scan", "when": {"work_items": "validation_cutover"}, "ask": "When must the dev team be available during a cutover?", "options": [
+    {"value": "business", "label": "Business hours"}, {"value": "extended", "label": "Out of hours (maintenance window)"}, {"value": "on_call", "label": "On call for the whole hypercare period"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 9 and 11"},
+  {"id": "ad_domain", "group": "Found in the code", "stage": "after_scan", "when_found": ["AUTH-WINDOWS", "AUTH-IMPERSONATION", "WIN-DIRSERVICES", "WIN-ACL", "WIN-PROCESS-USER"], "ask": "The code uses Windows or Active Directory identity. How will the AWS servers authenticate?", "options": [
+    {"value": "join_existing", "label": "Join the existing domain over the network link"}, {"value": "aws_managed_ad", "label": "AWS Managed Microsoft AD"}, {"value": "not_needed", "label": "Not needed"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 7; section 5.3; wave 0"},
+  {"id": "mail_relay", "group": "Found in the code", "stage": "after_scan", "when_found": ["NET-SMTP", "LS-SMTP-PORT25", "INT-SMTP-PICKUP-IIS"], "ask": "The code sends mail through an SMTP server. Where does mail go from AWS?", "options": [
+    {"value": "existing_relay", "label": "The existing relay, reached over the network link"}, {"value": "ses", "label": "Amazon SES (a config value change)"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 5.3 connection values"},
+  {"id": "file_shares", "group": "Found in the code", "stage": "after_scan", "when_found": ["FILE-DRIVE-LETTER", "NET-UNC-SHARE", "LS-NETWORK-MOUNT", "FILE-LOCAL-WRITE"], "ask": "The code uses folders on other drives or network shares. What happens to them?", "options": [
+    {"value": "recreate_ebs", "label": "Recreate the same drive letters and folders on EBS volumes"}, {"value": "fsx", "label": "Move the shares to Amazon FSx"}, {"value": "stay", "label": "The shares stay where they are, reached over the network link"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 5.3; config values"},
+  {"id": "public_endpoints", "group": "Found in the code", "stage": "after_scan", "when_found": ["inbound-public"], "free_text": true, "example": "DNS is managed by the client; certificates are issued by the client's CA", "ask": "The applications receive calls from outside (sites, webhooks). Who owns the public DNS names and TLS certificates, and may the public IP address change?", "affects": "Section 7; wave 0"},
+  {"id": "ip_allowlists", "group": "Found in the code", "stage": "after_scan", "when_found": ["LS-IP-ALLOWLIST", "rekey-integrations"], "ask": "Do third parties or partners allow-list your server IP addresses (so new AWS addresses must be registered)?", "options": [
+    {"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 5.3; wave 0; third-party re-key"},
+  {"id": "licence_terms", "group": "Found in the code", "stage": "after_scan", "when_found": ["licensed-components"], "ask": "Licensed components were found (listed by the agent). Do the licences allow installing on the new servers?", "options": [
+    {"value": "allowed", "label": "Yes, as they are"}, {"value": "reissue", "label": "New keys or licences must be requested from the vendors"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 4 licence column; re-key lines"},
+  {"id": "machine_bound", "group": "Found in the code", "stage": "after_scan", "when_found": ["HV-HARDWARE-ID", "HV-MACHINE-NAME", "LS-LICENSE-SERVER", "LS-HOSTS-FILE", "LS-STATIC-BIND"], "ask": "The code depends on machine names, hardware ids, hosts-file entries or a licence server. Can the new servers keep the same names and addresses, or are these re-registered?", "options": [
+    {"value": "same", "label": "The new servers keep the same names and addresses"}, {"value": "reregister", "label": "They are re-registered with the vendors or owners"}, {"value": "unknown", "label": "Not known"}],
+   "affects": "Section 5.3; wave 0"},
+  {"id": "job_schedules", "group": "Found in the code", "stage": "after_scan", "when_found": ["scheduled-jobs"], "ask": "Scheduled jobs and Windows services were found. During the test launch, should they run against live data?", "options": [
+    {"value": "disabled", "label": "No, schedules are disabled in the test launch"}, {"value": "test_data", "label": "Only against test data"}, {"value": "live", "label": "Yes, against live data"}, {"value": "unknown", "label": "Not decided"}],
+   "affects": "Section 8.2 steps"},
+  {"id": "credential_rotation_owner", "group": "Found in the code", "stage": "after_scan", "when_found": ["CFG-HARDCODED-SECRET"], "free_text": true, "example": "the DB team rotates the SQL login", "ask": "Hard-coded credentials were found. Who rotates them and creates the replacements?", "affects": "Section 5.2"},
+  {"id": "private_feeds", "group": "Found in the code", "stage": "after_scan", "when_found": ["BUILD-PRIVATE-FEED", "BUILD-GAC-REFERENCE"], "free_text": true, "example": "the internal feed is reachable from the new build agent", "ask": "The build uses a private package feed or GAC references. How does the build agent get them?", "affects": "Section 5.1"},
+  {"id": "missing_references", "group": "Found in the build check", "stage": "after_build", "when_found": ["build-blocked"], "free_text": true, "example": "SmartThreadPool.dll is in the shared tools folder", "ask": "The build check found files that are not in the repository (listed by the agent). Where do they come from, and who adds them?", "affects": "Section 5.1 (HARD BLOCKER); build artifacts line"}
+ ]
+}
