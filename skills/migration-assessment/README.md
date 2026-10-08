@@ -125,3 +125,11 @@ The report wording and structure live in `references/report-template.md` and `re
 ## Confidentiality
 
 The skill never writes into client repositories, never copies secret values (the masking is verified by a gate), and sends package IDs (and versions) to api.nuget.org unless the scan runs `--offline` or `online_package_lookup` is false; private package IDs are sent too (they are simply not found), so use `--offline` for confidential estates. Reports contain architecture and security findings: share them privately.
+
+## Server dependencies, scope and the inventory workbook (2.12.0)
+
+- `map_infra.py --all [--servers <client server list>]` reports, per repository, the kinds of server the code depends on (SQL Server, Redis, Memcached, Aerospike, Elasticsearch, Kafka, RabbitMQ, SMTP, SFTP/FTP, LDAP, file shares, proxies ...), the hosts named in code, the servers of the client's own infrastructure list that match, and the Windows/Linux hosting evidence. The single view is `assessment/infra/estate-infra.json` and `report/infra-dependencies.csv`.
+- The same run writes the **configuration map** (each config file and setting holding a URL, IP, host, UNC share or drive path, with the line, environment and action for AWS; secrets skipped) and the **network access** list (what each project connects to, port, protocol, and what must be opened, routed, resolved or allow-listed on AWS). `.xml .ini .properties .conf .env .settings .toml` files are scanned as data.
+- The assessment is .NET only: repositories with no .NET project are out of scope; non-.NET projects inside a .NET repository are listed, never edited or moved, and flagged when the .NET build or run time needs them (Node.js, gulp, Vite, TypeScript).
+- `update_inventory_xlsx.py --xlsx <repository inventory>` writes scope, coupling, server dependencies, server coverage, hosting evidence and what the inventory missed back into the client's workbook.
+- Detail and limits: [references/infra-dependencies.md](references/infra-dependencies.md).

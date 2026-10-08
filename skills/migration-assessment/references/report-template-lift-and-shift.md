@@ -83,6 +83,22 @@ Inventory detail (types, frameworks, size) is in Appendix A2.
 
 {{block:dependencies}}
 
+### 4.2a Server dependencies (tied to the infrastructure list)
+
+{{block:server-deps}}
+
+### 4.2b Non-.NET projects the .NET code depends on
+
+{{block:scope-coupling}}
+
+### 4.2c Network access (what each project must reach)
+
+{{block:network-access}}
+
+### 4.2d Configuration map (where addresses and paths live)
+
+{{block:config-map}}
+
 ### 4.3 Scheduled and background jobs
 
 {{block:jobs}}

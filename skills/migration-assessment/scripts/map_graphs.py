@@ -470,6 +470,9 @@ def main():
         sys.exit("pass --repo NAME or --all (nothing to map)" if a.repo is None and not (a.all or a.merge) else "no repositories discovered: run discover_estate.py first")
     graphs = []
     for name in names:
+        if st["repos"].get(name, {}).get("scope") == "out":
+            print(f"skip {name}: out of scope (no .NET project)")
+            continue
         inv = read_json(os.path.join(OUT, "inventory", f"{name}.json"))
         if not inv:
             print(f"skip {name}: no inventory")
