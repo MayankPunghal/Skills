@@ -8,7 +8,7 @@ import re
 import sys
 from collections import Counter
 
-from _common import CONFIG_NAME, ISSUES_LOG, OUT, documenter_dir, issues_log, load_config, load_state, read_json, run, utf8_stdout
+from _common import ASSESSMENT_TYPES, CONFIG_NAME, ISSUES_LOG, OUT, documenter_dir, issues_log, load_config, load_state, read_json, run, utf8_stdout
 import _findings as F
 
 
@@ -59,6 +59,7 @@ def main():
             if v == "done":
                 steps[k] += 1
     print(f"WORKSPACE: {root}\nCLIENT: {cfg.get('client') or '?'} · target {cfg.get('target_dotnet')} · roots: {', '.join(cfg.get('estate_roots') or []) or 'none'}")
+    print(f"ASSESSMENT TYPE: {ASSESSMENT_TYPES.get(cfg.get('assessment_type'), 'not chosen yet (intake questionnaire pending)')}")
     print(f"REPOS: {len(repos)} discovered · scanned {steps['scan']} · graphed {steps['graph']}")
     fs, unreviewed, needs = [], 0, 0
     for r in repos:
@@ -86,7 +87,11 @@ def main():
     pending_discover = not repos
     pending_scan = [r for r in repos if st["repos"][r].get("scan") != "done"]
     pending_graph = [r for r in repos if st["repos"][r].get("graph") != "done"]
-    if pending_discover:
+    sample = (cfg.get("intake") or {}).get("code_access") == "sample"
+    if not cfg.get("assessment_type") and not repos:  # workspaces started before the intake keep their scenario.hosting
+        nxt = ("intake questionnaire: ask the questions from intake.py --questions in plain words, then intake.py --answers '<json>' "
+               "(references/intake.md); the answers choose the assessment type")
+    elif pending_discover:
         nxt = "discover_estate.py"
     elif pending_scan:
         nxt = f"scan_repo.py --all   ({len(pending_scan)} repositories not scanned)"
@@ -100,6 +105,9 @@ def main():
         nxt = f"review 7R decisions ({apps - len(dec)} pending): write assessment/decisions.json, then classify_apps.py"
     elif not est or (os.path.getmtime(os.path.join(OUT, "estimate.json")) < os.path.getmtime(os.path.join(OUT, "classification.json"))):
         nxt = "estimate_effort.py"
+    elif sample and (not os.path.exists(os.path.join(OUT, "extrapolation.json"))
+                     or os.path.getmtime(os.path.join(OUT, "extrapolation.json")) < os.path.getmtime(os.path.join(OUT, "estimate.json"))):
+        nxt = "extrapolate_estate.py (only a sample of the estate is assessed: estimate the rest from it)"
     elif todo:
         nxt = f"write narratives: {', '.join(sorted(todo))} (references/write-report.md)"
     elif not reports:

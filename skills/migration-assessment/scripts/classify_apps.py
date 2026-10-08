@@ -15,6 +15,8 @@ Rules implemented (see references/seven-rs.md):
                                                        -> Rehost on Windows now, Refactor the blocking component later
   - desktop (WinForms/WPF)                              -> Retain (client), upgrade to .NET 10 Windows Desktop
   - possible duplicates / dormant                       -> flagged as Retire candidates for the client to confirm
+  - lift-and-shift assessment (intake.py)               -> every server application Rehost to EC2 with the same OS; the
+                                                          rule-based modernization path above is kept as an option
 """
 import datetime
 import os
@@ -140,6 +142,7 @@ def main():
         if inv:
             all_apps += [(repo, inv, a) for a in inv["applications"]]
     name_counts = Counter(a["name"] for _, _, a in all_apps)
+    lift_and_shift = cfg.get("assessment_type") == "lift-and-shift" or (cfg.get("scenario") or {}).get("hosting") == "lift-and-shift"
     for repo in F.repos(root):
         inv = F.load_inventory(root, repo)
         if not inv:
@@ -152,6 +155,13 @@ def main():
         apps_out = []
         for a in inv["applications"]:
             c = classify(a, inv, app_findings(fs, a["id"]), rules, cfg, users, name_counts)
+            if lift_and_shift and a["type"] not in rules["desktop_types"] and a["type"] != "database":
+                # intake chose lift-and-shift: every server application moves as it is; the modernization draft is kept as an option
+                c["options"] = [f"Later modernization: {c['r7']} to {c['target']}."] + c["options"]
+                c["modernization_r7"], c["modernization_target"] = c["r7"], c["target"]
+                c["r7"], c["target"] = "Rehost", rules["targets"]["ec2-same-os"]
+                c["rationale"] = ["Lift-and-shift (client's choice in the intake): the server moves to Amazon EC2 with the same operating system and no code port; "
+                                  "only what must change to run on AWS is in scope."] + [r for r in c["rationale"] if "rehost" in r.lower() or "Windows-bound" in r]
             entry = {"id": a["id"], "repo": repo, "name": a["name"], "type": a["type"], "entry": a["entry"], "framework_family": a["framework_family"],
                      "target_frameworks": a["target_frameworks"], "loc": a["loc"], "projects": a["projects"], **c, "decision_source": "rules"}
             d = decisions.get(a["id"])

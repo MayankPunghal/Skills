@@ -116,7 +116,7 @@ Manual-equivalent hours per KLOC of hand-written code (`conversion_hours_per_klo
 
 | Axis | Values |
 | --- | --- |
-| Hosting (code side) | `modernize` (port to .NET 10 for Linux), `windows-rehost` (lift-and-shift to Windows EC2; only network, identity and configuration changes) |
+| Hosting (code side) | `modernize` (port to .NET 10 for Linux), `lift-and-shift` (same OS on EC2; the `aws-landing` category plus the categories and rules in its `keep_categories` / `keep_rules`), `windows-rehost` (lift-and-shift to Windows EC2; only network, identity and configuration changes) |
 | Database (code side) | `dual` (SQL Server + PostgreSQL), `postgresql` (PostgreSQL only), `none` |
 
 See [seven-rs.md](seven-rs.md) and [database-assessment.md](database-assessment.md).

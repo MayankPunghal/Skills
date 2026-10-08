@@ -7,6 +7,8 @@ Not estimated, on purpose: QA, DevOps / infrastructure, project management, para
 Code-side scenarios (assessment.json scenario.hosting, estimation.json hosting_scenarios):
   modernize        convert the .NET Windows applications to .NET 10 on Linux, per-application 7R decisions       (default)
   windows-rehost   lift-and-shift the Windows applications to EC2 Windows: only code / configuration that must change
+  lift-and-shift   every server to EC2 with the same OS (Windows to Windows, Linux to Linux): only what must change to
+                   land on AWS (keep_categories + keep_rules); chosen by intake.py when the client wants no code port
 Database code scenarios (scenario.database):
   dual | postgresql | none   SQL Server + PostgreSQL | PostgreSQL only | keep SQL Server (no database code change)
 
@@ -340,7 +342,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             if mode == "retain":
                 return cat not in rules["retain_relevant_categories"] or (desktop and cat in ("file-handling", "time-culture", "hypervisor", "packages", "build-delivery"))
             if mode == "rehost":
-                return cat not in hs.get("keep_categories", rules["retain_relevant_categories"])
+                return cat not in hs.get("keep_categories", rules["retain_relevant_categories"]) and f["rule"].split(":")[0] not in hs.get("keep_rules", [])
             return cat in hs.get("skip_categories", [])
 
         def work_package(wp_id, name, kind, app=None, proj_list=(), findings=(), mode="port", desktop=False):
@@ -501,6 +503,15 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         opt_rows.append(dict(o, manual_hours=r1(manual), hours=r1(assisted), likely_hours=round(lk(assisted, pos), 1)))
     opt_tot = [round(sum(o["hours"][i] for o in opt_rows)) for i in (0, 1)]
     rng_h, rng_man = [ai_t["p10"], ai_t["p90"]], [man_t["p10"], man_t["p90"]]
+    opt_in = (cfg.get("intake") or {}).get("aws_native") == "now"  # intake: replace servers with AWS managed services in this engagement
+    if opt_in and opt_rows:
+        opt_likely = sum(o["likely_hours"] for o in opt_rows)
+        rng_h = [rng_h[0] + opt_tot[0], rng_h[1] + opt_tot[1]]
+        likely_h += opt_likely
+        ai_t = dict(ai_t, p80=ai_t["p80"] + lk(opt_tot, 0.8))
+        grand_h = add(grand_h, opt_tot)
+        notes.append(f"AWS managed-service replacements are in scope (intake): {opt_tot[0]}-{opt_tot[1]} h added to the total "
+                     f"(likely {round(opt_likely)} h); the sprint plan does not include them yet.")
     app_t = MC.summary(MC.total(sim, [p["id"] for p in packages]) or [0.0])
     db_t = MC.summary(MC.total(sim, [d["options"][d["selected"]]["pkg"] for d in db_packages if d["selected"] != "none"]) or [0.0])
     totals = {"total_hours": [round(x) for x in rng_h], "likely_hours": round(likely_h), "total_days": [round(x / HPD, 1) for x in rng_h],
@@ -513,7 +524,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
               "duration_weeks": end, "duration_weeks_p80": sprints.get("weeks_p80", end),
               "person_months_likely": round(likely_h / HPD / 20.0, 1),
               "kloc": round(kloc_all, 1), "likely_hours_per_kloc": round(likely_h / kloc_all, 2) if kloc_all else 0,
-              "optional_hours": opt_tot}
+              "optional_hours": opt_tot, "optional_in_scope": bool(opt_in and opt_rows)}
     return {"packages": packages, "databases": db_packages, "totals": totals, "timeline": phases, "sprints": sprints, "notes": notes, "optional": opt_rows,
             "factors": {"code": code_f, "db": db_f, "redesign": red_f}, "scale": scale_by_repo, "likely_position": pos_by_repo, "explain": explain_rows}
 
@@ -523,7 +534,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engineers", type=int)
     ap.add_argument("--manual", action="store_true", help="ignore AI assistance (manual estimate)")
-    ap.add_argument("--hosting", help="modernize | windows-rehost (default: assessment.json scenario.hosting)")
+    ap.add_argument("--hosting", help="modernize | windows-rehost | lift-and-shift (default: assessment.json scenario.hosting)")
     ap.add_argument("--database", help="dual | postgresql | none (default: assessment.json scenario.database)")
     ap.add_argument("--explain", action="store_true", help="print the per-project arithmetic")
     ap.add_argument("--start-date", help="day the team gets codebase access, YYYY-MM-DD (default: assessment.json scenario.start_date)")
@@ -538,12 +549,14 @@ def main():
     sc = cfg.get("scenario") or {}
     hosting = a.hosting or sc.get("hosting") or "modernize"
     database = a.database or sc.get("database") or "dual"
+    if database == "auto":  # setup_assessment.py's placeholder when no database scenario was chosen
+        database = "dual"
     if hosting not in est["hosting_scenarios"] or hosting.startswith("_"):
-        raise SystemExit(f"unknown hosting scenario '{hosting}': use modernize or windows-rehost (assessment.json scenario.hosting)")
+        raise SystemExit(f"unknown hosting scenario '{hosting}': use {', '.join(k for k in est['hosting_scenarios'] if not k.startswith('_'))} (assessment.json scenario.hosting)")
     if database not in ("dual", "postgresql", "none"):
         raise SystemExit(f"unknown database scenario '{database}': use dual, postgresql or none (assessment.json scenario.database)")
     ai_on = est["ai_assistance"].get("enabled", True) and not a.manual
-    engineers = a.engineers or est["team"]["engineers"]
+    engineers = a.engineers or sc.get("engineers") or est["team"]["engineers"]
     HPD = est["hours_per_day"]
     start_date = a.start_date or sc.get("start_date")
     main_r = compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, start_date=start_date)
@@ -587,7 +600,7 @@ def main():
     print(f"estimate [{hosting} / {database}] ({'AI-assisted' if ai_on else 'manual'}, coding only): {RANGE_LABEL} {t['total_hours'][0]}-{t['total_hours'][1]} h = {t['total_days'][0]}-{t['total_days'][1]} d, "
           f"P80 {t['p80_hours']} h, sum of extremes {t['bounds_hours'][0]}-{t['bounds_hours'][1]} h "
           f"(likely {t['likely_hours']} h / {t['likely_days']} d; manual likely {t['manual_likely_hours']} h); {t['kloc']} KLOC, {t['likely_hours_per_kloc']} likely h/KLOC; "
-          f"~{t['duration_weeks']} weeks with {engineers} engineers; optional modernizations {t['optional_hours'][0]}-{t['optional_hours'][1]} h (not included)")
+          f"~{t['duration_weeks']} weeks with {engineers} engineers; optional modernizations {t['optional_hours'][0]}-{t['optional_hours'][1]} h ({'included: intake aws_native = now' if t.get('optional_in_scope') else 'not included'})")
     for c in comparisons:
         print(f"  {'*' if c['selected'] else ' '} {c['kind']:<8} {c['id']:<15} likely {c['likely_hours']:>6} h ({c['likely_days']:>6} d), manual {c['manual_likely_hours']:>6} h, ~{c['duration_weeks']} wk" +
               (f", db part {c['database_hours'][0]}-{c['database_hours'][1]} h" if c.get("database_hours") else ""))

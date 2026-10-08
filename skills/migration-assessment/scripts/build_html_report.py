@@ -252,7 +252,9 @@ def collect(c, cfg):
 # blocks that need a heading on their card (the Markdown report has its own section headings)
 BLOCK_TITLES = {"sprints": "Coding sprint plan", "multipliers": "How the hours are built", "assumptions": "Estimate assumptions",
                 "methodology": "How the estimate was calculated",
-                "optional": "Optional modernizations"}
+                "optional": "Optional modernizations", "estate-extrapolation": "Whole estate (estimated from the assessed sample)",
+                "aws-native": "Replacing servers with AWS managed services", "findings-future": "Linux and .NET modernization findings, for later",
+                "intake": "What the client asked for", "landing-summary": "What must change for the move"}
 
 
 def component(name, c):
@@ -280,12 +282,13 @@ JS = (open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates_h
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--layout", default=os.path.join(SKILL_DIR, "references", "html-layout.json"))
+    ap.add_argument("--layout", help="tab layout (default: chosen by assessment_type: html-layout-lift-and-shift.json or html-layout.json)")
     ap.add_argument("--out")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
-    layout = json.load(open(a.layout, encoding="utf-8"))
+    layout = json.load(open(a.layout or os.path.join(SKILL_DIR, "references", "html-layout-lift-and-shift.json" if BR.lift(cfg) else "html-layout.json"),
+                            encoding="utf-8"))
     c = BR.Ctx(root, cfg)
     d = collect(c, cfg)
     client = cfg.get("client") or "Client"

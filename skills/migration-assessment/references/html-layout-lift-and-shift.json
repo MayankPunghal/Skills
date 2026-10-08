@@ -1,0 +1,244 @@
+{
+ "_doc": "Lift-and-shift variant of html-layout.json, used by build_html_report.py when assessment.json assessment_type is \"lift-and-shift\" (intake.py). Same components; tabs lead with what must change for the same servers to run on EC2, and Linux / .NET modernization findings sit under Future options. Brand and glossary are kept in step with html-layout.json.",
+ "brand": {
+  "company": "",
+  "accent": "#0b6e74",
+  "accent_dark": "#5ccfcf",
+  "confidential_note": "Confidential — prepared for {client}. Contains architecture and security findings."
+ },
+ "groups": [
+  {
+   "title": "Summary",
+   "tabs": [
+    {
+     "id": "overview",
+     "title": "Overview",
+     "intro": "What we found, what must change for the move to AWS, how long it takes and the main risks.",
+     "items": [
+      "block:headline",
+      "narrative:executive-summary",
+      "chart:severity",
+      "block:key-risks"
+     ]
+    },
+    {
+     "id": "applications",
+     "title": "Applications",
+     "intro": "Every application, what must change before it moves to EC2, and the effort.",
+     "items": [
+      "block:landing-summary",
+      "narrative:application-plans",
+      "apps-table"
+     ]
+    },
+    {
+     "id": "effort",
+     "title": "Effort & timeline",
+     "intro": "Coding and configuration hours for the move, the whole estate from the assessed sample, and the plan.",
+     "items": [
+      "effort-summary",
+      "block:scenarios",
+      "workpackages-table",
+      "block:estate-extrapolation",
+      "gantt",
+      "block:sprints",
+      "block:cost",
+      "narrative:cost",
+      "block:assumptions",
+      "block:methodology"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Assessment",
+   "tabs": [
+    {
+     "id": "landing",
+     "title": "What affects the move",
+     "intro": "Findings that must be changed or decided for the same servers to run on Amazon EC2.",
+     "items": [
+      "block:findings-in-scope"
+     ]
+    },
+    {
+     "id": "integrations",
+     "title": "Network & integrations",
+     "intro": "Every system the code talks to, what the AWS network must allow, and partner allow-lists.",
+     "items": [
+      "integrations-summary",
+      "thirdparty-table",
+      "onprem-table",
+      "block:network",
+      "sdk-table"
+     ]
+    },
+    {
+     "id": "jobs",
+     "title": "Jobs & hosting",
+     "intro": "Scheduled and background jobs and how they are configured.",
+     "items": [
+      "block:jobs"
+     ]
+    },
+    {
+     "id": "data",
+     "title": "Databases",
+     "intro": "Databases the code uses and anything that changes when they move.",
+     "items": [
+      "block:database",
+      "narrative:database"
+     ]
+    },
+    {
+     "id": "packages",
+     "title": "Packages",
+     "intro": "Third-party packages: vulnerable, deprecated or licence-restricted.",
+     "items": [
+      "package-groups",
+      "packages-table"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Plan",
+   "tabs": [
+    {
+     "id": "architecture",
+     "title": "Architecture",
+     "intro": "How the applications fit together and what must move together.",
+     "items": [
+      "narrative:architecture",
+      "architecture-map",
+      "dependencies-table",
+      "narrative:dependencies",
+      "block:project-deps"
+     ]
+    },
+    {
+     "id": "future",
+     "title": "Future options",
+     "intro": "Not needed for the move and not in the estimate: AWS managed services that could replace servers, and Linux / .NET modernization work.",
+     "items": [
+      "block:aws-native",
+      "block:findings-future"
+     ]
+    },
+    {
+     "id": "risks",
+     "title": "Risks & questions",
+     "intro": "What could go wrong and what we need the client to answer.",
+     "items": [
+      "block:risks",
+      "narrative:risks-and-questions",
+      "questions-table"
+     ]
+    },
+    {
+     "id": "cutover",
+     "title": "Testing & cut-over",
+     "intro": "Current tests and how to test and cut over.",
+     "items": [
+      "block:testing",
+      "block:merge",
+      "narrative:testing-and-merge"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Reference",
+   "tabs": [
+    {
+     "id": "method",
+     "title": "Scope & method",
+     "intro": "What the client asked for, what was assessed and how.",
+     "items": [
+      "block:intake",
+      "block:scope",
+      "block:method",
+      "block:not-assessed",
+      "glossary"
+     ]
+    },
+    {
+     "id": "appendix",
+     "title": "Appendices",
+     "intro": "Projects, raw outputs and sources.",
+     "items": [
+      "projects-table",
+      "block:appendix-raw",
+      "block:appendix-sources"
+     ]
+    }
+   ]
+  }
+ ],
+ "glossary": [
+  [
+   "Blocker",
+   "Cannot run on Linux / modern .NET until a technology is replaced or the app is kept on Windows."
+  ],
+  [
+   "High",
+   "Needs code or design change before go-live."
+  ],
+  [
+   "Medium",
+   "Needs change, contained to a few places."
+  ],
+  [
+   "Low",
+   "Clean-up or hardening; not on the critical path."
+  ],
+  [
+   "Info",
+   "A fact recorded for planning."
+  ],
+  [
+   "Confirmed / Likely / Needs verification",
+   "How sure we are: seen in code / pattern seen but not fully traced / depends on servers or data we could not see."
+  ],
+  [
+   "Retire",
+   "Switch the application off (duplicate or no longer used)."
+  ],
+  [
+   "Retain",
+   "Keep as it is for now (for example a desktop app, or an app staying on .NET Framework)."
+  ],
+  [
+   "Rehost",
+   "Move as-is to AWS (lift and shift), usually onto Windows servers."
+  ],
+  [
+   "Replatform",
+   "Move with moderate changes: port to .NET 10 and run on Linux in AWS, same design."
+  ],
+  [
+   "Refactor",
+   "Change the design to move: for example rewrite a user interface or replace a technology."
+  ],
+  [
+   "Repurchase / Relocate",
+   "Replace with a product (SaaS) / move a whole virtualised environment unchanged."
+  ],
+  [
+   "Hours / person-days",
+   "Effort for one person; 1 person-day = 8 hours. Ranges show low and high; 'likely' is the planning figure."
+  ],
+  [
+   "AI-assisted",
+   "The mechanical port is done with AWS Transform for .NET, GitHub Copilot app modernization or coding agents and reviewed by engineers; testing and cut-over are not shortened much."
+  ],
+  [
+   "Hybrid (.NET Standard 2.0)",
+   "Keep one app on the old .NET Framework while others move; shared code is built so both can use it."
+  ],
+  [
+   ".NET 10 (LTS)",
+   "The current long-term-support version of .NET, supported until November 2028; runs on Linux."
+  ]
+ ]
+}

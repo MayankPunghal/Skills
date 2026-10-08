@@ -69,6 +69,7 @@ Microsoft recommends **incremental migration** (strangler fig with YARP and Syst
 | Scenario | What happens per application | When |
 | --- | --- | --- |
 | `modernize` (default) | The reviewed 7R decision per app: port to .NET 10 for Linux, replace Windows-bound parts | The client wants cost and agility gains |
+| `lift-and-shift` | Every server app moves as it is to EC2 with the same OS (Windows to Windows, Linux to Linux); the draft sets Rehost and keeps the modernization path as a future option. Costs AWS-landing, connectivity, configuration, secrets, identity, integration, security and hypervisor findings | The client wants out of the current hosting first and will modernize later. Chosen in the intake questionnaire |
 | `windows-rehost` | Every server app moves as-is from on-premises Windows to Windows EC2. Only connectivity, configuration, secrets, identity and integration findings are costed | Fastest exit from the data centre; no code port |
 
 Hosting of the database and operations work are out of scope; the estimate counts coding hours only. The report's scenario table shows both, so the client sees the trade-off between code effort and modernization.
