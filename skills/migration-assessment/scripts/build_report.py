@@ -1172,7 +1172,7 @@ def b_aws_native(c):
     choice = (c.cfg.get("intake") or {}).get("aws_native", "later")
     if choice == "no":
         return "_Replacing servers with AWS managed services is not part of this assessment (intake answer)._"
-    head = ("**In scope (intake answer: now).** The code changes below are part of this engagement; their hours are listed here and added to the plan.\n\n"
+    head = ("**In scope (intake answer: now).** The code changes below are part of this engagement; their hours are added to the effort estimate (not yet to the sprint plan).\n\n"
             if choice == "now" else
             "**Future option (intake answer: later).** Servers the code depends on that an AWS managed service could replace after the move. Nothing here is needed for the lift-and-shift and none of it is in the estimate.\n\n")
     return head + b_optional(c)
