@@ -121,6 +121,22 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:db-coupling}}
 
+### 4.9 Server dependencies (tied to the infrastructure list)
+
+{{block:server-deps}}
+
+### 4.10 Non-.NET projects the .NET code depends on
+
+{{block:scope-coupling}}
+
+### 4.11 Network access (what each project must reach)
+
+{{block:network-access}}
+
+### 4.12 Configuration map (where addresses and paths live)
+
+{{block:config-map}}
+
 {{narrative:dependencies}}
 
 ## 5. Findings by category

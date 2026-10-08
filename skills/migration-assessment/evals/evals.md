@@ -76,6 +76,26 @@ Prompt: "Rescan and rebuild the report; can I trust every number in it?"
 Should trigger: yes
 Done looks like: every number and finding reference in the narratives is a `{{v:}}` / `{{f:}}` tag (list items picked by name, e.g. `applications[FulfillmentHub.Web]`), so `verify_report.py` passes "finding references and values current" after a rescan; test projects are listed in the shared-object section but not counted as coupling or as a second writer; `MOD-ON-WINDOWS` is raised only for web.config, an MSDeploy / IIS / win-x64 publish profile or a Windows container image, never for `appsettings.json` or a Linux Dockerfile.
 
+### Server dependencies tied to the client's server list
+Prompt: "Which servers does each repository depend on (Redis, Elasticsearch, Kafka, SMTP, SFTP ...) and do they match the list DevOps sent?" (workspace after scan-repos, with the client's server list .xlsx)
+Should trigger: yes
+Done looks like: `map_infra.py --all --servers <list>`; `infra/estate-infra.json` and `infra-dependencies.csv` give one row per repository and server type with evidence file:line, hosts named in code and a link status (named / IP or alias / no host in code / no server of this type in the list); no configuration values in any output; unresolved links are open questions ("Servers and hosting").
+
+### Non-.NET projects in a .NET repository
+Prompt: "Some repos have Node.js next to the .NET code; can we ignore the Node part?"
+Should trigger: yes
+Done looks like: repositories without a .NET project are out of scope (state `scope: out`, never scanned); Node projects inside .NET repos are listed with a coupling level and evidence (MSBuild runs npm, gulp/Vite write into the .NET project, gulp drives `dotnet publish`, C# starts node, build writes outside the repository); coupled ones raise `SCOPE-*` findings and a Node/npm version question; nothing in the client repository is edited or moved; a data file named package.json is not reported as a Node project.
+
+### Config map and network access
+Prompt: "Which settings must change when we move to AWS, and which IPs does each project need opened?"
+Should trigger: yes
+Done looks like: `map_infra.py` writes `report/config-map.csv` and `report/network-access.csv`: per project and file the settings that hold URL, IP, host, UNC or drive path (line, environment, kind, AWS action); per project the destinations with port, protocol, role and what must be opened or allow-listed; secret values never copied; settings held outside git listed as questions; xml/ini/properties files included.
+
+### Findings back into the inventory workbook
+Prompt: "Update our repository inventory Excel with what the assessment found."
+Should trigger: yes
+Done looks like: `update_inventory_xlsx.py --xlsx <workbook>` keeps all existing sheets, makes the `.before-update.xlsx` copy once, and adds the Assessment scope, Non-.NET coupling, Server dependencies, Server coverage, Network access, Config map, Servers, Hosting evidence and Assessment additions sheets (dependencies and hosts the workbook lacked, cross-repo build outputs, corrected Node.js rows).
+
 ## Baseline log
 
 | Date | Model | With skill? | Result |
@@ -83,3 +103,4 @@ Done looks like: every number and finding reference in the narratives is a `{{v:
 | 2026-10-05 | Sonnet 5.5 | yes | Pipeline run on the FulfillmentHub testbed: all 8 gates PASS, 203 h likely (was 849 h before v4) |
 | 2026-10-06 | Opus 5.5 | yes | FulfillmentHub trust audit: narratives rewritten with tags, 10/10 gates PASS, 387 h likely; test-project coupling and MOD-ON-WINDOWS false positives removed |
 | 2026-10-06 | Opus 5.5 | yes | HTML report accessibility pass: keyboard access to rows / sort headers / tiles, AA contrast on labels, 44px touch targets, "On this page" links; impeccable detector 0 findings; 10/10 gates PASS |
+| 2026-10-08 | Sonnet 5.5 | yes | 2.12.0 on 10 client repositories (Windows, Linux container, Node-coupled): 24 server-dependency rows linked to a 254-server list, 7 non-.NET projects with coupling levels, 59 non-.NET repositories flagged out of scope in the workbook copy; lift-and-shift report builds with the new sections |

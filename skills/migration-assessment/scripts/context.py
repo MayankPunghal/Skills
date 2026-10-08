@@ -52,7 +52,8 @@ def main():
         return
     os.chdir(root)
     st = load_state(root)
-    repos = sorted(st["repos"])
+    out_of_scope = sorted(r for r in st["repos"] if st["repos"][r].get("scope") == "out")
+    repos = sorted(r for r in st["repos"] if r not in out_of_scope)
     steps = Counter()
     for r in repos:
         for k, v in st["repos"][r].items():
@@ -60,7 +61,8 @@ def main():
                 steps[k] += 1
     print(f"WORKSPACE: {root}\nCLIENT: {cfg.get('client') or '?'} · target {cfg.get('target_dotnet')} · roots: {', '.join(cfg.get('estate_roots') or []) or 'none'}")
     print(f"ASSESSMENT TYPE: {ASSESSMENT_TYPES.get(cfg.get('assessment_type'), 'not chosen yet (intake questionnaire pending)')}")
-    print(f"REPOS: {len(repos)} discovered · scanned {steps['scan']} · graphed {steps['graph']}")
+    print(f"REPOS: {len(repos)} in scope (.NET) · scanned {steps['scan']} · graphed {steps['graph']} · server dependencies mapped {steps['infra']}"
+          + (f" · {len(out_of_scope)} out of scope (no .NET project, listed in the inventory workbook)" if out_of_scope else ""))
     fs, unreviewed, needs = [], 0, 0
     for r in repos:
         inv = F.load_inventory(root, r)
@@ -87,6 +89,7 @@ def main():
     pending_discover = not repos
     pending_scan = [r for r in repos if st["repos"][r].get("scan") != "done"]
     pending_graph = [r for r in repos if st["repos"][r].get("graph") != "done"]
+    pending_infra = [r for r in repos if st["repos"][r].get("infra") != "done"]
     sample = (cfg.get("intake") or {}).get("code_access") == "sample"
     if not cfg.get("assessment_type") and not repos:  # workspaces started before the intake keep their scenario.hosting
         nxt = ("intake questionnaire: ask the questions from intake.py --questions in plain words, then intake.py --answers '<json>' "
@@ -95,6 +98,9 @@ def main():
         nxt = "discover_estate.py"
     elif pending_scan:
         nxt = f"scan_repo.py --all   ({len(pending_scan)} repositories not scanned)"
+    elif pending_infra:
+        nxt = (f"map_infra.py --all [--servers <the client's server list .xlsx>]   ({len(pending_infra)} repositories without server dependencies and hosting evidence); "
+               "then update_inventory_xlsx.py --xlsx <repository inventory workbook> to write the findings back")
     elif pending_graph:
         nxt = f"map_graphs.py --all   ({len(pending_graph)} repositories without a code graph)"
     elif unreviewed or needs:

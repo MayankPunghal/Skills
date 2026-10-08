@@ -56,7 +56,8 @@ MAX_FILE_BYTES = 2_500_000
 TYPE_BY_EXT = {".cs": "cs", ".vb": "vb", ".aspx": "markup", ".ascx": "markup", ".master": "markup", ".asax": "markup", ".ashx": "markup",
                ".asmx": "markup", ".svc": "markup", ".cshtml": "markup", ".vbhtml": "markup", ".razor": "markup", ".config": "config",
                ".sql": "sql", ".csproj": "proj", ".vbproj": "proj", ".fsproj": "proj", ".ps1": "script", ".psm1": "script", ".bat": "script",
-               ".cmd": "script", ".vbs": "script", ".js": "js", ".xslt": "xml", ".xsl": "xml", ".pubxml": "xml", ".reg": "script", ".targets": "proj", ".props": "proj"}
+               ".cmd": "script", ".vbs": "script", ".js": "js", ".xslt": "xml", ".xsl": "xml", ".pubxml": "xml", ".reg": "script", ".targets": "proj", ".props": "proj",
+               ".xml": "data", ".ini": "data", ".properties": "data", ".conf": "data", ".env": "data", ".settings": "data", ".toml": "data"}  # data: scanned for hosts, IPs and paths only
 CI_NAMES = re.compile(r"(?i)^(azure-pipelines[\w.-]*\.ya?ml|jenkinsfile|\.gitlab-ci\.yml|buildspec[\w.-]*\.ya?ml|appveyor\.yml|bitbucket-pipelines\.yml|.*\.ya?ml)$")
 VENDOR_JS = re.compile(r"(?i)(^|[\\/])(jquery|bootstrap|modernizr|respond|angular|knockout|moment|lodash|underscore|popper|datatables|select2|"
                        r"chosen|kendo|telerik|signalr|microsoftajax|microsoftmvc|_references|json2|toastr|sweetalert|chart|d3|highcharts|"
@@ -255,8 +256,10 @@ class Scan:
     # ---------------------------------------------------------------- line rules
     def scan_files(self):
         skip = SOURCE_DIR_SKIP | {s.lower() for s in self.cfg.get("exclude_dirs", [])}
+        oos = [os.path.normpath(os.path.join(self.root, x)) for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]  # non-.NET projects: out of scope
+        self.facts["out_of_scope_skipped"] = [x.replace("\\", "/") for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith("."))
+            dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
             for fn in files:
                 path = os.path.join(d, fn)
                 ext = os.path.splitext(fn)[1].lower()
@@ -312,7 +315,7 @@ class Scan:
                         self.add(LOCALDB_RULE, project, rp, i, line)  # developer database: production auth is unknown
                         continue
                     self.add(r, project, rp, i, line)
-        if ftype in ("cs", "vb", "config", "js", "sql", "markup", "script", "ci", "any-only"):
+        if ftype in ("cs", "vb", "config", "js", "sql", "markup", "script", "ci", "any-only", "data"):
             self.endpoints(rp, project, clean, ftype)
         if ftype == "config":
             self.config_file(rp, project, text)
@@ -701,6 +704,31 @@ class Scan:
                                "Web Site projects compile at runtime and are not supported by AWS Transform or SDK-style builds.",
                                "Convert to a Web Application project first, then port.", "Web Application project", "medium-change", ["S17"])
             self.add(r, w["path"], w["path"] + "/web.config", 1, f"{w['pages']} pages, App_Code: {w['app_code']}")
+        for o in inv.get("out_of_scope_projects", []):  # non-.NET projects are not assessed, but .NET code that needs them breaks without them
+            lvl = o.get("coupling")
+            if lvl not in ("runtime", "build-drives-dotnet", "build-time"):
+                continue
+            kinds = {s["kind"] for s in o["signals"]}
+            sev = "High" if lvl == "runtime" else "Medium"
+            tool = f"{o['ecosystem']} project {o['path']} ({o['relation']})"
+            r = self.synthetic(f"SCOPE-{lvl.upper()}", "dependencies", f"The .NET code depends on a non-.NET project: {o['name']}", sev, "Likely",
+                               f"{tool} is out of scope for this assessment, but {o['coupling_meaning']}. Moving or rebuilding the .NET application without it "
+                               "leaves the application without its pages, styles or scripts, or fails the build.",
+                               "Keep the project with the .NET code and give the build servers the same Node.js and npm versions it uses today; list the "
+                               "required versions and any outputs written outside the repository. No code port of the Node project is estimated here.",
+                               "Build agent with the same Node.js/npm version", "small-change", ["S10"],
+                               f"Which Node.js and npm versions build {o['path']}, on which machine, and where is the built output deployed from?")
+            r["id"] += ":" + slug(o["path"] if o["path"] != "." else o["name"])
+            for s in o["signals"][:MAX_EVIDENCE]:
+                self.add(r, "(repository)", s["file"], s["line"], f"[{s['kind']}] {s['text']}")
+            if "emits-outside-repo" in kinds:
+                r2 = self.synthetic("SCOPE-CROSS-REPO-OUTPUT", "dependencies", f"{o['name']}: the build writes into a folder outside this repository", "Medium", "Likely",
+                                    "The Node build writes files to a path above the repository root, so it only works when another repository is checked out next to this one.",
+                                    "Record which repository owns the target folder and build them together (or in order) on the AWS build servers.",
+                                    "Multi-repository build", "small-change", ["S10"], "Which repository receives the files this build writes outside its own folder?")
+                r2["id"] += ":" + slug(o["path"] if o["path"] != "." else o["name"])
+                for s in [s for s in o["signals"] if s["kind"] == "emits-outside-repo"][:MAX_EVIDENCE]:
+                    self.add(r2, "(repository)", s["file"], s["line"], s["text"])
         arts = inv.get("artefacts", {})
         for kind, rid, title, sev, why, fix, alt, db in (
                 ("ssis", "DB-SSIS", "SSIS packages", "High", "SSIS packages need SQL Server Integration Services; they do not run against PostgreSQL.",
@@ -1264,6 +1292,9 @@ def main():
     newest_rule = max(os.path.getmtime(p) for p in [os.path.join(here, f) for f in os.listdir(here) if f == "scan_repo.py" or (f.startswith("_") and f.endswith(".py"))]
                       + [os.path.join(here, "data", f) for f in os.listdir(os.path.join(here, "data")) if f.endswith(".json")])
     for n in names:
+        if st["repos"].get(n, {}).get("scope") == "out":
+            print(f"skip {n}: out of scope (no .NET project)")
+            continue
         out = os.path.join(OUT, "scan", f"{n}.json")
         if a.all and not a.force and st["repos"].get(n, {}).get("scan") == "done":
             if os.path.exists(out) and os.path.getmtime(out) >= newest_rule:

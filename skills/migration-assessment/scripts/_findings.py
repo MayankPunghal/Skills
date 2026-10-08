@@ -20,7 +20,7 @@ CONF_ORDER = {"Confirmed": 0, "Likely": 1, "Needs verification": 2}
 
 def repos(root):
     st = read_json(os.path.join(root, OUT, "state.json"), {"repos": {}})
-    return sorted(st["repos"])
+    return sorted(r for r, v in st["repos"].items() if v.get("scope") != "out")  # repositories with no .NET project are not assessed
 
 
 def load_inventory(root, repo):

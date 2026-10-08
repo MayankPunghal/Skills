@@ -22,6 +22,7 @@ from collections import Counter, defaultdict
 from _common import (OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
                      slug, utf8_stdout, write_json)
 from _complexity import file_metrics, project_metrics
+import _scope
 
 CODE_EXT = {".cs": "C#", ".vb": "VB.NET", ".fs": "F#"}
 MARKUP_EXT = {".aspx", ".ascx", ".master", ".asax", ".ashx", ".asmx", ".svc", ".cshtml", ".vbhtml", ".razor", ".xaml"}
@@ -33,6 +34,7 @@ GUIDS = {
     "3ac096d0-a1c2-e12c-1390-a8335801fdab": "test", "a1591282-1198-4647-a2b1-27e5ff5f6f3b": "silverlight",
     "786c830f-07a1-408b-bd7f-6ee04809d6db": "pcl", "e24c65dc-7377-472b-9aba-bc803b73c61a": "website",
 }
+OTHER_LANG_EXT = {".py": "Python", ".java": "Java", ".go": "Go", ".rb": "Ruby", ".php": "PHP", ".rs": "Rust", ".ts": "TypeScript", ".tsx": "TypeScript", ".kt": "Kotlin"}
 TEST_PKGS = re.compile(r"(?i)^(MSTest\.TestFramework|NUnit|xunit|Microsoft\.NET\.Test\.Sdk|Microsoft\.VisualStudio\.QualityTools\.UnitTestFramework|SpecFlow|Reqnroll|NSubstitute|Moq)$")
 TFM_SUPPORT = [  # (regex, label, end of support, status)
     (r"^v?(2\.0|3\.0|3\.5)$|^net(20|30|35)$", ".NET Framework 2.0-3.5", "3.5 SP1: 2029-01-09; earlier ended", "legacy"),
@@ -164,10 +166,10 @@ def classify(p, files_by_ext, code_hits):
     refs = {r.lower() for r in p.get("references", [])}
     pk = {x["id"].lower() for x in p.get("packages", [])}
     guids = set(p.get("type_guids", []))
-    if "test" in guids or any(TEST_PKGS.match(x["id"]) for x in p.get("packages", [])) or "microsoft.visualstudio.qualitytools.unittestframework" in refs:
+    sdk = (p.get("sdk") or "").lower()
+    if ("test" in guids or any(TEST_PKGS.match(x["id"]) for x in p.get("packages", [])) or "microsoft.visualstudio.qualitytools.unittestframework" in refs)             and not sdk.endswith("sdk.web"):  # a Microsoft.NET.Sdk.Web project that also references xunit / Moq is the application, not a test project
         return "test"
     fam = p.get("framework_family", "")
-    sdk = (p.get("sdk") or "").lower()
     if sdk.endswith("sdk.web") or sdk.endswith("sdk.razor") or sdk.endswith("sdk.blazorwebassembly"):
         return "aspnet-core"  # also ASP.NET Core 2.x on .NET Framework (a half-way port)
     if sdk.endswith("sdk.worker"):
@@ -298,12 +300,15 @@ def inventory_repo(name, repo_root, cfg):
                 return p
         return None
 
+    other_langs = Counter()  # files of languages the skill does not assess (reported, never scanned)
     per_proj = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0, "servicebase": False, "hosted": False})
     artefacts = defaultdict(list)
     loose = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0})
     for f in all_files:
         ext = os.path.splitext(f)[1].lower()
         base = os.path.basename(f)
+        if ext in OTHER_LANG_EXT:
+            other_langs[OTHER_LANG_EXT[ext]] += 1
         for kind, rx in ARTEFACTS.items():
             if rx.search(base) and not (kind == "js_lib" and not re.search(r"(?i)[\\/](scripts|js|lib|content)[\\/]", f)):
                 artefacts[kind].append(rel(f, repo_root))
@@ -389,7 +394,12 @@ def inventory_repo(name, repo_root, cfg):
               "types": dict(Counter(p["type"] for p in projects)), "families": dict(Counter(p["framework_family"] for p in projects)),
               "legacy_project_files": sum(1 for p in projects if not p.get("sdk_style") and p["ext"] != ".sqlproj"),
               "packages_config": sum(1 for p in projects if p.get("packages_config")), "files": len(all_files)}
-    return {"repo": name, "root": repo_root, "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+    scope_items = _scope.assess_scope(repo_root, skip, projects)
+    dotnet_found = bool(projects or websites)
+    scope = {"in_scope": dotnet_found, "reason": "has .NET projects" if dotnet_found else "no .NET project found: not assessed",
+             "ecosystems": sorted({i["ecosystem"] for i in scope_items} | ({".NET"} if dotnet_found else set())),
+             "other_language_files": dict(other_langs), "skip_dirs": _scope.skip_dirs(scope_items)}
+    return {"repo": name, "root": repo_root, "scope": scope, "out_of_scope_projects": scope_items, "generated": datetime.datetime.now().isoformat(timespec="seconds"),
             "solutions": sols, "projects": projects, "projects_not_in_solution": sorted(set(by_path) - in_sln),
             "websites": websites, "applications": apps, "shared_libraries": shared,
             "artefacts": {k: sorted(v) for k, v in artefacts.items()}, "loose_files": {k: dict(v["loc"]) for k, v in loose.items() if v["files"]},
@@ -444,15 +454,22 @@ def main():
         inv = inventory_repo(name, path, cfg)
         write_json(out, inv)
         mark(root, name, "discover", root_path=path)
+        mark(root, name, "scope", "in" if inv["scope"]["in_scope"] else "out")  # out: no .NET project, never scanned, graphed or estimated
         t = inv["totals"]
-        print(f"{name}: {t['solutions']} solutions, {t['projects']} projects, {t['applications']} applications, {t['loc']:,} lines; types {t['types']}")
+        oos = inv["out_of_scope_projects"]
+        note = (f"; out of scope: {len(oos)} non-.NET project(s) " + ", ".join(f"{o['name']} ({o['ecosystem']}, {o['coupling']})" for o in oos[:4])) if oos else ""
+        if not inv["scope"]["in_scope"]:
+            note = f"; OUT OF SCOPE ({inv['scope']['reason']})" + note
+        print(f"{name}: {t['solutions']} solutions, {t['projects']} projects, {t['applications']} applications, {t['loc']:,} lines; types {t['types']}{note}")
         done += 1
     estate = {"generated": datetime.datetime.now().isoformat(timespec="seconds"), "roots": cfg["estate_roots"], "repos": []}
     for name, path in sorted(repos.items()):
         inv = read_json(os.path.join(OUT, "inventory", f"{name}.json"))
         if inv:
-            estate["repos"].append({"repo": name, "root": path, **inv["totals"], "git": {k: inv["git"].get(k) for k in ("commits", "commits_per_week", "authors", "last_commit", "branch", "shallow")}})
+            estate["repos"].append({"repo": name, "root": path, "scope": inv.get("scope", {}), **inv["totals"], "git": {k: inv["git"].get(k) for k in ("commits", "commits_per_week", "authors", "last_commit", "branch", "shallow")}})
     estate["totals"] = {k: sum(r.get(k, 0) for r in estate["repos"]) for k in ("projects", "solutions", "applications", "loc", "files")}
+    estate["totals"]["repos_in_scope"] = sum(1 for r in estate["repos"] if r.get("scope", {}).get("in_scope", True))
+    estate["totals"]["repos_out_of_scope"] = len(estate["repos"]) - estate["totals"]["repos_in_scope"]
     write_json(os.path.join(OUT, "inventory", "estate.json"), estate)
     mark_step(root, "discover")
     print(f"estate: {len(estate['repos'])} repositories, {estate['totals']['applications']} applications, {estate['totals']['loc']:,} lines "

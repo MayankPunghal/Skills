@@ -47,14 +47,16 @@ def secret_values(inv_root):
                     for mk in root.iter("machineKey"):
                         vals.update(v for k, v in mk.attrib.items() if k.lower().endswith("key"))
                 elif low.endswith((".cs", ".vb")) and os.path.getsize(p) < 2_000_000:
-                    vals.update(m.group(3) for m in LITERAL.finditer(read_text(p)))
+                    for m in LITERAL.finditer(read_text(p)):  # a value equal to its own constant name (const string FooToken = "FooToken") is a key name, not a secret
+                        if m.group(3).lower() != re.match(r"\w+", m.group(0)).group(0).lower():
+                            vals.add(m.group(3))
                 elif re.search(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$", low):
                     vals.update(re.findall(r'(?i)"[^"]*(?:password|secret|token|apikey|key)[^"]*"\s*:\s*"([^"]{6,})"', read_text(p)))
                     vals.update(m.strip() for m in re.findall(r"(?i)(?:password|pwd)\s*=\s*([^;\"]+)", read_text(p)))
             except (ET.ParseError, OSError, ValueError):
                 continue
     return {v for v in vals if len(v) >= 6 and not re.fullmatch(r"(?i)(true|false|\d+|none|null|\*+|\$\(.*\)|#\{.*\}|__\w+__|\{.*\}|changeme|password|secret)", v)
-            and not re.fullmatch(r"(?i)https?://[^?@\s]+", v)}  # a plain endpoint URL is not a secret (credentials/query strings are)
+            and not re.fullmatch(r"(?i)https?://[^?@\s]+(\?[^@\s]*=)?", v)}  # a plain endpoint URL is not a secret (credentials/query strings are)
 
 
 def main():
@@ -162,7 +164,12 @@ def main():
     for p in outputs:
         t = open(p, encoding="utf-8-sig", errors="ignore").read()
         for v in vals:
-            if v in t and re.search(r"(?<![A-Za-z0-9_])" + re.escape(v) + r"(?![A-Za-z0-9_])", t):
+            # a plain short word (letters only) that appears as one label of a host name, URL path or hyphenated name is a coincidence, not a leak;
+            # anything longer or with digits/symbols must not appear at all as a standalone token
+            word = v.isalpha() and len(v) <= 12
+            pre = r"(?<![A-Za-z0-9_])" + (r"(?<![/.\-])" if word else "")
+            post = r"(?![A-Za-z0-9_])" + (r"(?![/.\-])" if word else "")
+            if v in t and re.search(pre + re.escape(v) + post, t):
                 leaks.append(os.path.basename(p))
                 break
     results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))

@@ -459,6 +459,73 @@ def b_dependencies(c):
     return table(["Kind", "System", "Protocol / details", "References", "First evidence", "Repository"], rows)
 
 
+def _infra_view(c):
+    return read_json(os.path.join(OUT, "infra", "estate-infra.json"), None)
+
+
+def b_server_deps(c):
+    v = _infra_view(c)
+    if not v or not v.get("rows"):
+        return "_Server dependencies were not mapped (run map_infra.py after scan_repo.py)._"
+    note = (f"Linked to the client's infrastructure list ({v['server_list']}). " if v.get("server_list") else "No infrastructure list was imported, so dependencies are not linked to servers. ")
+    rows = [(r["repo"], r["label"], r["strength"], r["hosts_in_code"] or "-", r["link_status"], r["matched_servers"] or (f"{r['candidate_servers']} candidate(s): {r['candidate_envs']}" if r["candidate_servers"] else "-"),
+             r["lift_and_shift"]) for r in v["rows"] if r["strength"] != "local-dev only"]
+    local = [r for r in v["rows"] if r["strength"] == "local-dev only"]
+    out = note + "Evidence is file:line in `assessment/infra/<repo>.json`; configuration values are never copied.\n\n" + table(["Repository", "Server type", "How sure", "Hosts named in code", "Link to the list", "Servers", "What moves in a lift-and-shift"], rows)
+    if local:
+        out += "\n\nOnly in docker-compose files (local development, not production): " + "; ".join(f"{r['repo']}: {r['label']}" for r in local) + "."
+    cov = [r for r in v.get("server_coverage", []) if "ask DevOps" in r["note"]]
+    if cov:
+        out += "\n\n**Used in code but missing from the infrastructure list:** " + "; ".join(f"{r['role']} ({r['repos']})" for r in cov) + "."
+    return out
+
+
+def b_scope_coupling(c):
+    rows = []
+    for r in c.repos:
+        for o in (c.inv.get(r) or {}).get("out_of_scope_projects", []):
+            ev = o["signals"][0] if o.get("signals") else {}
+            rows.append((r, o["path"], o["ecosystem"], o["coupling"], o["coupling_meaning"], f"{ev.get('file')}:{ev.get('line')}" if ev else "-"))
+    if not rows:
+        return "_No non-.NET projects were found inside the assessed repositories._"
+    order = {"runtime": 0, "build-drives-dotnet": 1, "build-time": 2, "independent": 3, "none-found": 4}
+    rows.sort(key=lambda x: (order.get(x[3], 9), x[0]))
+    return ("The assessment covers .NET code only. These non-.NET projects sit in the assessed repositories; they are not scanned or estimated, but where the .NET code "
+            "depends on them (build, published output or run time) they must move with it.\n\n" + table(["Repository", "Project", "Type", "Coupling", "What that means", "First evidence"], rows))
+
+
+def b_network_access(c):
+    v = read_json(os.path.join(OUT, "infra", "config-map.json"), None)
+    if not v or not v.get("network_access"):
+        return "_Network access was not mapped (run map_infra.py after scan_repo.py)._"
+    rows = v["network_access"]
+    inside = [r for r in rows if r["class"] != "external service"]
+    ext = [r for r in rows if r["class"] == "external service"]
+    out = ("Every destination a project connects to, from the code and from its configuration files. Private and internal addresses, company domains, file shares and public IP addresses need an AWS network decision "
+           "(route, security group, DNS, partner allow-list); plain internet services only need outbound access." + "\n\n"
+           + table(["Repository", "Project", "Destination", "Port", "Kind", "Held in", "What to do on AWS"],
+                   [(r["repo"], r["project"], r["destination"], r["port"] or "-", r["class"], ("hard-coded in code" if "hard-coded" in r["found_in"] else "front-end script" if "front-end" in r["found_in"] else "configuration"), r["need"]) for r in inside]))
+    hosts = sorted({r["destination"] for r in ext})
+    out += "\n\n" + f"Internet services (outbound access only): {len(hosts)} destinations used by {len({(r['repo'], r['project']) for r in ext})} projects; the full list with evidence is in `network-access.csv`."
+    return out
+
+
+def b_config_map(c):
+    v = read_json(os.path.join(OUT, "infra", "config-map.json"), None)
+    if not v or not v.get("rows"):
+        return "_Configuration map not built (run map_infra.py after scan_repo.py)._"
+    from collections import defaultdict
+    agg = defaultdict(lambda: Counter())
+    files = defaultdict(set)
+    for r in v["rows"]:
+        agg[(r["repo"], r["project"])][r["type"]] += 1
+        files[(r["repo"], r["project"])].add(r["file"])
+    rows = [(k[0], k[1], len(files[k]), sum(t.values()), ", ".join(f"{n} {typ}" for typ, n in t.most_common(5))) for k, t in sorted(agg.items())]
+    return ("Where each project keeps the addresses and paths that change in the move: configuration files and the settings in them (name, target, line, environment of the file). "
+            "Full list with the setting names, targets and what to do: `config-map.csv` and the workbook sheet 'Config map'." + "\n\n"
+            + table(["Repository", "Project", "Config files", "Address / path settings", "By type"], rows))
+
+
 def b_network(c):
     """Network allow-list: what the AWS VPC must let out (egress, VPN routes, partner allow-lists) and in (listeners)."""
     nw = A.network(c)
@@ -1003,6 +1070,11 @@ def open_questions(c):
     for a in c.cls["applications"]:
         for n in a.get("notes", []):
             qs.append(("Application", n, a["name"]))
+    iv = _infra_view(c)
+    for q in (iv or {}).get("questions", []):
+        if q["question"] not in seen:
+            seen.add(q["question"])
+            qs.append(("Servers and hosting", q["question"], q["repo"]))
     for q in intake_unanswered(c.cfg):
         qs.append(("Engagement scope", q["ask"], "intake"))
     for area, q in STANDARD_QUESTIONS:
@@ -1197,7 +1269,7 @@ ARCH_NAMES = {"web-netfx": "Web app on .NET Framework", "web-modern": "Web app o
               "console": "Console / batch job", "desktop": "Desktop client", "library": "Library only", "unknown": "Type not known"}
 
 
-BLOCKS = {"intake": b_intake, "landing-summary": b_landing_summary, "findings-in-scope": b_findings_in_scope, "findings-future": b_findings_future,
+BLOCKS = {"network-access": b_network_access, "config-map": b_config_map, "server-deps": b_server_deps, "scope-coupling": b_scope_coupling, "intake": b_intake, "landing-summary": b_landing_summary, "findings-in-scope": b_findings_in_scope, "findings-future": b_findings_future,
           "aws-native": b_aws_native, "estate-extrapolation": b_estate_extrapolation,
           "scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
           "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network, "jobs": b_jobs, "methodology": b_methodology,
