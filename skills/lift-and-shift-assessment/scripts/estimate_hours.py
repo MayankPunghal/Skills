@@ -20,6 +20,17 @@ def half(x):
     return math.ceil(x * 2 - 1e-9) / 2
 
 
+def curve(anchors, w):
+    """Hours for a configuration weight: straight lines between anchors, flat outside them, rounded to half hours."""
+    if w <= anchors[0][0]:
+        return list(anchors[0][1])
+    for (x0, r0), (x1, r1) in zip(anchors, anchors[1:]):
+        if w <= x1:
+            t = (w - x0) / (x1 - x0)
+            return [round((r0[i] + t * (r1[i] - r0[i])) * 2) / 2 for i in (0, 1)]
+    return list(anchors[-1][1])
+
+
 def main():
     utf8_stdout()
     root, cfg = load_config()
@@ -62,8 +73,8 @@ def main():
         lines = []
         for it in items:
             for ln in rates["items"][it]["lines"]:
-                if ln["driver"] == "config_band":
-                    n, rate = 1, next(b["rate"] for b in ln["bands"] if counts["config_weight"] <= b["max"])
+                if ln["driver"] == "config_curve":
+                    n, rate = 1, curve(ln["anchors"], counts["config_weight"])
                 else:
                     n, rate = counts[ln["driver"]], ln["rate"]
                 if ln["id"].startswith("pipeline") and piped is not None and not ({s["solution"].lower(), s["id"].lower(), s["repo"].lower()} & piped):

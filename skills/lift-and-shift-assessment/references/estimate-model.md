@@ -17,7 +17,7 @@ Lines are groups of work: one task per solution or per deployable. Nothing is pr
 |---|---|---|---|---|
 | Build check + artifacts | Clean-agent restore and build check | solution | 1-2 | inferred |
 | | Deployable artifact and hand-over notes | deployable | 0.5-1 | inferred |
-| CI/CD + configuration | Environment-specific configuration (config files tokenised, secrets and settings to Secrets Manager, addresses to DNS names, third-party keys) | solution, by size band | 1-48 | sample |
+| CI/CD + configuration | Environment-specific configuration (config files tokenised, secrets and settings to Secrets Manager, addresses to DNS names, third-party keys) | solution, from the weight curve | 1-48 | sample |
 | | CI/CD pipeline (one shared template adapted per solution) | solution | 1.5-3 | inferred |
 | | Extra pipeline work | solution with more than 5 deployables | 2-3 | inferred |
 | Framework retarget | Target framework change and rebuild | project | 0.25-0.5 | inferred |
@@ -26,16 +26,18 @@ Lines are groups of work: one task per solution or per deployable. Nothing is pr
 | | Cutover and defect support, one deployable | solution | 2-3 | inferred |
 | | Cutover and defect support, several deployables | solution | 4-5.3 | sample |
 
-**Size bands of the configuration task.** A solution's weight is its config files (publish profiles `.pubxml` excluded), plus secret-like settings, environment variables, distinct private IP addresses, and 2 for each third-party key. The weight only picks the band.
+**Weight curve of the configuration task.** A solution's weight is its config files (publish profiles `.pubxml` excluded), plus secret-like settings, environment variables, distinct private IP addresses, and 2 for each third-party key. The weight sets the size of one task; hours rise in straight lines between the points below (flat outside them, rounded to 0.5 h), so there are no jumps at band edges.
 
 | Weight | Hours |
 |---|---|
-| 0-2 | 1-2 |
-| 3-5 | 2-4 |
-| 6-15 | 5-8 |
-| 16-30 | 12-18 |
-| 31-60 | 20-32 |
-| over 60 | 32-48 |
+| 1 or less | 1-2 |
+| 4 | 2-4 |
+| 10 | 5-8 |
+| 23 | 12-18 |
+| 45 | 20-32 |
+| 80 or more | 32-48 |
+
+The points sit at the centres of the former size bands, so the reference sample's two solutions (32-50 h) are still reproduced closely (30.5-47.5 h). Re-running the reference code with the full model gives 79.5-128 h against the sample's 72-108 h: a regression check against the one data point the rates were calibrated to, not proof of accuracy. Independent accuracy needs actual hours from another finished project.
 
 A workload is one solution in one environment; unknown environments count as one per solution, and the document states that each extra environment adds about 160-230 h (test launches and cutover with the buffer). Counts come from `solutions.py`, `third_party.py` and the scans.
 

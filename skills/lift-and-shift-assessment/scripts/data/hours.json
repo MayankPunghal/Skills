@@ -1,5 +1,5 @@
 {
- "_doc": "Hours of lift-and-shift-assessment, developer working hours assuming AI-assisted work. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so. Lines are groups of work (one task per solution or per deployable), never per setting, per key or per address: the environment-specific configuration of a solution is one task whose hours depend on how much the solution holds (bands on a weight = config files without publish profiles + secret-like settings + environment variables + distinct private IPs + 2 per third-party key). Bands are calibrated so the manager's sample (two solutions, 32-50 h of secrets, connection and re-key work) is reproduced.",
+ "_doc": "Hours of lift-and-shift-assessment, developer working hours assuming AI-assisted work. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so. Lines are groups of work (one task per solution or per deployable), never per setting, per key or per address: the environment-specific configuration of a solution is one task whose hours depend on how much the solution holds (a straight-line curve on a weight = config files without publish profiles + secret-like settings + environment variables + distinct private IPs + 2 per third-party key). The curve is calibrated so the manager's sample (two solutions, 32-50 h of secrets, connection and re-key work) is reproduced.",
  "activity_thresholds": {
   "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",
   "active_commits_per_week": 3,
@@ -14,7 +14,7 @@
     {
      "id": "env_config",
      "label": "Environment-specific configuration per solution (config files, secrets and settings, addresses, third-party keys)",
-     "driver": "config_band",
+     "driver": "config_curve",
      "unit": "solution",
      "plural": "solutions",
      "rate": [
@@ -23,50 +23,51 @@
      ],
      "basis": "sample",
      "scope": "solution",
-     "bands": [
-      {
-       "max": 2,
-       "rate": [
+     "anchors": [
+      [
+       1,
+       [
         1,
         2
        ]
-      },
-      {
-       "max": 5,
-       "rate": [
+      ],
+      [
+       4,
+       [
         2,
         4
        ]
-      },
-      {
-       "max": 15,
-       "rate": [
+      ],
+      [
+       10,
+       [
         5,
         8
        ]
-      },
-      {
-       "max": 30,
-       "rate": [
+      ],
+      [
+       23,
+       [
         12,
         18
        ]
-      },
-      {
-       "max": 60,
-       "rate": [
+      ],
+      [
+       45,
+       [
         20,
         32
        ]
-      },
-      {
-       "max": 1000000,
-       "rate": [
+      ],
+      [
+       80,
+       [
         32,
         48
        ]
-      }
-     ]
+      ]
+     ],
+     "anchors_doc": "Weight -> [low, high] hours. Straight lines between neighbouring anchors, flat beyond the first and last one. The anchors are the centres of the old size bands, so the sample (two solutions, 32-50 h) is still reproduced."
     },
     {
      "id": "pipeline_solution",

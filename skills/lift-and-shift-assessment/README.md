@@ -53,7 +53,7 @@ Rates marked `sample` reproduce the manager's reference estimate (72-108 h) from
 
 ## Changes in 1.0.1
 
-- Estimate by groups of work (configuration banded by weight), audited for implausible lines; 20% buffer unchanged.
+- Estimate by groups of work (configuration hours follow a continuous curve of the solution's weight), audited for implausible lines; 20% buffer unchanged.
 - `branch_evidence.py`, `stage_library.py`, `address_roles.py`; Branches sheet; address type and likely role in Section 5.3 and sheet Connections.
 - Build: plain failure reasons, build-order dependencies, packages installed into local folders, Library staging.
 - `check_mapping.py` for the returned mapping workbook.
