@@ -431,9 +431,7 @@ def main():
     d.p(f"{mixed_n} of {len(sols)} solutions mix frameworks or project kinds (VERIFIED). Every project (type, framework, deployable) is listed per solution in the workbook, sheet Projects.")
     loose = idx.get("loose_projects") or []
     if loose:
-        d.p("Projects in no solution file (VERIFIED; not estimated until the client confirms they are deployed)", bold=True)
-        d.table([["Repository", "Project", "Type", "Framework", "Deployable", "Lines of code"]] +
-                [[x["repo"], x["name"], x.get("type") or "", ", ".join(x.get("frameworks") or []) or "?", "yes" if x["deployable"] else "", x["loc"]] for x in loose][:CAP], [18, 30, 20, 14, 10, 8])
+        d.p(f"{len(loose)} projects are in no solution file (VERIFIED) and are not estimated until the client confirms they are deployed. The list: workbook, sheet LooseProjects.")
     for f in idx.get("folded_solutions") or []:
         d.p(f"{f['solution_file']} ({f['repo']}) holds only projects that {f['into']} also holds, so it is counted as part of {f['into']}.")
     stores = {}
@@ -452,18 +450,12 @@ def main():
     if stores:
         d.p(f"Data stores: {len(stores)} solution and store pairs found in code and config (VERIFIED). Per solution, with the addresses the configuration names for that store type (not a mapping of names to servers): workbook, sheet DataStores.")
     d.p("External integrations and licensed components", bold=True)
-    rows = [["Component", "Kind", "Solutions", "Outbound (app to it)", "Inbound and allow-lists", "Key or licence on AWS"]]
-    for (name, kind), m in sorted(rekey.items(), key=lambda x: (not x[1]["item"]["rekey"], x[0])):
-        out_t, in_t = direction(name, kind)
-        rows.append([name, kind, ", ".join(sorted(set(m["solutions"])))[:40], out_t, in_t,
-                     "Re-key (VERIFIED: key in configuration); licence type and expiry UNKNOWN" if m["item"]["rekey"] and kind == "licensed component" else "Re-key (VERIFIED)" if m["item"]["rekey"] else "Licence terms UNKNOWN (no key in code)" if kind == "licensed component" else "No key found"])
-    if len(rows) > 1:
-        cut, n2 = capped(rows[1:], "ThirdParty")
-        d.table([rows[0]] + cut, [16, 10, 14, 18, 26, 16])
-        if n2:
-            d.p(n2)
-        if any("Provider to confirm" in r_[4] for r_ in rows[1:]):
-            d.p("Callbacks and allow-lists: UNKNOWN until each provider confirms.")
+    keyed = sorted(n for (n, _k), m in rekey.items() if m["item"]["rekey"])
+    if rekey:
+        d.p(f"{len(rekey)} components found in code and config (VERIFIED); {len(keyed)} hold a key that is re-keyed on AWS"
+            + (f": {', '.join(keyed[:10])}{' ...' if len(keyed) > 10 else ''}" if keyed else "")
+            + ". Per component: what the application calls, inbound callbacks and allow-lists, and the key or licence: workbook, sheet ThirdParty.")
+        d.p("Callbacks and allow-lists: UNKNOWN until each provider confirms.")
     else:
         d.p("None found.")
     d.p("Windows-Only Dependencies — Carried Forward Unchanged in Phase 1", bold=True)
@@ -550,7 +542,7 @@ def main():
         names_n = sum(1 for o in roles.values() if o["type"] not in ("private IP", "public IP"))
         d.p("Most likely role (INFERRED from setting names and ports; DevOps to confirm). Public IPs change with the egress address. "
             f"The {names_n} host names and domains are typed in the workbook, sheet Connections.")
-        d.table([["Address", "Type", "Most likely", "DevOps servers", "Solutions"]] + arows, [18, 10, 34, 10, 28])
+        d.p(f"{len(arows)} internal and public IP addresses, each with its type, most likely role and the number of DevOps servers with that role: workbook, sheet Connections.")
     d.p("Every outbound and inbound address of each solution is listed in the workbook (sheets Outbound and Inbound) and handed to DevOps at deployment so that every call works.")
     decisions(d, it, [("Database location", "database_location"), ("Mail from AWS", "mail_relay"), ("Folders and shares", "file_shares"),
                       ("Windows / Active Directory identity", "ad_domain"), ("Third-party IP allow-lists", "ip_allowlists"), ("Machine names, hardware ids, licence servers", "machine_bound"),
@@ -755,12 +747,12 @@ def main():
               _xlsx.auto("Settings", [["Solution", "Kind", "Name"]] +
                          [[lab[s["id"]], "environment variable", v] for s in sols for v in s["env_vars"]] +
                          [[lab[s["id"]], "config file with hard-coded values", f] for s in sols for f in s["config_files"]]),
-              _xlsx.auto("ThirdParty", [["Solution", "Component", "Kind", "Vendor", "Key or licence on AWS", "Evidence"]] +
-                         [[lab[s["id"]], i["name"], i["kind"], i["vendor"], "Re-key" if i["rekey"] else "Confirm licence terms" if i["kind"] == "licensed component" else "Outbound access only", i["evidence"]]
+              _xlsx.auto("ThirdParty", [["Solution", "Component", "Kind", "Vendor", "Key or licence on AWS", "Outbound (app to it)", "Inbound and allow-lists", "Evidence"]] +
+                         [[lab[s["id"]], i["name"], i["kind"], i["vendor"], "Re-key" if i["rekey"] else "Confirm licence terms" if i["kind"] == "licensed component" else "Outbound access only", *direction(i["name"], i["kind"]), i["evidence"]]
                           for s in sols for i in tps[s["id"]]["licensed_and_integrations"]]),
-              _xlsx.auto("Connections", [["Solution", "To", "Type", "Most likely (inferred from setting names and ports; to be confirmed)", "Projects"]] +
-                         [[lab[s["id"]], c["to"], c["kind"], role_text(roles.get(c["to"])), ", ".join(c["projects"])] for s in sols for c in tps[s["id"]]["server_to_server"]] +
-                         [[lab_by_repo.get(r, r), o["address"], "public IP", role_text(o), ""] for o in roles.values() if o["type"] == "public IP" for r in o.get("solutions_repos") or []]),
+              _xlsx.auto("Connections", [["Solution", "To", "Type", "Most likely (inferred from setting names and ports; to be confirmed)", "DevOps servers with that role", "Projects"]] +
+                         [[lab[s["id"]], c["to"], c["kind"], role_text(roles.get(c["to"])), (roles.get(c["to"]) or {}).get("devops_servers_with_role") or "", ", ".join(c["projects"])] for s in sols for c in tps[s["id"]]["server_to_server"]] +
+                         [[lab_by_repo.get(r, r), o["address"], "public IP", role_text(o), "", ""] for o in roles.values() if o["type"] == "public IP" for r in o.get("solutions_repos") or []]),
               _xlsx.auto("Build", [["Solution", "Result", "Why it fails", "What is needed", "Who provides it", "Notes", "Configuration", "Seconds", "Errors"]] +
                          [[lab[s["id"]], bc.get(s["id"], {}).get("real", {}).get("status", "NOT RUN")] +
                           list(BW.why(bc.get(s["id"], {}).get("static", {}), bc.get(s["id"], {}).get("real", {})) or ("", "", "")) +
