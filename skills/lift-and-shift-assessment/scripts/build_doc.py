@@ -728,7 +728,9 @@ def main():
     rows = [["Solution", "Hours"]]
     for s in sorted(sols, key=lambda x: -ests[x["id"]]["high"]):
         rows.append([lab[s["id"]], rng(round(ests[s["id"]]["low"], 1), round(ests[s["id"]]["high"], 1))])
-    cut = rows[:CAP + 1] + [["**All solutions", f"**{rng(est['subtotal']['low'], est['subtotal']['high'])}"]]
+    cut = rows[:CAP + 1] + [["**All solutions (before buffer)", f"**{rng(est['subtotal']['low'], est['subtotal']['high'])}"],
+                            [f"Contingency buffer (~{est['contingency_pct']}%)", rng(est["contingency"]["low"], est["contingency"]["high"])],
+                            [f"**Total (incl. buffer) ≈ {rng(tot['low'], tot['high'])} hours", f"**(~{rng(est['days_low'], est['days_high'])} dev-days)"]]
     d.table(cut, [78, 22])
     if len(rows) > CAP + 1:
         d.p(f"The {CAP} largest of {len(sols)} solutions are shown; the rest are in the workbook, sheet Solutions.")
