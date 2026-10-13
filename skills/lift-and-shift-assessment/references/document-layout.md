@@ -13,8 +13,8 @@ The document is a clone of the reference plan the manager supplied (reference mi
 1. Document control: Field/Value table (Engagement, Phase covered, Version, Date, Status, Created By, Evidence convention); 1.1 Scope box (IN SCOPE, environment table, Optional IN Scope, NOT in scope, Explicit carry-forward statement).
 2. Executive summary: What Phase 1 achieves; What Phase 1 deliberately does not do.
 3. 7R disposition: workloads (WL-nn = solution x environment), Rs table, NOTE.
-4. Current state: solutions, external integrations and licensed components, Windows-only dependencies carried forward unchanged.
-5. Prerequisites: 5.1 Make the build reproducible; 5.2 Secrets into Secrets Manager (written only when CI/CD + Secrets Manager is in scope); then Internal addresses and connectivity; then Framework version. No "blocker" labels: each item states what has to be true before cutover.
+4. Current state: solutions, external integrations and licensed components, Windows-only dependencies carried forward unchanged. Project-by-project lists of mixed solutions and the data-store list are one sentence each that points to the workbook (sheets Projects, DataStores).
+5. Prerequisites: 5.1 Make the build reproducible (a sentence pointing to the workbook, sheet Build, instead of a table); 5.2 Secrets into Secrets Manager (written only when CI/CD + Secrets Manager is in scope); then Internal addresses and connectivity; then Framework version. No "blocker" labels: each item states what has to be true before cutover.
 6. Migration approach: Option A (MGN), Option B (rebuild on fresh AMI), selected mechanism per workload.
 7. Target architecture on AWS Windows; 7.1 AWS Secrets Manager integration.
 8. Migration execution per workload: 8.1 web deployables, 8.2 services and jobs, 8.3 sequencing dependency.
@@ -29,3 +29,5 @@ Plain, like the reference: Arial, black headings (title regular weight), light-g
 ## What is ours to propose
 
 Waves, target architecture and execution steps are not left to DevOps. The skill proposes them (rehearsal wave on the smallest solution, then batches of at most 10 workloads; MGN unless the intake says otherwise; standard Windows EC2 architecture) and labels them INFERRED. DevOps answers in the intake replace the assumption.
+
+The document stays light on tables: lists that grow with the estate (one row per project, per data store, per solution build result) belong in the workbook and are linked from the text. The reference plan has about ten small tables and no per-project list.

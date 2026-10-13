@@ -427,9 +427,8 @@ def main():
     testish = sorted({f"{p['name']} ({x['solution']})" for x in sols for p in x["projects"] if p["deployable"] and re.search(r"(?i)test|sample|demo", p["name"] + " " + p["path"])})
     if testish:
         d.p(f"Deployable by count; looks like a test tool, UNKNOWN: {', '.join(testish[:6])}.")
-    for s in [x for x in sols if is_mixed(x)][:5]:
-        d.p(f"{lab[s['id']]} mixes frameworks or project kinds (VERIFIED); project by project:", bold=True)
-        d.table([["Project", "Type", "Framework", "Deployable"]] + [[p["name"], p.get("type") or "", ", ".join(p.get("frameworks") or []) or "?", "yes" if p["deployable"] else ""] for p in s["projects"]][:CAP], [34, 28, 20, 18])
+    mixed_n = sum(1 for x in sols if is_mixed(x))
+    d.p(f"{mixed_n} of {len(sols)} solutions mix frameworks or project kinds (VERIFIED). Every project (type, framework, deployable) is listed per solution in the workbook, sheet Projects.")
     loose = idx.get("loose_projects") or []
     if loose:
         d.p("Projects in no solution file (VERIFIED; not estimated until the client confirms they are deployed)", bold=True)
@@ -437,9 +436,6 @@ def main():
                 [[x["repo"], x["name"], x.get("type") or "", ", ".join(x.get("frameworks") or []) or "?", "yes" if x["deployable"] else "", x["loc"]] for x in loose][:CAP], [18, 30, 20, 14, 10, 8])
     for f in idx.get("folded_solutions") or []:
         d.p(f"{f['solution_file']} ({f['repo']}) holds only projects that {f['into']} also holds, so it is counted as part of {f['into']}.")
-    mixed_n = sum(1 for x in sols if is_mixed(x))
-    if mixed_n > 5:
-        d.p(f"{mixed_n - 5} more mixed solutions are in the workbook, sheet Projects.")
     stores = {}
     for repo in sorted({x["repo"] for x in sols}):
         for dep in (read_json(os.path.join(OUT, "infra", repo + ".json"), {}) or {}).get("dependencies", []):
@@ -454,14 +450,7 @@ def main():
                     m["projects"].update(p["name"] for p in own)
                     m["hosts"].update(str(h.get("host") if isinstance(h, dict) else h) for h in dep.get("hosts") or [])
     if stores:
-        d.p("Data stores each solution connects to (VERIFIED in code and config: the store is found from packages and code; the addresses are the ones the configuration names for that store type, not a mapping of names to servers)", bold=True)
-        rows = [["Solution", "Store", "Projects", "Addresses named in the config for this store (not a server mapping)"]]
-        for (sol_label, store), m in sorted(stores.items()):
-            rows.append([sol_label, store, str(len(m["projects"])), ", ".join(sorted(m["hosts"]))[:60] or HELD_OUTSIDE])
-        cut, n_st = capped(rows[1:], "DataStores")
-        d.table([rows[0]] + cut, [24, 24, 12, 40])
-        if n_st:
-            d.p(n_st)
+        d.p(f"Data stores: {len(stores)} solution and store pairs found in code and config (VERIFIED). Per solution, with the addresses the configuration names for that store type (not a mapping of names to servers): workbook, sheet DataStores.")
     d.p("External integrations and licensed components", bold=True)
     rows = [["Component", "Kind", "Solutions", "Outbound (app to it)", "Inbound and allow-lists", "Key or licence on AWS"]]
     for (name, kind), m in sorted(rekey.items(), key=lambda x: (not x[1]["item"]["rekey"], x[0])):
@@ -499,11 +488,7 @@ def main():
         if st and st["status"] != "READY":
             rows.append([lab[s["id"]], b.get("real", {}).get("status", "NOT RUN"), finding_text(st, b.get("real", {}))])
     if len(rows) > 1:
-        d.p("Build result is from a real build of a copy of each solution. Findings come from the build and from the project references; detail: workbook, sheet Build.")
-        cut, n4 = capped(rows[1:], "Solutions")
-        d.table([rows[0]] + cut, [24, 12, 64])
-        if n4:
-            d.p(n4)
+        d.p("Build results come from a real build of a copy of each solution and from the project references. The result, the reason it fails and what is needed, per solution: workbook, sheet Build.")
     sib = {}
     for s in sols:
         for k, v in (bc.get(s["id"], {}).get("static", {}).get("sibling_folders") or {}).items():
@@ -537,7 +522,7 @@ def main():
     if fails:
         need_client = sum(1 for _, w in fails if "the client" in w[2])
         d.p(f"Of the {len(fails)} failed builds, {need_client} need files from the client (DLLs, project folders or source files missing from the repositories); "
-            f"{len(fails) - need_client} need a build-agent or project setting that we or DevOps can do. Details: the Build column above and the workbook, sheet Build.")
+            f"{len(fails) - need_client} need a build-agent or project setting that we or DevOps can do. Details: the workbook, sheet Build.")
     ci_names = [x["name"] for x in (svr or {}).get("servers", []) if any(r_.get("role") == "ci" for r_ in x.get("roles") or [])]
     n_pub = sum(1 for r_ in cfg.get("estate_roots") or [] for _dp, _dn, fns in os.walk(r_) for f_ in fns if f_.lower().endswith(".pubxml"))
     n_jf = sum(1 for r_ in cfg.get("estate_roots") or [] for _dp, _dn, fns in os.walk(r_) for f_ in fns if f_.lower() in ("jenkinsfile", "azure-pipelines.yml", ".gitlab-ci.yml", "buildspec.yml"))
