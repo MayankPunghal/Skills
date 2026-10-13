@@ -14,6 +14,7 @@ from xml.sax.saxutils import escape
 
 LINK_URL = None  # when set, the word "workbook" in the text becomes a link to the companion workbook (it survives a PDF export)
 LINK_WORD = re.compile(r"\bworkbook\b")
+SHEET_NAMES = re.compile(r"(\bsheets? )([A-Z][A-Za-z]+(?: and [A-Z][A-Za-z]+)*)")  # "sheet Build", "sheets Outbound and Inbound"
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 FONT = "Arial"
@@ -32,7 +33,11 @@ def _runs(text, size=None, bold=False, color=None):
                 out.append(f'<w:hyperlink r:id="rId2" w:history="1"><w:r><w:rPr>{lr}</w:rPr><w:t>workbook</w:t></w:r></w:hyperlink>')
             br = "<w:br/>" if i and not j else ""
             if piece or br or len(pieces) == 1:
-                out.append(f'<w:r>{"<w:rPr>" + rpr + "</w:rPr>" if rpr else ""}{br}<w:t xml:space="preserve">{escape(piece)}</w:t></w:r>')
+                segs = SHEET_NAMES.split(piece)  # [text, "sheet ", name, text, ...]: the name is bold so the reader can find the tab
+                for k, seg in enumerate(segs):
+                    props = ("<w:b/>" + rpr.replace("<w:b/>", "")) if k % 3 == 2 else rpr
+                    if seg or (k == 0 and br):
+                        out.append(f'<w:r>{"<w:rPr>" + props + "</w:rPr>" if props else ""}{br if k == 0 else ""}<w:t xml:space="preserve">{escape(seg)}</w:t></w:r>')
     return "".join(out)
 
 
