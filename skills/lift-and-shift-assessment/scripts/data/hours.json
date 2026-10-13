@@ -1,0 +1,204 @@
+{
+ "_doc": "Hours of lift-and-shift-assessment, developer working hours assuming AI-assisted work. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so. Lines are groups of work (one task per solution or per deployable), never per setting, per key or per address: the environment-specific configuration of a solution is one task whose hours depend on how much the solution holds (bands on a weight = config files without publish profiles + secret-like settings + environment variables + distinct private IPs + 2 per third-party key). Bands are calibrated so the manager's sample (two solutions, 32-50 h of secrets, connection and re-key work) is reproduced.",
+ "activity_thresholds": {
+  "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",
+  "active_commits_per_week": 3,
+  "hot_commits_per_week": 15
+ },
+ "day_hours": 8,
+ "contingency_pct": 20,
+ "items": {
+  "cicd_secrets": {
+   "label": "CI/CD pipeline + Secrets Manager",
+   "lines": [
+    {
+     "id": "env_config",
+     "label": "Environment-specific configuration per solution (config files, secrets and settings, addresses, third-party keys)",
+     "driver": "config_band",
+     "unit": "solution",
+     "plural": "solutions",
+     "rate": [
+      0,
+      0
+     ],
+     "basis": "sample",
+     "scope": "solution",
+     "bands": [
+      {
+       "max": 2,
+       "rate": [
+        1,
+        2
+       ]
+      },
+      {
+       "max": 5,
+       "rate": [
+        2,
+        4
+       ]
+      },
+      {
+       "max": 15,
+       "rate": [
+        5,
+        8
+       ]
+      },
+      {
+       "max": 30,
+       "rate": [
+        12,
+        18
+       ]
+      },
+      {
+       "max": 60,
+       "rate": [
+        20,
+        32
+       ]
+      },
+      {
+       "max": 1000000,
+       "rate": [
+        32,
+        48
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pipeline_solution",
+     "label": "CI/CD pipeline per solution (one shared template, adapted per solution)",
+     "driver": "solutions",
+     "unit": "solution",
+     "plural": "solutions",
+     "rate": [
+      1.5,
+      3.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "pipeline_large",
+     "label": "Extra pipeline work for solutions with more than 5 deployables",
+     "driver": "large_solutions",
+     "unit": "large solution",
+     "plural": "large solutions",
+     "rate": [
+      2.0,
+      3.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    }
+   ]
+  },
+  "build_artifacts": {
+   "label": "Build check + deployable artifacts",
+   "lines": [
+    {
+     "id": "build_solution",
+     "label": "Clean-agent restore and build check (all projects of the solution)",
+     "driver": "solutions",
+     "unit": "solution",
+     "plural": "solutions",
+     "rate": [
+      1.0,
+      2.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "artifact",
+     "label": "Deployable artifact and hand-over notes",
+     "driver": "deployables",
+     "unit": "deployable",
+     "plural": "deployables",
+     "rate": [
+      0.5,
+      1.0
+     ],
+     "basis": "inferred",
+     "scope": "project"
+    }
+   ]
+  },
+  "retarget": {
+   "label": "Framework retarget",
+   "lines": [
+    {
+     "id": "retarget_project",
+     "label": "Target framework change and rebuild",
+     "driver": "retarget_projects",
+     "unit": "project",
+     "rate": [
+      0.25,
+      0.5
+     ],
+     "basis": "inferred",
+     "scope": "project"
+    },
+    {
+     "id": "retarget_regression",
+     "label": "Regression pass after the retarget",
+     "driver": "retarget_solutions",
+     "unit": "solution",
+     "rate": [
+      1.0,
+      2.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    }
+   ]
+  },
+  "validation_cutover": {
+   "label": "Test-launch validation + cutover support",
+   "lines": [
+    {
+     "id": "validation",
+     "label": "Test-launch validation on the AWS instance",
+     "driver": "deployable_instances",
+     "unit": "deployable test launch",
+     "plural": "deployable test launches",
+     "rate": [
+      1.0,
+      1.5
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    },
+    {
+     "id": "cutover_single",
+     "label": "Cutover and migration-defect support, solutions with one deployable",
+     "driver": "single_workloads",
+     "unit": "workload",
+     "plural": "workloads",
+     "rate": [
+      2.0,
+      3.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "cutover_multi",
+     "label": "Cutover and migration-defect support, solutions with several deployables",
+     "driver": "multi_workloads",
+     "unit": "workload",
+     "plural": "workloads",
+     "rate": [
+      4.0,
+      5.3
+     ],
+     "basis": "sample",
+     "scope": "solution"
+    }
+   ]
+  }
+ }
+}

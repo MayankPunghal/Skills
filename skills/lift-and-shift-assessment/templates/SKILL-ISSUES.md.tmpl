@@ -1,0 +1,33 @@
+# Skill run issues: {{skill}}
+
+Problems met while running the `{{skill}}` skill (version {{version}}) on {{product}}, and how the run got past them.
+This file is for the **skill owner**: it is how the skill improves. Keep it during the whole run, one entry per problem,
+written when the problem happens, not at the end.
+
+Log an entry when:
+- a script fails, hangs, is very slow, or prints wrong / misleading output;
+- a gate fails on something that is fine, or passes on something that is wrong;
+- an instruction is unclear, contradicts another, or does not fit this code base;
+- you had to work around the skill (an extra command, a manual step, a hand-made file, a skipped step);
+- a generated page or template states something false for this project.
+
+Rules: no secret values (name keys only). Name client files only where needed to explain the problem. Never patch the
+installed skill to get past a problem unless the user allowed it: work around it in the workspace and describe the fix here.
+
+Severity: High (wrong or missing output a reader would trust, or a blocked run) · Medium (noise, rework, misleading
+text) · Low (cosmetic, slow but finished).
+
+## Summary
+
+| Id | Title | Severity | Area | Status |
+| --- | --- | --- | --- | --- |
+
+<!-- Entry format (copy for each issue; ids ISSUE-01, ISSUE-02 …; Status: open / worked around / fixed in skill):
+
+## ISSUE-01 — <short title> (<severity>, <area: script name, reference page, template, gate>)
+
+- **Symptom:** what happened, with the command and the relevant output (numbers, first error line).
+- **Cause:** why, if found (file and function of the skill), else "not investigated".
+- **Workaround:** what this run did instead, so the result is still right.
+- **Suggested fix:** the change to the skill (script / reference / template), specific enough to implement.
+-->

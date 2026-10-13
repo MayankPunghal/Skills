@@ -1,0 +1,226 @@
+{
+ "_note": "Server roles derived from the server NAME (name_regex) and the installed-software text (app_regex) of the infrastructure list. A server can carry several roles. Edit to match the client's naming. Environment comes from the list's Environment column; env_prefixes fill the gaps. columns: header synonyms of the list.",
+ "roles": [
+  {
+   "role": "app-biz",
+   "label": "Business-tier application server",
+   "name_regex": "(?i)biz\\d+",
+   "app_regex": ""
+  },
+  {
+   "role": "app-web",
+   "label": "Web-tier server",
+   "name_regex": "(?i)web\\d+|webapp\\d+",
+   "app_regex": ""
+  },
+  {
+   "role": "app-gateway",
+   "label": "Gateway / supplier-gateway server",
+   "name_regex": "(?i)gtw\\d+",
+   "app_regex": ""
+  },
+  {
+   "role": "nitro-api",
+   "label": "Nitro API server",
+   "name_regex": "(?i)napi\\d|nitroapi|nitrohasync|nitro-api",
+   "app_regex": ""
+  },
+  {
+   "role": "xml-gateway",
+   "label": "XML gateway server",
+   "name_regex": "(?i)xml(app|biz|gtw)\\d+",
+   "app_regex": ""
+  },
+  {
+   "role": "flatfiles",
+   "label": "Flat-file server",
+   "name_regex": "(?i)(^|[-_ ])ff-?\\d+|flatfile",
+   "app_regex": ""
+  },
+  {
+   "role": "ftp",
+   "label": "FTP / SFTP server",
+   "name_regex": "(?i)(^|[-_ ])ftp|ftp[ _-]?listn",
+   "app_regex": "(?i)filezilla|winscp|openssh server"
+  },
+  {
+   "role": "smtp",
+   "label": "SMTP relay",
+   "name_regex": "(?i)smtp",
+   "app_regex": "(?i)\\bsmtp\\b"
+  },
+  {
+   "role": "sync",
+   "label": "Sync service server",
+   "name_regex": "(?i)sync\\d*$|swiftsync",
+   "app_regex": ""
+  },
+  {
+   "role": "load-balancer",
+   "label": "Load balancer",
+   "name_regex": "(?i)(^|[-_ ])(\\w*-)?lb\\d+",
+   "app_regex": ""
+  },
+  {
+   "role": "proxy",
+   "label": "Proxy server",
+   "name_regex": "(?i)proxy",
+   "app_regex": ""
+  },
+  {
+   "role": "kafka",
+   "label": "Kafka broker",
+   "name_regex": "(?i)kafka",
+   "app_regex": "(?i)kafka"
+  },
+  {
+   "role": "redis",
+   "label": "Redis node",
+   "name_regex": "(?i)redis",
+   "app_regex": "(?i)\\bredis\\b"
+  },
+  {
+   "role": "elasticsearch",
+   "label": "Elasticsearch node",
+   "name_regex": "(?i)elastic|(^|[-_])es-?\\d+",
+   "app_regex": "(?i)elasticsearch"
+  },
+  {
+   "role": "aerospike",
+   "label": "Aerospike node",
+   "name_regex": "(?i)aerospike",
+   "app_regex": "(?i)aerospike"
+  },
+  {
+   "role": "memcached",
+   "label": "Memcached node",
+   "name_regex": "(?i)memcache",
+   "app_regex": "(?i)memcache"
+  },
+  {
+   "role": "sql-server",
+   "label": "SQL Server",
+   "name_regex": "(?i)(^|[-_ ])(sb)?sql|^db\\w+|sql[ _-]?listener|window[s]? failover",
+   "app_regex": ""
+  },
+  {
+   "role": "mongodb",
+   "label": "MongoDB",
+   "name_regex": "(?i)mongo",
+   "app_regex": "(?i)mongodb"
+  },
+  {
+   "role": "directory",
+   "label": "Domain controller / directory",
+   "name_regex": "(?i)(^|[-_ ])ad\\d+$",
+   "app_regex": "(?i)entra connect|active directory domain"
+  },
+  {
+   "role": "ci",
+   "label": "Build / CI server",
+   "name_regex": "(?i)jenkins|teamcity|bamboo",
+   "app_regex": "(?i)jenkins"
+  },
+  {
+   "role": "ai-data",
+   "label": "AI / data-science server",
+   "name_regex": "(?i)aiapi|datascience|data_science",
+   "app_regex": ""
+  },
+  {
+   "role": "file-server",
+   "label": "File server",
+   "name_regex": "(?i)(^|[-_ ])(fs|files?|nas)\\d*$",
+   "app_regex": ""
+  }
+ ],
+ "env_prefixes": [
+  {
+   "env": "Development",
+   "regex": "(?i)^(dev|sg-dev)"
+  },
+  {
+   "env": "UAT",
+   "regex": "(?i)^(uat|sg-uat)"
+  },
+  {
+   "env": "Sandbox",
+   "regex": "(?i)^(sb|sbx|sandbox)"
+  },
+  {
+   "env": "CDN",
+   "regex": "(?i)^(cdn|sg-cdn)"
+  }
+ ],
+ "columns": {
+  "name": [
+   "server name",
+   "hostname",
+   "host name",
+   "server",
+   "name",
+   "vm name",
+   "machine"
+  ],
+  "os": [
+   "operating system",
+   "os",
+   "os name"
+  ],
+  "environment": [
+   "environment",
+   "env",
+   "stage"
+  ],
+  "cores": [
+   "cpu cores",
+   "cores",
+   "vcpu",
+   "cpus"
+  ],
+  "memory_gb": [
+   "memory (gb)",
+   "memory",
+   "ram (gb)",
+   "ram"
+  ],
+  "storage_gb": [
+   "provisioned storage (gb)",
+   "storage (gb)",
+   "disk (gb)",
+   "storage"
+  ],
+  "sql_edition": [
+   "sql edition",
+   "sql"
+  ],
+  "applications": [
+   "application",
+   "applications",
+   "installed software",
+   "software"
+  ],
+  "hypervisor": [
+   "hypervisor name",
+   "hypervisor",
+   "platform"
+  ],
+  "virtual": [
+   "is virtual?",
+   "virtual"
+  ],
+  "ip": [
+   "ip address",
+   "ip",
+   "ipv4"
+  ],
+  "cpu_peak": [
+   "cpu utilization peak (%)",
+   "cpu peak"
+  ],
+  "mem_peak": [
+   "memory utilization peak (%)",
+   "memory peak"
+  ]
+ }
+}

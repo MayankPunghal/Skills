@@ -1,0 +1,318 @@
+{
+ "_note": "Server types the skill looks for. packages = NuGet ids (anchored regex); code = line regex on .cs/.vb; config_keys = key names on config lines; config_values = value patterns; compose_image = image names in docker-compose / Dockerfile; server_roles = roles in server_roles.json that serve it. Add a type here and it appears in every output.",
+ "types": [
+  {
+   "id": "sql-server",
+   "label": "SQL Server",
+   "kind": "database",
+   "ports": [
+    1433
+   ],
+   "packages": "^(System\\.Data\\.SqlClient|Microsoft\\.Data\\.SqlClient|Microsoft\\.EntityFrameworkCore\\.SqlServer|EntityFramework\\.SqlServer|Microsoft\\.SqlServer\\.Management\\.\\w+|Microsoft\\.SqlServer\\.Types|linq2db\\.SqlServer)$",
+   "code": "\\b(SqlConnection|SqlCommand|SqlDataAdapter|UseSqlServer|SqlBulkCopy)\\b",
+   "config_keys": "(?i)(connectionstring|sqlserver|sql_server|datasource|dbserver)",
+   "config_values": "(?i)\\b(Data Source|Server)\\s*=",
+   "compose_image": "(?i)mcr\\.microsoft\\.com/mssql|mssql/server",
+   "server_roles": [
+    "sql-server"
+   ],
+   "aws": "SQL Server on EC2 (same edition and version); later Amazon RDS or PostgreSQL",
+   "lift_and_shift": "Databases stay on SQL Server on EC2: carry the server names, listener / availability group and linked servers."
+  },
+  {
+   "id": "redis",
+   "label": "Redis",
+   "kind": "cache",
+   "ports": [
+    6379
+   ],
+   "packages": "^(StackExchange\\.Redis\\w*|ServiceStack\\.Redis|Microsoft\\.Extensions\\.Caching\\.StackExchangeRedis|NRedisStack|Microsoft\\.AspNetCore\\.SignalR\\.StackExchangeRedis|RedLock\\.net|CacheManager\\.StackExchange\\.Redis|Enyim\\.Caching\\.Redis|Redis\\.OM)$",
+   "code": "\\b(ConnectionMultiplexer|IConnectionMultiplexer|RedisClient|RedisCache|UseRedisCache|AddStackExchangeRedisCache)\\b",
+   "config_keys": "(?i)(^|[\\\"'\\s:._-])redis([\\\"'\\s:._-]|$)",
+   "config_values": "",
+   "compose_image": "(?i)(^|/)redis(:|$)|redis/redis-stack|bitnami/redis",
+   "server_roles": [
+    "redis"
+   ],
+   "aws": "Amazon ElastiCache (Valkey / Redis) or Redis on EC2",
+   "lift_and_shift": "Redis servers move as they are (or the same cluster on EC2): carry host names, ports and the password source."
+  },
+  {
+   "id": "memcached",
+   "label": "Memcached",
+   "kind": "cache",
+   "ports": [
+    11211
+   ],
+   "packages": "^(EnyimMemcached\\w*|Enyim\\.Caching\\w*|MemcachedProviders\\w*|BeIT\\.MemCached|Memcached\\.ClientLibrary|CacheManager\\.Memcached)$",
+   "code": "\\b(MemcachedClient|MemcachedCluster|EnyimMemcached)\\b",
+   "config_keys": "(?i)memcache",
+   "config_values": "",
+   "compose_image": "(?i)(^|/)memcached(:|$)",
+   "server_roles": [
+    "memcached"
+   ],
+   "aws": "Amazon ElastiCache for Memcached or Memcached on EC2",
+   "lift_and_shift": "Memcached nodes move as they are: carry the node list and ports (the node list is often in config)."
+  },
+  {
+   "id": "aerospike",
+   "label": "Aerospike",
+   "kind": "cache",
+   "ports": [
+    3000
+   ],
+   "packages": "^Aerospike\\.Client$",
+   "code": "\\bAerospikeClient\\b|using\\s+Aerospike\\.Client",
+   "config_keys": "(?i)aerospike",
+   "config_values": "",
+   "compose_image": "(?i)aerospike",
+   "server_roles": [
+    "aerospike"
+   ],
+   "aws": "Aerospike on EC2 (no AWS managed equivalent)",
+   "lift_and_shift": "The Aerospike cluster moves as it is: carry seed nodes and namespace settings."
+  },
+  {
+   "id": "elasticsearch",
+   "label": "Elasticsearch / OpenSearch",
+   "kind": "search",
+   "ports": [
+    9200,
+    9300
+   ],
+   "packages": "^(NEST|Elasticsearch\\.Net|Elastic\\.Clients\\.Elasticsearch|Elastic\\.Transport|OpenSearch\\.Client|OpenSearch\\.Net|Serilog\\.Sinks\\.Elasticsearch|Elastic\\.Apm\\w*)$",
+   "code": "\\b(ElasticClient|ElasticLowLevelClient|ElasticsearchClient|OpenSearchClient)\\b",
+   "config_keys": "(?i)elastic|opensearch",
+   "config_values": "",
+   "compose_image": "(?i)elasticsearch|opensearch",
+   "server_roles": [
+    "elasticsearch"
+   ],
+   "aws": "Amazon OpenSearch Service or Elasticsearch on EC2",
+   "lift_and_shift": "Elasticsearch nodes move as they are: carry node URLs, cluster name and index templates."
+  },
+  {
+   "id": "kafka",
+   "label": "Kafka",
+   "kind": "queue",
+   "ports": [
+    9092
+   ],
+   "packages": "^(Confluent\\.Kafka|Confluent\\.SchemaRegistry\\w*|KafkaFlow\\w*|Streamiz\\.Kafka\\.Net|MassTransit\\.Kafka|Silverback\\.Integration\\.Kafka)$",
+   "code": "\\b(ProducerBuilder|ConsumerBuilder|KafkaConsumer|KafkaProducer|ProducerConfig|ConsumerConfig)\\b",
+   "config_keys": "(?i)kafka|bootstrap[._-]?servers",
+   "config_values": "",
+   "compose_image": "(?i)kafka|zookeeper|redpanda",
+   "server_roles": [
+    "kafka"
+   ],
+   "aws": "Amazon MSK or Kafka on EC2",
+   "lift_and_shift": "Kafka brokers move as they are: carry bootstrap servers, topics, consumer groups and ACLs."
+  },
+  {
+   "id": "rabbitmq",
+   "label": "RabbitMQ",
+   "kind": "queue",
+   "ports": [
+    5672
+   ],
+   "packages": "^(RabbitMQ\\.Client|MassTransit\\.RabbitMQ|EasyNetQ\\w*|NServiceBus\\.RabbitMQ|Rebus\\.RabbitMq|CAP\\.RabbitMQ|Wolverine\\.RabbitMQ)$",
+   "code": "\\b(BasicPublish|BasicConsume|QueueDeclare)\\b",
+   "config_keys": "(?i)rabbit",
+   "config_values": "",
+   "compose_image": "(?i)rabbitmq",
+   "server_roles": [
+    "rabbitmq"
+   ],
+   "aws": "Amazon MQ for RabbitMQ or RabbitMQ on EC2",
+   "lift_and_shift": "RabbitMQ servers move as they are: carry host, vhost and queue names."
+  },
+  {
+   "id": "smtp",
+   "label": "SMTP mail relay",
+   "kind": "mail",
+   "ports": [
+    25,
+    465,
+    587
+   ],
+   "packages": "^(MailKit|MimeKit|FluentEmail\\.\\w+|AE\\.Net\\.Mail|OpenPop\\.NET|S22\\.Imap|SmtpServer|netDumbster|Postal\\.Mvc\\w*|Mandrill\\.net)$",
+   "code": "\\b(SmtpClient|MailMessage)\\b|using\\s+System\\.Net\\.Mail",
+   "config_keys": "(?i)smtp|mail[._-]?(host|server)|mailserver|mailSettings",
+   "config_values": "(?i)<smtp\\b",
+   "compose_image": "",
+   "server_roles": [
+    "smtp"
+   ],
+   "aws": "Amazon SES (later)",
+   "lift_and_shift": "The SMTP relay servers move as they are. EC2 blocks outbound port 25 by default: request the limit removal or relay through SES."
+  },
+  {
+   "id": "sftp-ftp",
+   "label": "SFTP / FTP server",
+   "kind": "file-transfer",
+   "ports": [
+    21,
+    22
+   ],
+   "packages": "^(SSH\\.NET|Renci\\.SshNet\\w*|WinSCP\\w*|FluentFTP|Tamir\\.SharpSSH|edtFTPnj|Rebex\\.\\w*|WinSCPnet|FtpLib)$",
+   "code": "\\b(FtpWebRequest|SftpClient|ScpClient)\\b|\\bsftp://|\\bftp://",
+   "config_keys": "(?i)s?ftp(?![a-z])|ftp[._-]?(host|server|url)",
+   "config_values": "(?i)\\bs?ftp://",
+   "compose_image": "(?i)ftp|sftp",
+   "server_roles": [
+    "ftp"
+   ],
+   "aws": "AWS Transfer Family (later)",
+   "lift_and_shift": "FTP / SFTP servers move as they are: carry host keys, users, firewall ranges and the data folders they serve."
+  },
+  {
+   "id": "file-share",
+   "label": "SMB / UNC file share",
+   "kind": "file-share",
+   "ports": [
+    445
+   ],
+   "packages": "^$",
+   "code": "(?!)",
+   "config_keys": "(?i)(unc|network[._-]?path|file[._-]?server|dropfolder)",
+   "config_values": "\\\\\\\\[A-Za-z0-9][A-Za-z0-9._-]+\\\\[A-Za-z0-9$._ -]+",
+   "compose_image": "",
+   "server_roles": [
+    "file-server"
+   ],
+   "aws": "Amazon FSx for Windows File Server",
+   "lift_and_shift": "UNC shares are reached by server name: the file server and its shares must exist on AWS and resolve to the same names."
+  },
+  {
+   "id": "ldap-ad",
+   "label": "Active Directory / LDAP",
+   "kind": "directory",
+   "ports": [
+    389,
+    636
+   ],
+   "packages": "^(System\\.DirectoryServices\\w*|Novell\\.Directory\\.Ldap\\.NETStandard|Microsoft\\.IdentityModel\\.Clients\\.ActiveDirectory)$",
+   "code": "\\b(DirectoryEntry|DirectorySearcher|PrincipalContext|LdapConnection)\\b|\\bLDAP://",
+   "config_keys": "(?i)ldap|active[._-]?directory|domaincontroller",
+   "config_values": "(?i)\\bLDAP://",
+   "compose_image": "",
+   "server_roles": [
+    "directory"
+   ],
+   "aws": "AWS Managed Microsoft AD (later)",
+   "lift_and_shift": "Domain controllers must be reachable from the EC2 servers (VPN or AD extended to AWS) and keep the same domain names."
+  },
+  {
+   "id": "mongodb",
+   "label": "MongoDB",
+   "kind": "database",
+   "ports": [
+    27017
+   ],
+   "packages": "^(MongoDB\\.Driver\\w*|MongoDB\\.Bson|Mongo2Go)$",
+   "code": "\\bMongoClient\\b",
+   "config_keys": "(?i)mongo",
+   "config_values": "",
+   "compose_image": "(?i)mongo",
+   "server_roles": [
+    "mongodb"
+   ],
+   "aws": "Amazon DocumentDB or MongoDB on EC2",
+   "lift_and_shift": "MongoDB servers move as they are."
+  },
+  {
+   "id": "mysql",
+   "label": "MySQL / MariaDB",
+   "kind": "database",
+   "ports": [
+    3306
+   ],
+   "packages": "^(MySql\\.Data|MySqlConnector|Pomelo\\.EntityFrameworkCore\\.MySql|MySql\\.Data\\.EntityFramework)$",
+   "code": "\\bMySqlConnection\\b",
+   "config_keys": "(?i)mysql|mariadb",
+   "config_values": "",
+   "compose_image": "(?i)mysql|mariadb",
+   "server_roles": [
+    "mysql"
+   ],
+   "aws": "Amazon RDS for MySQL",
+   "lift_and_shift": "MySQL servers move as they are."
+  },
+  {
+   "id": "postgresql",
+   "label": "PostgreSQL",
+   "kind": "database",
+   "ports": [
+    5432
+   ],
+   "packages": "^(Npgsql\\w*|Npgsql\\.EntityFrameworkCore\\.PostgreSQL)$",
+   "code": "\\bNpgsqlConnection\\b",
+   "config_keys": "(?i)npgsql|postgres",
+   "config_values": "",
+   "compose_image": "(?i)postgres",
+   "server_roles": [
+    "postgresql"
+   ],
+   "aws": "Amazon RDS / Aurora PostgreSQL",
+   "lift_and_shift": "PostgreSQL servers move as they are."
+  },
+  {
+   "id": "oracle",
+   "label": "Oracle",
+   "kind": "database",
+   "ports": [
+    1521
+   ],
+   "packages": "^(Oracle\\.ManagedDataAccess\\w*|Oracle\\.DataAccess\\w*|Oracle\\.EntityFrameworkCore)$",
+   "code": "\\bOracleConnection\\b",
+   "config_keys": "(?i)oracle",
+   "config_values": "",
+   "compose_image": "",
+   "server_roles": [
+    "oracle"
+   ],
+   "aws": "Amazon RDS for Oracle",
+   "lift_and_shift": "Oracle servers move as they are (licence terms apply)."
+  },
+  {
+   "id": "http-proxy",
+   "label": "HTTP / outbound proxy",
+   "kind": "network",
+   "ports": [
+    3128,
+    8080
+   ],
+   "packages": "^$",
+   "code": "\\b(WebProxy|DefaultProxy)\\b|\\bProxy\\s*=\\s*new\\b",
+   "config_keys": "(?i)(^|[\\\"'\\s:._<-])(proxy(address|url|host|server)?|defaultProxy)([\\\"'\\s:._>-]|$)",
+   "config_values": "(?i)<defaultProxy|proxyaddress=",
+   "compose_image": "",
+   "server_roles": [
+    "proxy"
+   ],
+   "aws": "NAT gateway or a forward proxy on EC2",
+   "lift_and_shift": "Outbound proxies move as they are; partners see the proxy's IP, so the AWS egress IP must be re-registered."
+  },
+  {
+   "id": "session-state-server",
+   "label": "ASP.NET session / state server",
+   "kind": "state",
+   "ports": [
+    42424
+   ],
+   "packages": "^$",
+   "code": "(?!)",
+   "config_keys": "(?i)(sessionState|stateConnectionString|machineKey)",
+   "config_values": "(?i)<sessionState[^>]*mode\\s*=\\s*[\\\"'](StateServer|SQLServer|Custom)",
+   "compose_image": "",
+   "server_roles": [
+    "sql-server",
+    "app-web"
+   ],
+   "aws": "ElastiCache or DynamoDB (later)",
+   "lift_and_shift": "A shared session store (StateServer or SQL) must be on the same network as every web server."
+  }
+ ]
+}

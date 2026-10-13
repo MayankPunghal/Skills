@@ -1,0 +1,32 @@
+{
+ "_doc": "NuGet packages that are clients for third-party or cloud services (third-party APIs tab). match = regex on package id (case-insensitive, anchored); service = what it talks to; aws = typical AWS-side consideration. First match wins.",
+ "sdks": [
+  {"match": "AWSSDK\\.(\\w+)(\\..*)?", "service": "AWS {1}", "aws": "Native on AWS: use IAM roles instead of access keys"},
+  {"match": "WindowsAzure\\.Storage|Azure\\.Storage\\..*|Microsoft\\.Azure\\.Storage\\..*", "service": "Azure Storage", "aws": "Amazon S3 (or keep Azure with cross-cloud credentials)"},
+  {"match": "WindowsAzure\\.ServiceBus|Azure\\.Messaging\\.ServiceBus|Microsoft\\.Azure\\.ServiceBus", "service": "Azure Service Bus", "aws": "Amazon SQS / SNS / Amazon MQ"},
+  {"match": "Microsoft\\.Azure\\.KeyVault.*|Azure\\.Security\\.KeyVault\\..*", "service": "Azure Key Vault", "aws": "AWS Secrets Manager / KMS"},
+  {"match": "Microsoft\\.ApplicationInsights.*", "service": "Azure Application Insights", "aws": "Amazon CloudWatch / X-Ray (ADOT)"},
+  {"match": "Microsoft\\.Azure\\.Services\\.AppAuthentication|Azure\\.Identity|Microsoft\\.IdentityModel\\.Clients\\.ActiveDirectory|Microsoft\\.Identity\\.Client|Microsoft\\.Identity\\.Web.*", "service": "Microsoft Entra ID (Azure AD)", "aws": "Keep Entra ID (register AWS redirect URIs) or federate to Cognito / IAM Identity Center"},
+  {"match": "Microsoft\\.Azure\\..*|Azure\\..*", "service": "Azure (other)", "aws": "Map to the AWS equivalent or keep cross-cloud"},
+  {"match": "Microsoft\\.Graph.*", "service": "Microsoft Graph (M365)", "aws": "Stays external: app registration + outbound HTTPS"},
+  {"match": "Microsoft\\.Exchange\\.WebServices", "service": "Exchange Web Services", "aws": "Move to Microsoft Graph; outbound HTTPS"},
+  {"match": "Microsoft\\.SharePoint.*|PnP\\..*", "service": "SharePoint", "aws": "On-prem SharePoint needs VPN; Online needs app credentials"},
+  {"match": "Twilio.*", "service": "Twilio (SMS/voice)", "aws": "Stays external; or Amazon SNS / Pinpoint"},
+  {"match": "SendGrid.*", "service": "SendGrid (email)", "aws": "Stays external; or Amazon SES"},
+  {"match": "Mailgun.*|Postmark.*|MailChimp.*|Mailchimp.*", "service": "Email service", "aws": "Stays external; or Amazon SES"},
+  {"match": "Stripe\\.net|Stripe.*", "service": "Stripe (payments)", "aws": "Stays external; PCI scope review"},
+  {"match": "PayPal.*|Braintree.*|Adyen.*|AuthorizeNet.*|Razorpay.*", "service": "Payment gateway", "aws": "Stays external; allow-list / webhook URLs; PCI scope review"},
+  {"match": "Google\\.Apis\\..*|Google\\.Cloud\\..*", "service": "Google APIs", "aws": "Stays external: credentials in Secrets Manager"},
+  {"match": "Salesforce.*|DeveloperForce.*", "service": "Salesforce", "aws": "Stays external: connected-app credentials, IP allow-list"},
+  {"match": "Auth0.*|Okta.*|Duende\\..*|IdentityServer.*", "service": "Identity provider", "aws": "Register AWS redirect URIs; or Cognito"},
+  {"match": "StackExchange\\.Redis|Microsoft\\.Web\\.RedisSessionStateProvider|ServiceStack\\.Redis", "service": "Redis", "aws": "Amazon ElastiCache (Valkey/Redis)"},
+  {"match": "RabbitMQ\\.Client|EasyNetQ.*|MassTransit\\.RabbitMQ", "service": "RabbitMQ", "aws": "Amazon MQ for RabbitMQ"},
+  {"match": "Confluent\\.Kafka|kafka-sharp", "service": "Kafka", "aws": "Amazon MSK"},
+  {"match": "Elasticsearch\\.Net|NEST|Elastic\\.Clients\\..*", "service": "Elasticsearch", "aws": "Amazon OpenSearch Service"},
+  {"match": "MongoDB\\.Driver", "service": "MongoDB", "aws": "Amazon DocumentDB / MongoDB Atlas on AWS"},
+  {"match": "Slack.*|Microsoft\\.Bot\\..*", "service": "Chat / bots", "aws": "Stays external"},
+  {"match": "SSH\\.NET|Renci\\.SshNet|WinSCP|FluentFTP", "service": "SFTP / FTP partners", "aws": "AWS Transfer Family; fixed egress IPs"},
+  {"match": "Microsoft\\.ReportingServices\\..*|Microsoft\\.ReportViewer\\..*", "service": "SQL Server Reporting Services", "aws": "Power BI Report Server / QuickSight / SSRS on EC2"},
+  {"match": "Sentry.*|Bugsnag.*|Raygun.*|NewRelic.*|Datadog.*|Elmah\\.Io.*", "service": "Monitoring SaaS", "aws": "Stays external or CloudWatch / X-Ray"}
+ ]
+}
