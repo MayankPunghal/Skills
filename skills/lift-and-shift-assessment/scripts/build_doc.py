@@ -119,6 +119,7 @@ WORKBOOK_READ_ME = [
     ["DataStores: for each solution, the data stores its projects use (found from packages and code) and the addresses that the repository's config names for that store type. It is NOT a server mapping: a name and an IP in the same cell are separate values, not the same server. 'Held outside the repository' means the code uses the store but no address for it is in the repository: it is set on the server, in the pipeline or in a vault, so DevOps has to supply it. The project count and the addresses are found independently."],
     ["Connections (to internal servers) lists the internal addresses and names each solution uses; ThirdParty lists outside services, licensed components and keys. Data stores such as Redis or MongoDB can appear in both because both read the same packages and calls."],
     ["Outbound: addresses the code or config uses to reach something (connection strings, URLs, host settings). Inbound: what each application listens on, read from launchSettings, Kestrel, IIS Express and WCF service settings. The real production binding of an IIS site is not in the code, so many rows say UNKNOWN until the server mapping is returned. Direction is decided from the setting and its context, not by running the application."],
+    ["Packages: every NuGet package of the estate with the versions seen, the solutions that use it and its status from the package scan. WindowsOnly: every Windows-only finding (COM, native calls, Windows services, event log and similar) per solution with file and line; they run unchanged on Windows EC2."],
     ["Settings: names and files only, never values. Estimate: every line of the hours in the document, per solution."],
 ]
 
@@ -193,6 +194,39 @@ def windows_only(sols):
                     e["solutions"].add(s["id"])
                     e["projects"].add((repo, f["project"]))
     return out
+
+
+def windows_only_rows(sols, lab):
+    """Workbook sheet WindowsOnly: every Windows-only finding per solution with file and line (names and places only, no code)."""
+    rows = []
+    for repo in sorted({s["repo"] for s in sols}):
+        for f in read_json(os.path.join(OUT, "findings", repo + ".json"), []) or []:
+            if not f["rule"].startswith(WINDOWS_ONLY):
+                continue
+            where = "; ".join(f"{e.get('file')}:{e.get('line')}" for e in (f.get("evidence") or [])[:3] if isinstance(e, dict))
+            for s in sols:
+                if s["repo"] == repo and (f.get("project") or "").lower() in solution_names(s):
+                    rows.append([lab[s["id"]], f["title"], f["rule"], f.get("project") or "", f.get("occurrences") or "", where])
+    return sorted(rows, key=lambda r: (r[0].lower(), r[2], r[3]))
+
+
+SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
+
+def package_rows(sols, lab):
+    """Workbook sheet Packages: one row per NuGet package across the estate (versions, solutions, status from the package scan)."""
+    pk = {}
+    for repo in sorted({s["repo"] for s in sols}):
+        for pkg in (read_json(os.path.join(OUT, "scan", repo + ".json"), {}) or {}).get("packages", []):
+            e = pk.setdefault(pkg["id"], {"versions": set(), "solutions": set(), "sev": "Info", "status": "", "note": "", "replacement": ""})
+            e["versions"].update(pkg.get("versions") or [])
+            for s in sols:
+                if s["repo"] == repo and any(pr.lower() in solution_names(s) for pr in pkg.get("projects") or []):
+                    e["solutions"].add(lab[s["id"]])
+            if SEV_ORDER.get(pkg.get("severity", "Info"), 4) < SEV_ORDER.get(e["sev"], 4) or not e["status"]:
+                e.update(sev=pkg.get("severity", "Info"), status=pkg.get("status", ""), note=pkg.get("note", ""), replacement=pkg.get("replacement", ""))
+    rows = [[k, ", ".join(sorted(v["versions"])), len(v["solutions"]), ", ".join(sorted(v["solutions"]))[:200], v["status"], v["sev"], v["note"], v["replacement"]] for k, v in pk.items()]
+    return sorted(rows, key=lambda r: (SEV_ORDER.get(r[5], 4), -r[2], r[0].lower()))
 
 
 def hardcoded_secret_solutions(sols, lab):
@@ -458,7 +492,7 @@ def main():
         d.p("Callbacks and allow-lists: UNKNOWN until each provider confirms.")
     else:
         d.p("None found.")
-    d.p("Windows-Only Dependencies — Carried Forward Unchanged in Phase 1", bold=True)
+    d.p("Windows-Only Dependencies — Carried Forward Unchanged in Phase 1 (each finding with file and line: workbook, sheet WindowsOnly; packages: sheet Packages)", bold=True)
     rows = [["Dependency", "Usage Detail (VERIFIED, current codebase)", "Windows-Native Status", "Phase 1 Status"]]
     for e in sorted(wo.values(), key=lambda e: -len(e["projects"])):
         rows.append([e["title"], f"{len(e['projects'])} project(s) in {len(e['solutions'])} solution(s)", "Works on Windows EC2 as-is", "Carried forward unchanged"])
@@ -750,6 +784,8 @@ def main():
               _xlsx.auto("ThirdParty", [["Solution", "Component", "Kind", "Vendor", "Key or licence on AWS", "Outbound (app to it)", "Inbound and allow-lists", "Evidence"]] +
                          [[lab[s["id"]], i["name"], i["kind"], i["vendor"], "Re-key" if i["rekey"] else "Confirm licence terms" if i["kind"] == "licensed component" else "Outbound access only", *direction(i["name"], i["kind"]), i["evidence"]]
                           for s in sols for i in tps[s["id"]]["licensed_and_integrations"]]),
+              _xlsx.auto("Packages", [["Package", "Versions seen", "Solutions", "Used by", "Status", "Severity", "Note", "Replacement"]] + package_rows(sols, lab)),
+              _xlsx.auto("WindowsOnly", [["Solution", "Finding", "Rule", "Project", "Occurrences", "Where (file:line)"]] + windows_only_rows(sols, lab)),
               _xlsx.auto("Connections", [["Solution", "To", "Type", "Most likely (inferred from setting names and ports; to be confirmed)", "DevOps servers with that role", "Projects"]] +
                          [[lab[s["id"]], c["to"], c["kind"], role_text(roles.get(c["to"])), (roles.get(c["to"]) or {}).get("devops_servers_with_role") or "", ", ".join(c["projects"])] for s in sols for c in tps[s["id"]]["server_to_server"]] +
                          [[lab_by_repo.get(r, r), o["address"], "public IP", role_text(o), "", ""] for o in roles.values() if o["type"] == "public IP" for r in o.get("solutions_repos") or []]),
