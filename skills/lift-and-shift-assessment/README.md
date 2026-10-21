@@ -6,11 +6,17 @@ It is the narrow sibling of `modernization-assessment`: that skill assesses a re
 
 ## What it does
 
-- Inventories solutions, projects, deployables and workloads (deployable x environment).
+- Inventories solutions, projects, deployables and workloads (solution x environment).
 - Counts what the dev team must handle: environment variables and secrets, config files with hard-coded values, internal addresses, third-party keys and licensed components, server-to-server connections.
-- Checks that each solution builds (static readiness; a real MSBuild run on a copy after approval).
+- Checks that each solution builds (static readiness; a real MSBuild run on a copy after approval), with a plain reason for every failure and a staging step for shared libraries that were reorganised (`stage_library.py`).
+- Checks which branch of each repository is the live line from GitLab history, read-only (`branch_evidence.py`), and records the branch assessed in the workbook (sheet Branches).
+- Cross-checks the client's filled application-to-server workbook for contradictions (`check_mapping.py`).
+- Types every internal and public address and infers its likely role from setting names and ports (`address_roles.py`).
 - Prices only the work items the user selects: build check + artifacts, CI/CD + Secrets Manager, framework retarget, validation + cutover support.
-- Writes one DRAFT `.docx` for the whole project (solutions as table rows) and a workbook with the project-level detail.
+- Writes one DRAFT `.docx` for the whole project (solutions as table rows) and a workbook with the project-level detail (17 sheets: solutions, projects, outbound and inbound calls, connections, settings, third parties, packages, Windows-only findings, build, data stores, branches, client answers, release process and more).
+- Lists the GitLab projects read-only and makes shallow, push-disabled clones (`gitlab_projects.py`, `clone_repos.py`).
+- Writes the companion files, each as `.md` plus `.html`: the application-to-server sheet for the client (`build_mapping_sheet.py`), the open questions in full, short and as a client email (`build_open_questions.py`), and an explanation of every hour (`build_estimate_explainer.py`).
+- Records call answers, release steps, branch choices and decisions with flags (`intake.py --client-update / --release-step / --branch-note / --decision`), so nothing is edited by hand.
 
 Nothing is final until the user says so; every rate can be changed in `scripts/data/hours.json`.
 
@@ -21,25 +27,53 @@ Open Claude Code in an empty folder outside the client repositories and say: *"A
 The deterministic part runs from the command line too:
 
 ```bash
-python scripts/setup_assessment.py --client "Acme" --roots D:/clients/acme/repos
+python scripts/setup_assessment.py --client "Acme" --gitlab-url https://gitlab.acme.example --gitlab-token-env GITLAB_TOKEN
+python scripts/gitlab_projects.py --active-months 12      # read-only project list (.xlsx to share)
+python scripts/clone_repos.py --dest D:/clients/acme/repos --only-dotnet --set-roots
 python scripts/discover_estate.py
+python scripts/branch_evidence.py            # needs the VPN and a read token; read-only
 python scripts/intake.py --questions          # the agent asks these, then: intake.py --answers '<json>'
 python scripts/scan_repo.py --all
-python scripts/map_infra.py --all
+python scripts/map_infra.py --servers <DevOps server list.xlsx> --all
 python scripts/solutions.py
 python scripts/third_party.py
+python scripts/address_roles.py
+python scripts/check_mapping.py --workbook <filled mapping xlsx>   # when the client returns it
+python scripts/stage_library.py --library <shared library checkout>   # only when references moved; add --apply
 python scripts/build_check.py
 python scripts/estimate_hours.py
 python scripts/build_doc.py
 python scripts/verify_doc.py
+python scripts/build_mapping_sheet.py
+python scripts/build_open_questions.py
+python scripts/build_estimate_explainer.py
 ```
 
-Requires Python 3.10+ (standard library only). Package licence lookups use api.nuget.org unless `--offline`.
+Requires Python 3.10+ (standard library only) and git. The real build needs Visual Studio Build Tools (MSBuild). Optional: a company .docx template (`--docx-template`), and Word plus `pip install pymupdf` for page numbers in its table of contents. Package licence lookups use api.nuget.org unless `--offline`. SKILL.md lists the prerequisites for a new machine.
 
 ## Outputs
 
-`assessment/documents/<client>-lift-and-shift-assessment.docx` and `.xlsx`; `assessment/estimate.json`; `assessment/solutions/`; `assessment/build/`.
+`assessment/documents/<client>-lift-and-shift-assessment.docx` and `.xlsx`; `assessment/estimate.json`; `assessment/solutions/`; `assessment/build/`; `assessment/branches/`; `assessment/infra/address_roles.json`.
 
 ## Hours
 
 Rates marked `sample` reproduce the manager's reference estimate (72-108 h) from counts measured in the reference code; rates marked `inferred` are the skill's own. See `references/estimate-model.md`.
+
+## Changes in 1.1.0
+
+Minor version: a new capability (the skill now covers the whole engagement on its own, from the GitLab project list to the client follow-ups), not a small fix.
+
+- New: `gitlab_projects.py`, `clone_repos.py`, `build_mapping_sheet.py`, `build_open_questions.py`, `build_estimate_explainer.py`, `_mdhtml.py` (HTML twin of every Markdown file, branded when a template is set).
+- `intake.py`: `--client-update`, `--remove-client-update`, `--release-step`, `--clear-release-steps`, `--branch-note`, `--decision` (decision log). `setup_assessment.py`: `--gitlab-url`, `--gitlab-token-env`, `--docx-template`, `--workbook-url`.
+- The GitLab token is also read from the Windows user environment (`_common.gitlab_token`).
+- `check_mapping.py` reads any `<Environment> server(s)` column, not only four fixed ones.
+- `context.py` points to the new steps; SKILL.md has the new-machine prerequisites and the rules learned on the first engagement (separate teams, never guess where an application runs, log every decision, nothing hand-edited).
+- Branded document: TOC page numbers read from Word's own PDF export; front-end line counts (JS, TS, CSS, HTML) and copied-library lines in the workbook.
+
+## Changes in 1.0.1
+
+- Estimate by groups of work (configuration hours follow a continuous curve of the solution's weight), audited for implausible lines; 20% buffer unchanged.
+- `branch_evidence.py`, `stage_library.py`, `address_roles.py`; Branches sheet; address type and likely role in Section 5.3 and sheet Connections.
+- Build: plain failure reasons, build-order dependencies, packages installed into local folders, Library staging.
+- `check_mapping.py` for the returned mapping workbook.
+- The DevOps server list keeps the full Application column; known facts (operating systems, hypervisors, build tools, Jenkins servers) fill answers that used to be UNKNOWN.

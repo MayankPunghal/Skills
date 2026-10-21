@@ -11,7 +11,6 @@ Rules: all pending questions are asked (100% coverage, no assumptions); "unknown
 | before_scan: environments | environments, environments_differ, server_list (+detail), current_hosting, windows_versions | workloads, 1.1 table, 3, 6 |
 | before_scan: AWS and waves | aws_landing_zone, aws_connectivity, aws_region, database_location, devops_mechanism, wave_strategy, wave_detail, maintenance_windows, hypercare_days, parallel_run_days, devops_notes | 6, 7, 9 |
 | before_scan: CI/CD and secrets | ci_platform_today, build_agent, artifact_format, ci_platform_target, pipeline_scope (+solutions), secrets_injection, secrets_rotation, secrets_owner, existing_vault | 5.1, 5.2, 7.1, pipeline lines |
-| before_scan: testing | test_environment, smoke_tests, testing_by, cutover_support_hours | 8, 11 |
 | after_scan (when found) | ad_domain, mail_relay, file_shares, public_endpoints, ip_allowlists, licence_terms, machine_bound, job_schedules, credential_rotation_owner, private_feeds | 4, 5.1 to 5.3, 7, 8.2 |
 | after_build (when blocked) | missing_references | 5.1 |
 

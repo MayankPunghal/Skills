@@ -11,7 +11,7 @@ import json
 import os
 import re
 
-from _common import read_text, rel
+from _common import skip_dir, read_text, rel
 
 MANIFESTS = {"package.json": "Node.js", "requirements.txt": "Python", "pyproject.toml": "Python", "setup.py": "Python", "pipfile": "Python",
              "pom.xml": "Java", "build.gradle": "Java", "build.gradle.kts": "Java", "go.mod": "Go", "gemfile": "Ruby",
@@ -30,7 +30,7 @@ OUT_PATTERNS = [
     re.compile(r"""\.pipe\(\s*gulp\.dest\(\s*["']([^"']+)["']"""),
     re.compile(r"""\boutput\s*:\s*["']([^"']*\.\.[^"']*)["']"""),
 ]
-PARENT_STRING = re.compile(r"""["']((?:\.\.[/\\])+[^"'\s]*)["']""")  # "../SwiftUI/deploymentPackage/": a path that leaves the Node folder
+PARENT_STRING = re.compile(r"""["']((?:\.\.[/\\])+[^"'\s]*)["']""")  # "../WebApp/deploymentPackage/": a path that leaves the Node folder
 NAMED_OUT = re.compile(r"\b(?:outDir|outputPath|buildLocation|outputDir|distDir)\b")
 DOTNET_DRIVE =re.compile(r"(?i)\b(dotnet\s+(publish|build|msbuild)|gulp-dotnet-cli|msbuild(\.exe)?|nuget\s+(restore|pack))\b|require\(['\"]gulp-dotnet-cli['\"]\)")
 RUNTIME_USE = re.compile(r"""(?i)(Process\.Start|ProcessStartInfo)\s*\(.{0,80}["'](node|node\.exe|npm|npm\.cmd|npx|ts-node)["']|\bINodeServices\b|\bNodeJSService\b|Jering\.Javascript""")
@@ -42,7 +42,7 @@ OUTPUT_HINT = re.compile(r"(?i)(wwwroot|content|scripts|app_themes|themes|views|
 def _walk(root, skip, depth=None):
     base = os.path.normpath(root)
     for d, dirs, files in os.walk(root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         if depth is not None and os.path.relpath(d, base).count(os.sep) + (0 if d == base else 1) > depth:
             dirs[:] = []
         yield d, files

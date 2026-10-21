@@ -137,7 +137,7 @@
     "vb"
    ],
    "pat": [
-    "\\[(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
+    "\\[(?:[A-Za-z_]\\w*\\.)*(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
     "Declare\\s+(Auto\\s+|Ansi\\s+|Unicode\\s+)?(Function|Sub)\\s+\\w+\\s+Lib\\s+\"(?i:(user32|kernel32|advapi32|gdi32|shell32|netapi32|mpr|winspool))"
    ],
    "why": "Calls into Win32 system libraries cannot run on Linux.",
@@ -159,7 +159,7 @@
     "vb"
    ],
    "pat": [
-    "\\[(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
+    "\\[(?:[A-Za-z_]\\w*\\.)*(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
    ],
    "why": "A native library must exist as a Linux .so build for the same API.",
    "fix": "Confirm a Linux build of the native library exists (and its licence); otherwise replace.",

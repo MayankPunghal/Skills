@@ -133,6 +133,13 @@ def main():
                     l["has_key"] = bool(v["key_vars"])
                     integ.pop(k)
             l.setdefault("has_key", l["kind"] == "saas")
+        dirs = {os.path.dirname(p["path"]).replace("\\", "/") for p in s["projects"]}
+        for l in licensed:  # a licence key committed in a config file of this solution (Select.Pdf.License.Key -> Select.Pdf)
+            for sct in scans[repo].get("secret_settings") or []:
+                f = sct["file"].replace("\\", "/")
+                if any(not x or f.startswith(x + "/") for x in dirs) and (norm(l["package"]) in norm(sct["key"]) or norm(l["vendor"]) in norm(sct["key"])):
+                    l["key_vars"] = sorted(set((l.get("key_vars") or []) + [sct["key"]]))
+                    l["has_key"] = True
         merged = {}
         for l in licensed:
             m = merged.setdefault(l["vendor"], dict(l, package=[]))

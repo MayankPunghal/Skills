@@ -20,6 +20,28 @@ import os
 import re
 import sys
 
+
+def nuget_folder(path):
+    """A restored NuGet packages folder (repositories.config, or packages/<Id>.<version>/*.nupkg), not application source in a folder named Packages."""
+    try:
+        if os.path.exists(os.path.join(path, "repositories.config")):
+            return True
+        for sub in os.listdir(path)[:8]:
+            q = os.path.join(path, sub)
+            if os.path.isdir(q) and any(f.lower().endswith(".nupkg") for f in os.listdir(q)):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def skip_dir(parent, name, skip, fold=True):
+    """True when a walk should not enter folder `name` under `parent`: its name is in `skip`. A folder named packages is skipped only when it
+    is a NuGet restore folder: application source can live in a folder of that name."""
+    if name.lower() == "packages":
+        return "packages" in skip and nuget_folder(os.path.join(parent, name))
+    return (name.lower() if fold else name) in skip
+
 SKIP = {".git", "node_modules", "bin", "obj", "packages", ".vs", "dist", "build", "target", "__pycache__", ".venv", "venv",
         ".idea", "graphify-out", "site", "publish", ".next", ".nuxt", "vendor", "coverage"}
 VENDOR_DIR = re.compile(r"(?i)(^|/)(wwwroot/lib|bower_components|jspm_packages|third[-_]?party|externals?)(/|$)")
@@ -60,7 +82,7 @@ def client_packages(src, skip=SKIP):
     """Package ids that deliver script / style files into the repository (NuGet content packages, libman, bower, npm)."""
     ids = set()
     for d, dirs, files in os.walk(src):
-        dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip, fold=False) and not x.startswith(".")]
         for f in files:
             low = f.lower()
             if low not in ("packages.config", "libman.json", "bower.json", "package.json"):
@@ -161,7 +183,7 @@ def library_dirs(src, skip=SKIP, pkgs=()):
     (3) the source folder of a library build beside it (Content/scss/nifty next to the vendored Content/scss/nifty.css)."""
     found = []
     for d, dirs, files in os.walk(src):
-        dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip, fold=False) and not x.startswith(".")]
         rel = os.path.relpath(d, src).replace("\\", "/")
         if rel == "." or under(rel, found):
             continue
@@ -175,7 +197,7 @@ def library_dirs(src, skip=SKIP, pkgs=()):
             continue
         assets = vend = 0
         for d2, dirs2, files2 in os.walk(d):
-            dirs2[:] = [x for x in dirs2 if x not in skip and not x.startswith(".")]
+            dirs2[:] = [x for x in dirs2 if not skip_dir(d2, x, skip, fold=False) and not x.startswith(".")]
             for f in files2:
                 if not f.lower().endswith(ASSET_EXT):
                     continue
@@ -219,7 +241,7 @@ def docs_kit_dirs(src, skip=SKIP):
                 r = f"{rel}/{x}" if rel != "." else x
                 if not under(r, out):
                     out.append(r)
-        dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip, fold=False) and not x.startswith(".")]
     return out
 
 
@@ -241,7 +263,7 @@ def scan(src, skip=SKIP, ctx=None):
     pkgs, dirs = ctx or context(src, skip)
     out = []
     for d, dirs_, files in os.walk(src):
-        dirs_[:] = [x for x in dirs_ if x not in skip and not x.startswith(".")]
+        dirs_[:] = [x for x in dirs_ if not skip_dir(d, x, skip, fold=False) and not x.startswith(".")]
         for f in files:
             p = os.path.join(d, f)
             rel = os.path.relpath(p, src).replace("\\", "/")
@@ -263,7 +285,7 @@ def graphify_excludes(src, skip=SKIP, max_chars=MAX_ARG_CHARS, report=None):
     vend = set(files)
     total, vcount, exts = {}, {}, {}
     for d, dirs_, fs in os.walk(src):
-        dirs_[:] = [x for x in dirs_ if x not in skip and not x.startswith(".")]
+        dirs_[:] = [x for x in dirs_ if not skip_dir(d, x, skip, fold=False) and not x.startswith(".")]
         rel = os.path.relpath(d, src).replace("\\", "/")
         rel = "" if rel == "." else rel
         for f in fs:
