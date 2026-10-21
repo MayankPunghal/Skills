@@ -44,7 +44,7 @@ Done looks like: a `waivers.json` entry proposed with rule, path, reason, owner 
 
 ### Should not trigger (assessment)
 Prompt: "Assess these 40 repositories and estimate the effort to move them to AWS."
-Should trigger: no (migration-assessment does this)
+Should trigger: no (modernization-assessment does this)
 
 ### Should not trigger (port)
 Prompt: "Port this .NET Framework solution to .NET 10 with AWS Transform."

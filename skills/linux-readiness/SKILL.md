@@ -51,7 +51,7 @@ Scripts (run them, do not read them):
 py -X utf8 scripts/linux_readiness.py <repo-or-solution-folder> --out <dir> [--waivers waivers.json] [--level block|warn|info] [--gate] [--title NAME]
 py -X utf8 scripts/linux_readiness.py <folder-or-Dockerfile> --dockerfile-only --out <dir> [--gate]
 py -X utf8 scripts/linux_readiness.py --explain [LNX-ID | prefix | words]
-py -X utf8 scripts/linux_readiness.py --all          # in a migration-assessment workspace: every inventoried repository
+py -X utf8 scripts/linux_readiness.py --all          # in a modernization-assessment workspace: every inventoried repository
 py -X utf8 scripts/selftest.py [--keep <dir>]
 ```
 
@@ -181,7 +181,7 @@ Copied from the dotnet-modernization skill's playbooks; read the one for the are
 
 ## Relation to the other skills
 
-- **migration-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits feed the estimate.
+- **modernization-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits feed the estimate.
 - **dotnet-modernization** runs it as the `linux` gate of `verify.py` after a port and fixes hits by playbook.
 - All three skills ship the **same** `linux_readiness.py`, `_mdhtml.py` and `data/linux_readiness.json`. A change to one is copied to the other two in the same commit.
 
