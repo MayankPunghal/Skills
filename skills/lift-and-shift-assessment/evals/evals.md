@@ -29,7 +29,7 @@ Done looks like: scan_repo.py, solutions.py and the other gated tools refuse whi
 
 ### Should not trigger
 Prompt: "Port this WCF service to ASP.NET Core on Linux containers."
-Should trigger: no (migration-assessment or normal coding help).
+Should trigger: no (modernization-assessment or normal coding help).
 
 ## Acceptance test: reference benchmark
 
@@ -51,6 +51,19 @@ Done looks like: `stage_library.py` is run first; only files found nowhere (any 
 ### Returned mapping workbook
 Prompt: "The client sent the filled mapping Excel; is it right?"
 Done looks like: `check_mapping.py` is run; contradictions (unknown server, wrong environment, .NET Framework app on Linux, duplicate or invalid address, role contradiction) are listed as questions, not silently corrected; confirmed roles are named.
+
+### Fresh machine, no clones
+Prompt (new account, empty folder): "Assess the lift-and-shift of Acme's .NET apps on gitlab.acme.example; the token is in ACME_TOKEN."
+Should trigger: yes
+Done looks like: setup with `--gitlab-url` and `--gitlab-token-env` (the name, never the value); `gitlab_projects.py` lists projects read-only and the .xlsx is offered to share; `clone_repos.py` makes shallow, push-disabled clones outside the workspace and sets the roots; no file is edited by hand at any step.
+
+### Call answers and decisions
+Prompt: "On the call the client said only .NET is in scope and there is no MGN; log it."
+Done looks like: `intake.py --decision ... --source "client call, <date>"` and `--client-update` rows; nothing is moved or deleted; the next build shows them in 1.1 and sheet ClientAnswers.
+
+### Companion files
+Prompt: "Send the client the questions and the mapping sheet, and explain the hours to my manager."
+Done looks like: `build_mapping_sheet.py` (no server pre-filled), `build_open_questions.py` (full, short, email; answered items closed), `build_estimate_explainer.py` (self-check passes; numbers equal estimate.json); each Markdown file has an HTML twin.
 
 ## Output checks
 

@@ -12,6 +12,7 @@ import re
 import zipfile
 from xml.sax.saxutils import escape
 
+LINK_RID = "rId2"  # relationship id of the workbook link (the branded template has its own)
 LINK_URL = None  # when set, the word "workbook" in the text becomes a link to the companion workbook (it survives a PDF export)
 LINK_WORD = re.compile(r"\bworkbook\b")
 SHEET_NAMES = re.compile(r"(\bsheets? )([A-Z][A-Za-z]+(?: and [A-Z][A-Za-z]+)*)")  # "sheet Build", "sheets Outbound and Inbound"
@@ -30,7 +31,7 @@ def _runs(text, size=None, bold=False, color=None):
         for j, piece in enumerate(pieces):
             if j:
                 lr = ("<w:b/>" if bold else "") + '<w:color w:val="0563C1"/><w:u w:val="single"/>' + sz
-                out.append(f'<w:hyperlink r:id="rId2" w:history="1"><w:r><w:rPr>{lr}</w:rPr><w:t>workbook</w:t></w:r></w:hyperlink>')
+                out.append(f'<w:hyperlink r:id="{LINK_RID}" w:history="1"><w:r><w:rPr>{lr}</w:rPr><w:t>workbook</w:t></w:r></w:hyperlink>')
             br = "<w:br/>" if i and not j else ""
             if piece or br or len(pieces) == 1:
                 segs = SHEET_NAMES.split(piece)  # [text, "sheet ", name, text, ...]: the name is bold so the reader can find the tab

@@ -66,4 +66,13 @@ def why(st, real):
 def note(real):
     """What the pipeline must do on top of a plain restore for this solution to build (packages installed into a local folder)."""
     pk = real.get("packages_installed") or []
-    return ("The pipeline must install into a local packages folder: " + ", ".join(pk[:6]) + (" and more" if len(pk) > 6 else "")) if pk else ""
+    out = [("The pipeline must install into a local packages folder: " + ", ".join(pk[:6]) + (" and more" if len(pk) > 6 else "")) if pk else ""]
+    if real.get("status") == "PASS" and real.get("workarounds"):
+        out.append("Contingent pass: builds only with " + str(len(real["workarounds"])) + " workaround(s) in the build copy, listed in sheet Build")
+    return "; ".join(x for x in out if x)
+
+
+def result_label(real):
+    """The build result as shown in the workbook: a pass that needed workarounds in the copy is a contingent pass."""
+    st = real.get("status", "NOT RUN")
+    return "PASS with workaround" if st == "PASS" and real.get("workarounds") else st

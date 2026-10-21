@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-from _common import OUT, load_config, utf8_stdout, write_json
+from _common import OUT, gitlab_token, load_config, utf8_stdout, write_json
 
 CI_FILES = ["Jenkinsfile", "jenkinsfile", "Jenkinsfile.groovy", ".gitlab-ci.yml", "azure-pipelines.yml", "buildspec.yml", "appveyor.yml"]
 KEY_BRANCH = re.compile(r"^(master|main|FEATURE|develop|development|Development|release.*|Release.*|hotfix.*|HotFix.*|Staging|staging|Production|production|prod|PRIORITY|CRITICAL-FIX)$")
@@ -86,9 +86,7 @@ def main():
     root, cfg = load_config()
     os.chdir(root)
     g = cfg.get("gitlab") or {}
-    token = os.environ.get(g.get("token_env") or "GITLAB_TOKEN")
-    if not token:
-        raise SystemExit("set the read token in the environment variable named in assessment.json gitlab.token_env (default GITLAB_TOKEN); it is never printed")
+    token = gitlab_token(cfg)  # env var named in gitlab.token_env (Windows: also the user environment); never printed
     want = {x.strip().lower() for x in a.repos.split(",")} if a.repos else None
     import datetime
     since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30 * a.months)).strftime("%Y-%m-%dT00:00:00Z")

@@ -6,7 +6,7 @@ import glob
 import os
 import sys
 
-from _common import CONFIG_NAME, ISSUES_LOG, OUT, issues_log, load_config, load_state, read_json, run, utf8_stdout
+from _common import CONFIG_NAME, ISSUES_LOG, OUT, issues_log, load_config, load_state, read_json, run, slug, utf8_stdout
 import intake as I
 
 
@@ -50,7 +50,15 @@ def main():
     n, still = issues_log(root, cfg.get("client") or "")
     print(f"SKILL ISSUES: {n} logged ({still} open) in {ISSUES_LOG}. Log every script failure, misleading output, false gate, unclear step or workaround there as it happens.")
     sel = I.selected(cfg)
-    if not repos and not steps.get("discover"):
+    client = (cfg.get("client") or "").strip()
+    stem = os.path.join(OUT, "documents", slug(client))
+    extras = [(stem + "-open-questions.md", "build_open_questions.py   (full and short question lists and the client email, .md + .html)"),
+              (stem + "-effort-estimate-explained.md", "build_estimate_explainer.py   (every hour explained, .md + .html)")]
+    mapping = glob.glob(os.path.join(OUT, "documents", "*-Application-Server-Mapping.xlsx"))
+    if not cfg.get("estate_roots"):
+        nxt = ("no repository folders: clone them read-only (gitlab_projects.py, then clone_repos.py --dest <folder outside the workspace> --set-roots) "
+               "or give them with setup_assessment.py --roots <folders>")
+    elif not repos and not steps.get("discover"):
         nxt = "discover_estate.py"
     elif not cfg.get("intake") or I.pending(cfg, root):
         gaps = I.pending(cfg, root)
@@ -74,9 +82,14 @@ def main():
         nxt = "estimate_hours.py   (the estimate is missing or older than the data it counts)"
     elif not docs or newer("estimate.json", "documents/built.json"):
         nxt = "build_doc.py   (the single .docx for the whole project + the small workbook), then verify_doc.py"
+    elif not mapping and not os.path.exists(os.path.join(OUT, "infra", "mapping-check.json")):
+        nxt = "build_mapping_sheet.py   (the application-to-server sheet for the client to fill in; never pre-fill servers)"
+    elif any(not os.path.exists(f) or newer("documents/built.json", os.path.relpath(f, OUT)) for f, _ in extras):
+        nxt = next(cmd for f, cmd in extras if not os.path.exists(f) or newer("documents/built.json", os.path.relpath(f, OUT)))
     else:
         nxt = ("build_doc.py after any change, then verify_doc.py; upload the .docx to Drive; before finalising ask the user to confirm the environments "
-               "(intake.py --confirm-environments) and only finalise when the user says so (intake.py --finalize)")
+               "(intake.py --confirm-environments) and only finalise when the user says so (intake.py --finalize). Call answers: intake.py --client-update / --decision / "
+               "--release-step. Mapping workbook back: check_mapping.py --workbook <file>")
     print(f"NEXT: {nxt}")
 
 

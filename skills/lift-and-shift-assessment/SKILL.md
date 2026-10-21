@@ -1,8 +1,8 @@
 ---
 name: lift-and-shift-assessment
-description: "Produces a draft AWS lift-and-shift (Windows to Windows, EC2) assessment for a .NET estate of any size: one Word document for the whole project, a small companion workbook, and an estimate in developer working hours, solution by solution. Inventories solutions, projects, deployables and workloads, finds the environment variables, hard-coded addresses, third-party and licensed components and server-to-server connections the dev team must handle, checks that each solution builds, and prices only the work items the user selects. Use when a client's .NET applications move to AWS EC2 as they are (rehost, no C# change) and a dev-hours estimate is needed. Not for modernisation, Linux or native AWS services (use migration-assessment)."
+description: "Produces a draft AWS lift-and-shift (Windows to Windows, EC2) assessment for a .NET estate of any size: one Word document for the whole project, a small companion workbook, and an estimate in developer working hours, solution by solution. Inventories solutions, projects, deployables and workloads, finds the environment variables, hard-coded addresses, third-party and licensed components and server-to-server connections the dev team must handle, checks that each solution builds, and prices only the work items the user selects. Use when a client's .NET applications move to AWS EC2 as they are (rehost, no C# change) and a dev-hours estimate is needed. Not for modernisation, Linux or native AWS services (use modernization-assessment)."
 metadata:
-  version: 1.0.1
+  version: 1.1.0
 user-invocable: true
 argument-hint: "[help · intake · discover · scan · solutions · third-party · build-check · estimate · build-doc · verify · finalize]"
 allowed-tools:
@@ -40,6 +40,11 @@ You are the dev-team lead's assessor for an AWS rehost. The estate is moved as i
 - **The returned mapping workbook is checked, not trusted.** `check_mapping.py` finds contradictions between the client's answers, the DevOps list and the code; every finding goes back as a question.
 - **Questions stay short and answerable.** Do not ask what the code or the GitLab history answers; close a question when it is answered and say so in the question list.
 - **Skill owner log.** Log every script failure, false result or workaround in `SKILL-ISSUES.md` as it happens.
+- **Teams are separate.** The dev team owns application code and configuration only. DevOps owns servers, network, VPN, AD, server images, pipelines and migration tooling; the DB team owns the databases. Their work is never a dev-team risk or cost: it goes in a short hand-off list. Do not ask the user questions that belong to another team; record them as that team's open item.
+- **Never guess where an application runs.** Which application runs on which server comes from the client's mapping workbook (`build_mapping_sheet.py`, then `check_mapping.py`), never from server names. Group or label applications only from what the code shows (controllers, assemblies, READMEs) and say which labels rest on names alone.
+- **Every decision is logged.** A scope or approach decision from a call goes in with `intake.py --decision "<text>" --source "<who, date>"` (and `--client-update` for the 1.1 table) before anything is re-run. Never act on a decision by moving or deleting results: keep them and re-run.
+- **Every Markdown deliverable has an HTML twin** (offline, light and dark, branded when `docx_template` is set). The generators write both.
+- **Nothing is hand-edited.** Every setting has a flag (`setup_assessment.py`, `intake.py`); every deliverable has a script. If something needs a manual step, add the flag or script to the skill and log it in `SKILL-ISSUES.md`.
 
 ## Workflow
 
@@ -47,8 +52,10 @@ Scripts live in `<skill-base-dir>/scripts/` and run from the workspace folder (t
 
 ```
 Progress:
+- [ ] 0. New machine? Check the prerequisites below once
 - [ ] 1. context.py (state, NEXT)
-- [ ] 2. setup_assessment.py --client "<name>" --roots <repo folders>   (new workspace outside the repos)
+- [ ] 2. setup_assessment.py --client "<name>" [--gitlab-url URL --gitlab-token-env NAME] [--docx-template FILE]   (new workspace outside the repos)
+- [ ] 2b. No clones yet: gitlab_projects.py [filters] (read-only list; share the .xlsx), then clone_repos.py --dest <folder outside the workspace> [--only-dotnet] --set-roots
 - [ ] 3. discover_estate.py
 - [ ] 4. Intake questionnaire (ask, then intake.py --answers)
 - [ ] 5. branch_evidence.py (VPN, read-only): confirm the branch per repository; re-clone the chosen ones if they differ
@@ -58,9 +65,19 @@ Progress:
 - [ ] 8. config_template.py (only when CI/CD + Secrets Manager is selected)
 - [ ] 9. estimate_hours.py
 - [ ] 10. build_doc.py, then verify_doc.py
-- [ ] 11. Upload the .docx to Google Drive; give the link
-- [ ] 12. Review with the user; revise; finalise only when told
+- [ ] 10b. build_mapping_sheet.py (client fills it in), build_open_questions.py (full list, short list, client email), build_estimate_explainer.py
+- [ ] 11. Upload the .docx and workbook to Google Drive; give the links (setup_assessment.py --workbook-url <link>, rebuild)
+- [ ] 12. Review with the user; record call answers (intake.py --client-update / --decision / --release-step); revise; finalise only when told
+- [ ] 13. Mapping workbook back: check_mapping.py --workbook <file>; confirmed facts in through intake.py; rebuild
 ```
+
+**New machine, new account: prerequisites.** The skill folder is all you need; nothing from an earlier session is assumed.
+- Python 3.10+ (`py` on Windows), standard library only; git on PATH (with `core.longpaths` on Windows).
+- For the real build: Visual Studio Build Tools with MSBuild and the web development build tools (`dotnet build` cannot build web projects), and the .NET SDKs the solutions target. `build_check.py --toolchain` says what is there; installing Build Tools is asked first. NuGet packages, nuget.exe and old reference-assembly packs are standing-approved downloads (see Principles).
+- GitLab: the host reachable (often a VPN) and a read-only token in an environment variable; give its NAME with `--gitlab-token-env` (never the value). The API is used with GET only.
+- Branded document (optional): the company .docx template outside the skill, given with `--docx-template`. Page numbers in its table of contents come from Word (Windows, Word installed) plus `pip install pymupdf`; without them Word fills them in when the file is opened.
+- The DevOps server list (.xlsx) when there is one: `map_infra.py --servers <file>`.
+- Sharing: the Google Drive connector, for the upload step.
 
 Details of each step: [workflow.md](references/workflow.md). The hour rates and how they were calibrated: [estimate-model.md](references/estimate-model.md). The questionnaire: [intake.md](references/intake.md).
 

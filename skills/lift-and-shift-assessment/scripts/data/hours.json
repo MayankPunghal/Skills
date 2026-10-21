@@ -10,6 +10,7 @@
  "items": {
   "cicd_secrets": {
    "label": "CI/CD pipeline + Secrets Manager",
+   "label_no_pipeline": "Environment configuration + Secrets Manager",
    "lines": [
     {
      "id": "env_config",

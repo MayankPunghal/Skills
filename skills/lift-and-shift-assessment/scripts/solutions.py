@@ -18,7 +18,7 @@ A project shared by two solutions is listed in both and counted once in the esta
 import os
 import re
 
-from _common import OUT, SOURCE_DIR_SKIP, load_config, load_state, mark_step, read_json, utf8_stdout, write_json
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, load_config, load_state, mark_step, read_json, utf8_stdout, write_json
 import intake as I
 
 ENV_VAR = re.compile(r'GetEnvironmentVariable\(\s*"([A-Za-z0-9_.]+)"')
@@ -35,7 +35,7 @@ def env_vars_of(root, rel):
     base = os.path.dirname(os.path.join(root, rel))
     found = set()
     for d, dirs, files in os.walk(base):
-        dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
         for f in files:
             if f.lower().endswith(".cs"):
                 try:

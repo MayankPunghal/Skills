@@ -26,6 +26,15 @@ def load_rows(path, sheet=None):
     return book[name], name
 
 
+HV_NAMES = {"vmware": "VMware", "kvm/qemu": "KVM/QEMU", "proxmox": "Proxmox", "hyper-v": "Hyper-V", "hyperv": "Hyper-V"}
+
+
+def _hv(v):
+    """Hypervisor name with one spelling (the lists mix 'VMware' and 'Vmware'); '-' means not stated."""
+    v = str(v or "").strip()
+    return "" if v in ("", "-") else HV_NAMES.get(v.lower(), v)
+
+
 def import_servers(path, sheet=None):
     cfg = data("server_roles.json")
     rows, sheet_name = load_rows(path, sheet)
@@ -66,8 +75,8 @@ def import_servers(path, sheet=None):
         osn = cell(r, "os")
         family = "windows" if re.search(r"(?i)windows", osn) else "linux" if re.search(r"(?i)ubuntu|linux|centos|debian|rhel|red hat|suse|alma|rocky", osn) else "unknown"
         servers.append({"name": name, "os": osn or "", "os_family": family, "environment": env or "", "roles": got, "cores": cell(r, "cores"), "memory_gb": cell(r, "memory_gb"),
-                        "storage_gb": cell(r, "storage_gb"), "sql_edition": sql if sql != "-" else "", "hypervisor": cell(r, "hypervisor") if cell(r, "hypervisor") != "-" else "",
-                        "virtual": cell(r, "virtual"), "ip": cell(r, "ip"), "applications": apps[:6000]})
+                        "storage_gb": cell(r, "storage_gb"), "sql_edition": sql if sql != "-" else "", "hypervisor": _hv(cell(r, "hypervisor")),
+                        "virtual": cell(r, "virtual").capitalize(), "ip": cell(r, "ip"), "applications": apps[:6000]})
     return {"source": os.path.basename(path), "sheet": sheet_name, "columns_found": sorted(idx), "count": len(servers), "servers": servers}
 
 

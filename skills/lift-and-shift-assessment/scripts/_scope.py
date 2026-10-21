@@ -11,7 +11,7 @@ import json
 import os
 import re
 
-from _common import read_text, rel
+from _common import skip_dir, read_text, rel
 
 MANIFESTS = {"package.json": "Node.js", "requirements.txt": "Python", "pyproject.toml": "Python", "setup.py": "Python", "pipfile": "Python",
              "pom.xml": "Java", "build.gradle": "Java", "build.gradle.kts": "Java", "go.mod": "Go", "gemfile": "Ruby",
@@ -42,7 +42,7 @@ OUTPUT_HINT = re.compile(r"(?i)(wwwroot|content|scripts|app_themes|themes|views|
 def _walk(root, skip, depth=None):
     base = os.path.normpath(root)
     for d, dirs, files in os.walk(root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         if depth is not None and os.path.relpath(d, base).count(os.sep) + (0 if d == base else 1) > depth:
             dirs[:] = []
         yield d, files

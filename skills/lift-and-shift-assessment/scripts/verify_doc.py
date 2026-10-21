@@ -18,7 +18,7 @@ import sys
 import zipfile
 import xml.dom.minidom
 
-from _common import OUT, load_config, read_json, utf8_stdout
+from _common import skip_dir, OUT, load_config, read_json, utf8_stdout
 import _xlsx
 
 SECRET_PAIRS = [re.compile(r"(?i)\b(?:password|pwd)\s*=\s*([^;\"'<>\s&]{4,})"),
@@ -33,7 +33,7 @@ def secret_values(cfg):
     skip = {d.lower() for d in cfg.get("exclude_dirs", [])} | {".git", "bin", "obj", "node_modules", "packages"}
     for root in cfg.get("estate_roots", []):
         for dp, dn, fs in os.walk(root):
-            dn[:] = [d for d in dn if d.lower() not in skip]
+            dn[:] = [d for d in dn if not skip_dir(dp, d, skip)]
             for f in fs:
                 p = os.path.join(dp, f)
                 if f.lower().endswith(SECRET_FILES) and os.path.getsize(p) < 1_500_000:
@@ -47,7 +47,7 @@ def secret_values(cfg):
     return sorted(found | cores)
 
 
-PROSE_WORD_LIMIT = 1800  # plus PROSE_PER_SOLUTION for each solution: the workload and tool lists grow with the estate
+PROSE_WORD_LIMIT = 1900  # plus PROSE_PER_SOLUTION for each solution: the workload and tool lists grow with the estate. 1.1.0: 1800 -> 1900, the fixed sections alone (branch note, release process, client answers) came to about 1850 words, so a 1-2 solution estate failed with no padding at all
 PROSE_PER_SOLUTION = 25
 HEADINGS = ["1. Document control", "1.1 Scope box", "2. Executive summary", "3. 7R disposition", "4. Current state", "5. Prerequisites",
             "5.1 Make the build reproducible", "Secrets into Secrets Manager", "Internal addresses and connectivity", "Framework version",
@@ -79,13 +79,17 @@ def main():
     try:
         z = zipfile.ZipFile(built["docx"])
         for n in z.namelist():
-            xml.dom.minidom.parseString(z.read(n))
+            if n.endswith((".xml", ".rels")):  # a branded document also holds images and fonts
+                xml.dom.minidom.parseString(z.read(n))
         doc_xml = z.read("word/document.xml").decode("utf-8")
+        if "Table of Contents" in doc_xml and 'w:fldCharType="end"' in doc_xml:  # branded: the cover, welcome page and contents list are the template's, not our prose
+            doc_xml = doc_xml.split('w:fldCharType="end"', 1)[1]
         gate("opens", True, f"{len(z.namelist())} parts")
     except Exception as ex:
         gate("opens", False, str(ex))
         sys.exit(1)
     text = text_of(doc_xml)
+    text = re.sub(r"Section (\d+)\s+", r"\1. ", text)  # branded headings: a green "Section N" line above the title
     wb = _xlsx.read(built["xlsx"])
     sols = idx["solutions"]
     missing = [s["id"] for s in sols if s["solution"] not in text] if len(sols) <= 30 else []  # the document caps its tables; the workbook lists all

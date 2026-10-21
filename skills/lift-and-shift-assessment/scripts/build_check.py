@@ -19,8 +19,9 @@ import re
 import shutil
 import time
 
-from _common import OUT, SOURCE_DIR_SKIP, load_config, mark_step, read_json, run, slug, tool_exe, utf8_stdout, write_json
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, load_config, mark_step, read_json, run, slug, tool_exe, utf8_stdout, write_json
 import intake as I
+import _buildfix as BF
 
 HINT = re.compile(r"<HintPath>([^<]+)</HintPath>", re.I)
 PROJREF = re.compile(r'<ProjectReference\s+Include="([^"]+)"', re.I)
@@ -55,7 +56,7 @@ def pack_installed(ver):
 def needed_frameworks(work):
     found = set()
     for dp, dn, fs in os.walk(work):
-        dn[:] = [d for d in dn if d not in ("packages", "node_modules", "bin", "obj")]
+        dn[:] = [d for d in dn if not skip_dir(dp, d, ("packages", "node_modules", "bin", "obj"), fold=False)]
         for f in fs:
             if f.lower().endswith((".csproj", ".vbproj")):
                 found.update(v.lower() for v in TFV.findall(project_text(os.path.join(dp, f)) or ""))
@@ -266,12 +267,28 @@ def restore_hint_packages(work, tc):
     return done
 
 
+def work_base(root):
+    """Where the build copies go. Default assessment/build/work. MSBuild tools such as SGEN still fail on Windows paths over 260 characters,
+    and a deep workspace (a temp or OneDrive folder) plus a deep repository breaks the build for no reason of the client's. So when the
+    workspace path is long, the copies go to a short folder in the tool cache instead (%LOCALAPPDATA%/lsa/<6-character id of the
+    workspace>); assessment.json -> build_work_dir overrides both. build/index.json records the folder used."""
+    cfg = read_json(os.path.join(root, "assessment.json"), {}) or {}
+    if (cfg.get("build_work_dir") or "").strip():
+        return os.path.abspath(cfg["build_work_dir"])
+    default = os.path.abspath(os.path.join(root, OUT, "build", "work"))
+    if os.name == "nt" and len(default) > 60:
+        import hashlib
+        tag = hashlib.sha1(os.path.abspath(root).lower().encode()).hexdigest()[:6]
+        return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "lsa", tag)
+    return default
+
+
 def real_build(root, sol, inv, tc, approved, repo_root, siblings=None):
     if not approved:
         return {"status": "NOT RUN", "detail": "restore downloads NuGet packages: run with --approve-downloads after the user said yes"}
     if not tc["msbuild"]:
         return {"status": "NOT RUN", "detail": "MSBuild not found on this machine; install Visual Studio Build Tools (needs the user's approval) and run again"}
-    work = os.path.abspath(os.path.join(OUT, "build", "work", sol["repo"]))
+    work = os.path.join(work_base(root), sol["repo"])
     copy_repo(repo_root, work)
     if siblings:
         stage_siblings(siblings, repo_root, work)
@@ -290,11 +307,23 @@ def real_build(root, sol, inv, tc, approved, repo_root, siblings=None):
     restored = restore_hint_packages(work, tc)
     fw_root, fw_failed = framework_root(needed_frameworks(work), tc)
     extra = [f"-p:TargetFrameworkRootPath={fw_root}"] if fw_root else []
-    code, out = run([tc["msbuild"], target, "-restore", "-t:Build", f"-p:Configuration={config}", *extra, "-m", "-nologo", "-v:minimal"], cwd=work, timeout=3600)
-    errs = [l.strip() for l in out.splitlines() if ERROR.search(l)]
+    workarounds, props = [], []
+    for _round in range(8):  # a failed build may be fixable in the copy (see _buildfix.py); fix, then build again
+        code, out = run([tc["msbuild"], target, "-restore", "-t:Build", f"-p:Configuration={config}", *extra, *props, "-m", "-nologo", "-v:minimal"], cwd=work, timeout=3600)
+        errs = [l.strip() for l in out.splitlines() if ERROR.search(l)]
+        if code == 0 or not errs or all("MSB3644" in e for e in errs):
+            break
+        fixed, new_props = BF.autofix(work, out, tc)
+        if not fixed and not new_props:
+            break
+        workarounds += fixed
+        props += new_props
     if code != 0 and errs and all("MSB3644" in e for e in errs):
         return {"status": "NOT RUN", "detail": "the .NET Framework reference assemblies for " + ", ".join(fw_failed or needed_frameworks(work)) + " are not on this machine and could not be fetched; the build says nothing about the code"}
-    return {"status": "PASS" if code == 0 else "FAIL", "stage": "build", "configuration": config, "errors": sorted(set(errs))[:15], "error_count": len(set(errs)), "seconds": round(time.time() - started), "packages_installed": restored}
+    res = {"status": "PASS" if code == 0 else "FAIL", "stage": "build", "configuration": config, "errors": sorted(set(errs))[:15], "error_count": len(set(errs)), "seconds": round(time.time() - started), "packages_installed": restored}
+    if workarounds:
+        res["workarounds"] = workarounds  # PASS plus workarounds = a contingent pass; FAIL plus workarounds = what was tried
+    return res
 
 
 def main():
@@ -321,17 +350,22 @@ def main():
     if not idx:
         raise SystemExit("run solutions.py first")
     prev = {s["id"]: s for s in (read_json(os.path.join(OUT, "build", "index.json"), {}) or {}).get("solutions", [])}
-    rows = []
+    statics = {}
     for s in idx["solutions"]:
         inv = read_json(os.path.join(OUT, "inventory", s["repo"] + ".json"))
-        repo_root = inv["root"]
-        status, issues, pre, siblings = static_check(repo_root, s, inv)
-        old = prev.get(s["id"], {}).get("real", {"status": "NOT RUN", "detail": "not attempted yet"})
-        real = old
-        if a.run and (not a.solution or a.solution == s["id"]):
-            real = real_build(root, s, inv, tc, a.approve_downloads, repo_root, siblings)
+        statics[s["id"]] = (inv, inv["root"]) + static_check(inv["root"], s, inv)
+    reals = {}
+    todo = [s for s in idx["solutions"] if a.run and (not a.solution or a.solution == s["id"])]
+    todo.sort(key=lambda s: any("build order" in p for p in statics[s["id"]][4]))  # a solution that reads another repository's bin output is built after the others
+    for s in todo:
+        inv, repo_root, status, issues, pre, siblings = statics[s["id"]]
+        reals[s["id"]] = real_build(root, s, inv, tc, a.approve_downloads, repo_root, siblings)
+    rows = []
+    for s in idx["solutions"]:
+        inv, repo_root, status, issues, pre, siblings = statics[s["id"]]
+        real = reals.get(s["id"]) or prev.get(s["id"], {}).get("real", {"status": "NOT RUN", "detail": "not attempted yet"})
         rows.append({"id": s["id"], "static": {"status": status, "issues": issues, "prerequisites": pre, "sibling_folders": siblings}, "real": real})
-    write_json(os.path.join(OUT, "build", "index.json"), {"toolchain": tc, "solutions": rows})
+    write_json(os.path.join(OUT, "build", "index.json"), {"toolchain": tc, "work_dir": work_base(root), "solutions": rows})
     mark_step(root, "build_static")
     if a.run:
         mark_step(root, "build_real", "done" if all(r["real"]["status"] in ("PASS", "FAIL") for r in rows) else "partial")

@@ -12,7 +12,7 @@ import os
 import re
 from collections import OrderedDict
 
-from _common import OUT, SOURCE_DIR_SKIP, read_json, read_text, rel, save_config
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, read_json, read_text, rel, save_config
 from _infra import plausible_host
 
 CFG_EXT = {".config", ".json", ".xml", ".ini", ".properties", ".env", ".conf", ".settings", ".toml", ".yml", ".yaml", ".pubxml"}
@@ -228,7 +228,7 @@ def config_map(repo_root, inv, cfg, host_kind, private_ip):
     pdirs = sorted(((os.path.normpath(os.path.dirname(os.path.join(repo_root, p["path"]))), p["name"]) for p in inv["projects"]), key=lambda x: -len(x[0]))
     rows, files = [], OrderedDict()
     for d, dirs, fns in os.walk(repo_root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
         for fn in sorted(fns):
             ext = os.path.splitext(fn)[1].lower()
             low = fn.lower()

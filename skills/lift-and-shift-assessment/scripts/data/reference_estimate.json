@@ -1,0 +1,53 @@
+{
+ "total": [
+  72,
+  108
+ ],
+ "solutions": 2,
+ "deployables": 16,
+ "lines": [
+  [
+   "Secrets mapping (environment variables and service configuration)",
+   [
+    20,
+    30
+   ]
+  ],
+  [
+   "DNS and connection-value changes",
+   [
+    6,
+    10
+   ]
+  ],
+  [
+   "Third-party re-key support (5 integrations)",
+   [
+    6,
+    10
+   ]
+  ],
+  [
+   "Test-launch validation (16 deployables)",
+   [
+    16,
+    24
+   ]
+  ],
+  [
+   "Cutover and defect support (3 waves)",
+   [
+    12,
+    16
+   ]
+  ],
+  [
+   "Contingency (about 20%)",
+   [
+    12,
+    18
+   ]
+  ]
+ ],
+ "_doc": "The manager's reference estimate the 'sample' rates in hours.json were calibrated to (estimate-model.md). build_estimate_explainer.py prints it; change both together."
+}

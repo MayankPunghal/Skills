@@ -47,7 +47,7 @@ def main():
         raise SystemExit("no work item selected in the intake: nothing to estimate")
     rekey = {s["id"]: s["rekey_count"] for s in tp["solutions"]}
     ia = cfg.get("intake") or {}
-    piped = {x.strip().lower() for x in re.split(r"[,;\n]", str(ia.get("pipeline_solutions") or "")) if x.strip()} if ia.get("pipeline_scope") == "selected" else None
+    piped = {x.strip().lower() for x in re.split(r"[,;\n]", str(ia.get("pipeline_solutions") or "")) if x.strip()} if ia.get("pipeline_scope") == "selected" else (set() if ia.get("pipeline_scope") == "none" else None)
     seen, per = set(), []
     for s in idx["solutions"]:
         own = [p for p in s["projects"] if (s["repo"], p["path"]) not in seen]
@@ -100,7 +100,7 @@ def main():
     final = (cfg.get("intake") or {}).get("final")
     est = {
         "work_items": items, "solutions": per,
-        "by_work_item": {k: {"label": rates["items"][k]["label"], "low": half(v["low"]), "high": half(v["high"])} for k, v in by_item.items()},
+        "by_work_item": {k: {"label": (rates["items"][k].get("label_no_pipeline") if piped == set() and rates["items"][k].get("label_no_pipeline") else rates["items"][k]["label"]), "low": half(v["low"]), "high": half(v["high"])} for k, v in by_item.items()},
         "subtotal": {"low": half(low), "high": half(high)}, "contingency_pct": pct,
         "contingency": {"low": half(low * pct / 100), "high": half(high * pct / 100)},
         "total": {"low": t_low, "high": t_high}, "days_low": half(t_low / day), "days_high": half(t_high / day), "day_hours": day,

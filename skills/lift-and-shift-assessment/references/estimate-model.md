@@ -43,7 +43,7 @@ A workload is one solution in one environment; unknown environments count as one
 
 ## How the sample was used
 
-The manager's reference estimate (two repositories, 16 deployables, 72-108 h) is the source of truth. Its lines: secrets mapping 20-30 h (34 environment variables, 14 service configs), DNS and connection values 6-10 h, third-party re-key 6-10 h (5 integrations), test-launch validation 16-24 h (16 deployables), cutover and defect support 12-16 h (3 waves), contingency 12-18 h. The rates marked sample reproduce those lines from counts measured in the reference code. The SIA workloads are 3 (web app dev, web app prod and staging, update services), so cutover is priced per workload (4-5.3 h each) and validation per deployable launched in each environment (16 launches at 1-1.5 h).
+The manager's reference estimate (two repositories, 16 deployables, 72-108 h) is the source of truth. Its lines: secrets mapping 20-30 h (34 environment variables, 14 service configs), DNS and connection values 6-10 h, third-party re-key 6-10 h (5 integrations), test-launch validation 16-24 h (16 deployables), cutover and defect support 12-16 h (3 waves), contingency 12-18 h. The rates marked sample reproduce those lines from counts measured in the reference code. The reference has 3 workloads (web app dev, web app prod and staging, update services), so cutover is priced per workload (4-5.3 h each) and validation per deployable launched in each environment (16 launches at 1-1.5 h).
 
 Acceptance test: the sample-basis lines of the reference benchmark run must total within a few hours of 72-108 h (see [evals](../evals/evals.md)).
 

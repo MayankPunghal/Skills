@@ -44,6 +44,17 @@ def col(head, start):
     return next((i for i, h in enumerate(head) if h.startswith(start)), None)
 
 
+def env_cols(head):
+    """Environment columns by header: '<Environment> server(s)' (any environment the sheet names, as build_mapping_sheet.py writes them),
+    else the four classic ones. Returns {environment as written: column index}."""
+    out = {}
+    for i, h in enumerate(head):
+        m = re.match(r"^(.+?)\s+servers?\b", h)
+        if m and not h.startswith(("server name", "other")):
+            out[m.group(1).strip().title() if m.group(1).strip() not in ("uat", "cdn") else m.group(1).strip().upper()] = i
+    return out or {env: col(head, start) for start, env in ENV_COLS}
+
+
 def names_in(text):
     return [t for t in re.split(r"[,;/\n]+|\s{2,}", str(text or "")) if t.strip() and t.strip().lower() not in EMPTY]
 
@@ -80,7 +91,7 @@ def main():
         if not rows:
             continue
         head, body = cells(rows, first)
-        icol = {env: col(head, start) for start, env in ENV_COLS}
+        icol = env_cols(head)
         for r in body:
             name = str(r[0]).strip() if r else ""
             if not name:

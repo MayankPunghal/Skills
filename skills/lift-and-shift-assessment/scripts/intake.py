@@ -8,6 +8,19 @@
                                                                   the environments (and CI status) of one solution
     python <skill>/scripts/intake.py --confirm-environments       the user confirmed the environment lists (needed to finalise)
     python <skill>/scripts/intake.py --finalize "<who said so>"   the user said the document is final (until then everything is DRAFT)
+    python <skill>/scripts/intake.py --client-update "TOPIC" "ANSWER" "EFFECT ON THIS PLAN"
+                                                                  what the client said on a call (document 1.1 and sheet ClientAnswers);
+                                                                  the same topic again replaces its row; --remove-client-update TOPIC drops it
+    python <skill>/scripts/intake.py --release-step "STEP" "WHAT HAPPENS"
+                                                                  how releases are built and deployed today, one step per call, in order
+                                                                  (section 7 and sheet ReleaseToday); --clear-release-steps starts again
+    python <skill>/scripts/intake.py --branch-note REPO "WHY THIS BRANCH"
+                                                                  why a branch was chosen for a repository (sheet Branches)
+    python <skill>/scripts/intake.py --open-question "QUESTION" "WHY IT MATTERS" "WHO ANSWERS" [--status open|waiting|closed]
+                                                                  an extra item for build_open_questions.py (the same question again
+                                                                  updates it; --status closed closes it)
+    python <skill>/scripts/intake.py --decision "TEXT" [--source "client call, <date>"]
+                                                                  a key decision, logged in assessment/documents/decision-log.md
     python <skill>/scripts/intake.py                              show the recorded answers
 
 Guardrail: scan_repo.py, solutions.py, build_check.py, config_template.py, estimate_hours.py and build_doc.py call require() and stop while
@@ -74,6 +87,9 @@ def signals(root):
                 add("licensed-components")
             if i["rekey"]:
                 add("rekey-integrations")
+    idx = read_json(os.path.join(root, OUT, "solutions", "index.json"), {}) or {}
+    if idx.get("loose_projects"):
+        add("loose-projects", len(idx["loose_projects"]))
     bc = read_json(os.path.join(root, OUT, "build", "index.json"), {}) or {}
     for s in bc.get("solutions", []):
         if s["static"]["status"] == "BLOCKED":
@@ -221,6 +237,23 @@ def summary(cfg, root=None):
     return "\n".join(out)
 
 
+DECISION_LOG = os.path.join(OUT, "documents", "decision-log.md")
+
+
+def log_decision(root, text, source=None):
+    """Append a numbered, dated row to the decision log (a Markdown table the user can share). Entries are never rewritten."""
+    path = os.path.join(root, DECISION_LOG)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("# Decision log\n\nKey decisions for this assessment, newest last. Each one is applied to the document on the next build.\n\n"
+                     "| # | Date | Decision | Source |\n|---|---|---|---|\n")
+    n = sum(1 for line in open(path, encoding="utf-8") if re.match(r"^\|\s*\d+\s*\|", line)) + 1
+    cell = lambda s: (s or "").replace("|", "/").replace("\n", " ").strip()
+    with open(path, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(f"| {n} | {datetime.date.today().isoformat()} | {cell(text)} | {cell(source) or 'the user'} |\n")
+
+
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
@@ -236,6 +269,15 @@ def main():
     ap.add_argument("--confirm-environments", action="store_true", help="the user confirmed the environment lists")
     ap.add_argument("--finalize", metavar="WHO", help="the user said the documents are final (name or role of who said so)")
     ap.add_argument("--reopen", action="store_true", help="the user wants to revise a finalised document")
+    ap.add_argument("--client-update", nargs=3, metavar=("TOPIC", "ANSWER", "EFFECT"), help="what the client said on a call and what it changes")
+    ap.add_argument("--remove-client-update", metavar="TOPIC")
+    ap.add_argument("--release-step", nargs=2, metavar=("STEP", "WHAT"), help="one step of today's release process, in order")
+    ap.add_argument("--clear-release-steps", action="store_true")
+    ap.add_argument("--branch-note", nargs=2, metavar=("REPO", "WHY"), help="why this branch was chosen for the repository (folder name)")
+    ap.add_argument("--open-question", nargs=3, metavar=("QUESTION", "WHY", "WHO"), help="an extra open question for build_open_questions.py")
+    ap.add_argument("--status", choices=["open", "waiting", "closed"], default="open", help="status of --open-question")
+    ap.add_argument("--decision", help="a key decision to log (assessment/documents/decision-log.md)")
+    ap.add_argument("--source", help="where the decision came from (e.g. 'client call, 2026-10-19')")
     a = ap.parse_args()
     if a.questions:
         print(json.dumps(questions(a.stage), indent=1, ensure_ascii=False))
@@ -276,6 +318,32 @@ def main():
     if a.reopen:
         it.pop("final", None)
         msg.append("reopened: back to DRAFT")
+    if a.client_update:
+        topic, answer, effect = (x.strip() for x in a.client_update)
+        rows = [r for r in it.get("client_updates") or [] if r[0].strip().lower() != topic.lower()]
+        it["client_updates"] = rows + [[topic, answer, effect]]
+        msg.append(f"client update '{topic}' recorded ({len(it['client_updates'])} in all)")
+    if a.remove_client_update:
+        before = len(it.get("client_updates") or [])
+        it["client_updates"] = [r for r in it.get("client_updates") or [] if r[0].strip().lower() != a.remove_client_update.strip().lower()]
+        msg.append(f"client update '{a.remove_client_update}' removed" if len(it["client_updates"]) < before else f"no client update named '{a.remove_client_update}'")
+    if a.clear_release_steps:
+        it["release_process"] = []
+        msg.append("release steps cleared")
+    if a.release_step:
+        it.setdefault("release_process", []).append([x.strip() for x in a.release_step])
+        msg.append(f"release step {len(it['release_process'])} recorded")
+    if a.branch_note:
+        cfg.setdefault("branch_notes", {})[a.branch_note[0].strip().lower()] = a.branch_note[1].strip()
+        msg.append(f"branch note for {a.branch_note[0].strip().lower()} recorded")
+    if a.open_question:
+        q, why, who = (x.strip() for x in a.open_question)
+        rows = [e for e in cfg.get("open_questions_extra") or [] if e.get("question", "").strip().lower() != q.lower()]
+        cfg["open_questions_extra"] = rows + [{"question": q, "why": why, "who": who, "status": a.status}]
+        msg.append(f"open question recorded ({a.status})")
+    if a.decision:
+        log_decision(root, a.decision, a.source)
+        msg.append("decision logged in assessment/documents/decision-log.md")
     if msg:
         save_config(root, cfg)
         print(f"saved to {CONFIG_NAME}: " + "; ".join(msg))

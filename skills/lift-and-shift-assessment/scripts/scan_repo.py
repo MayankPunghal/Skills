@@ -26,7 +26,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
+from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
                      utf8_stdout, write_json)
 
 # appsettings*.json, jobsettings.json, settings.json, secrets.json …: .NET configuration JSON (launchSettings is IDE-only)
@@ -206,7 +206,7 @@ class Scan:
         oos = [os.path.normpath(os.path.join(self.root, x)) for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]  # non-.NET projects: out of scope
         self.facts["out_of_scope_skipped"] = [x.replace("\\", "/") for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+            dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
             for fn in files:
                 path = os.path.join(d, fn)
                 ext = os.path.splitext(fn)[1].lower()
@@ -707,7 +707,7 @@ class Scan:
             lib, ver = m.group(1).lower(), m.group(2) or ""
             old = (lib == "jquery" and ver and ver_lt(ver, "3.5.0")) or (lib == "bootstrap" and ver and ver_lt(ver, "3.4.1")) or lib == "angular" or (lib == "modernizr" and ver and ver_lt(ver, "3.0"))
             if old:
-                rule = next((r for r in self.rules if r["id"] == "FE-LEGACY-LIBS"), None)  # a front-end library check belongs to migration-assessment
+                rule = next((r for r in self.rules if r["id"] == "FE-LEGACY-LIBS"), None)  # a front-end library check belongs to modernization-assessment
                 if rule:
                   self.add(rule, self.project_of(os.path.join(self.root, fp)), fp, 1, f"{os.path.basename(fp)} ({lib} {ver or 'version in file'})")
         # tests
@@ -725,7 +725,7 @@ class Scan:
                 fw["mstest-v1"] += 1
             base = os.path.dirname(os.path.join(self.root, p["path"]))
             for d, dirs, files in os.walk(base):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if fn.endswith((".cs", ".vb")):
                         try:
@@ -787,7 +787,7 @@ class Scan:
     def case_paths(self):
         idx = {}
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP) and not x.startswith(".")]
             for fn in files:
                 rp = rel(os.path.join(d, fn), self.root)
                 idx.setdefault(rp.lower(), rp)
@@ -796,7 +796,7 @@ class Scan:
             base = os.path.dirname(p["path"])
             pdir = os.path.join(self.root, base)
             for d, dirs, files in os.walk(pdir):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if os.path.splitext(fn)[1].lower() not in (".cs", ".vb", ".cshtml", ".aspx", ".ascx", ".master", ".config", ".vbhtml"):
                         continue
@@ -903,7 +903,7 @@ def nuget_info(pid, versions, cache_dir):
     elif raw is None:
         url = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/index.json"
         try:
-            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"})
+            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 body = r.read()
                 if r.headers.get("Content-Encoding") == "gzip" or body[:2] == b"\x1f\x8b":
@@ -977,7 +977,7 @@ def platform_assets(pid, entries, versions, cache_dir):
         try:
             reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
             def get(u):
-                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"}), timeout=20) as r:
+                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"}), timeout=20) as r:
                     b = r.read()
                 return json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
             leaf = get(get(reg)["catalogEntry"])

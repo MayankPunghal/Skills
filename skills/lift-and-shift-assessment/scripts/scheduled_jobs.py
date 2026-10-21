@@ -1,6 +1,6 @@
 """Scheduled and background jobs of a source tree: what runs on a schedule or in the background, what triggers it, how often,
 what it runs and whether the scheduler is Windows-only. Standard library only; shared by the codebase-documenter
-(build-and-run operations section) and the migration-assessment scanner (scheduled jobs table and export).
+(build-and-run operations section) and the modernization-assessment scanner (scheduled jobs table and export).
 
     import scheduled_jobs as SJ
     jobs = SJ.scan(root)    # [{scheduler, name, schedule, target, file, line, windows_only, configured_by}]
@@ -16,6 +16,28 @@ review, never enforced. Schedule expressions are shown; secrets are never read (
 """
 import os
 import re
+
+
+def nuget_folder(path):
+    """A restored NuGet packages folder (repositories.config, or packages/<Id>.<version>/*.nupkg), not application source in a folder named Packages."""
+    try:
+        if os.path.exists(os.path.join(path, "repositories.config")):
+            return True
+        for sub in os.listdir(path)[:8]:
+            q = os.path.join(path, sub)
+            if os.path.isdir(q) and any(f.lower().endswith(".nupkg") for f in os.listdir(q)):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def skip_dir(parent, name, skip, fold=True):
+    """True when a walk should not enter folder `name` under `parent`: its name is in `skip`. A folder named packages is skipped only when it
+    is a NuGet restore folder: application source can live in a folder of that name."""
+    if name.lower() == "packages":
+        return "packages" in skip and nuget_folder(os.path.join(parent, name))
+    return (name.lower() if fold else name) in skip
 
 MAX_BYTES = 2_500_000
 SKIP_DIRS = {".git", ".vs", ".idea", "bin", "obj", "node_modules", "packages", "dist", "build", "out", "target", "vendor", ".venv",
@@ -112,7 +134,7 @@ class Scan:
 
     def run(self):
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in self.skip and not x.startswith("."))
+            dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, self.skip) and not x.startswith("."))
             for fn in sorted(files):
                 ext = os.path.splitext(fn)[1].lower()
                 path = os.path.join(d, fn)

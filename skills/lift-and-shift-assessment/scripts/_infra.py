@@ -12,7 +12,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _common import SOURCE_DIR_SKIP, data, mask, read_text, rel
+from _common import skip_dir, SOURCE_DIR_SKIP, data, mask, read_text, rel
 
 CONFIG_EXT = {".config", ".json", ".xml", ".yml", ".yaml", ".ini", ".env", ".properties", ".settings", ".toml", ".conf"}
 CODE_EXT = {".cs", ".vb"}
@@ -129,7 +129,7 @@ def detect_dependencies(repo_root, inv, facts, cfg):
         return next((pp for d, pp in pdirs if n.startswith(d + os.sep)), None)
 
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
         for fn in files:
             path = os.path.join(d, fn)
             ext = os.path.splitext(fn)[1].lower()
@@ -258,7 +258,7 @@ def hosting_evidence(repo_root, inv, cfg):
             add("windows" if p.get("type") != "netcore-worker" else "neutral", f"service project ({p.get('type')})", "indicative", p["path"], 1,
                 f"{p['name']} is a service/worker: installed as a Windows service or systemd unit (check the install scripts)")
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         depth = os.path.relpath(d, repo_root).count(os.sep)
         if depth > 6:
             dirs[:] = []

@@ -15,7 +15,7 @@ It is an inference from static text: nothing was run, and no server was asked.
 import os
 import re
 
-from _common import OUT, load_config, read_json, utf8_stdout, write_json
+from _common import skip_dir, OUT, load_config, read_json, utf8_stdout, write_json
 
 EXT = (".config", ".json", ".xml", ".cs", ".ini", ".txt", ".yml", ".yaml", ".settings", ".vb", ".aspx", ".asmx", ".js", ".env", ".properties", ".cshtml")
 SKIP = {".git", "node_modules", "bin", "obj", "packages"}
@@ -153,7 +153,7 @@ def main():
     hits = {n: [] for n in names}
     for r_ in cfg.get("estate_roots") or []:
         for dp, dn, fn in os.walk(r_):
-            dn[:] = [d for d in dn if d not in SKIP]
+            dn[:] = [d for d in dn if not skip_dir(dp, d, SKIP, fold=False)]
             for f in fn:
                 if not f.lower().endswith(EXT):
                     continue

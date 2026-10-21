@@ -19,13 +19,14 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
+from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
                      slug, utf8_stdout, write_json)
 from _complexity import file_metrics, project_metrics
 import _scope
 from _loc import count_loc
 
 CODE_EXT = {".cs": "C#", ".vb": "VB.NET", ".fs": "F#"}
+FRONTEND_EXT = {".js", ".jsx", ".ts", ".tsx", ".css", ".scss", ".less", ".html", ".htm"}  # front-end lines: non-blank lines, reported only (not in the C# estimate)
 MARKUP_EXT = {".aspx", ".ascx", ".master", ".asax", ".ashx", ".asmx", ".svc", ".cshtml", ".vbhtml", ".razor", ".xaml"}
 PROJ_EXT = {".csproj", ".vbproj", ".fsproj", ".sqlproj"}
 GUIDS = {
@@ -144,7 +145,7 @@ def parse_project(path, repo_root):
 
 def walk_files(root, skip):
     for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith("."))
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith("."))
         for f in files:
             yield os.path.join(d, f)
 
@@ -302,6 +303,11 @@ def inventory_repo(name, repo_root, cfg):
         return None
 
     other_langs = Counter()  # files of languages the skill does not assess (reported, never scanned)
+    try:  # front-end libraries copied into the repository (jQuery, Bootstrap ...): counted apart, they are not the project's code
+        import vendor_files
+        vendored = set(vendor_files.scan(repo_root))
+    except Exception:
+        vendored = set()
     per_proj = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0, "servicebase": False, "hosted": False})
     artefacts = defaultdict(list)
     loose = defaultdict(lambda: {"ext": Counter(), "loc": Counter(), "files": 0})
@@ -315,12 +321,14 @@ def inventory_repo(name, repo_root, cfg):
                 artefacts[kind].append(rel(f, repo_root))
         o = owner(f)
         bucket = per_proj[o["path"]] if o else loose[rel(os.path.dirname(f), repo_root).split("/")[0]]
-        if ext in CODE_EXT or ext in MARKUP_EXT or ext in (".js", ".ts", ".sql", ".config", ".css"):
+        if ext in CODE_EXT or ext in MARKUP_EXT or ext in (".sql", ".config") or ext in FRONTEND_EXT:
             bucket["ext"][ext] += 1
             bucket["files"] += 1
-            if os.path.getsize(f) < 3_000_000 and not base.endswith(".min.js"):
+            if os.path.getsize(f) < 3_000_000 and not re.search(r"(?i)\.min\.(js|css)$", base):
                 n = count_loc(read_text(f), ext) if (ext in CODE_EXT or ext in MARKUP_EXT) else count_lines(f)  # executable lines, as the ATF scanner counts
                 lang = CODE_EXT.get(ext) or ("markup" if ext in MARKUP_EXT else ext.lstrip("."))
+                if ext in FRONTEND_EXT and rel(f, repo_root) in vendored:
+                    lang = "library:" + ext.lstrip(".")  # copied library: listed apart from the project's own front-end lines
                 by_name = bool(ext in CODE_EXT and GENERATED_NAME.search(base))
                 real_lang = lang
                 if ext in CODE_EXT and (by_name or GENERATED_HEAD.search(read_text(f)[:1500])):
@@ -424,7 +432,7 @@ def find_repos(roots, cfg):
                 found.append(d)
                 dirs[:] = []
                 continue
-            dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         if not found:
             found = [r]
         for d in found:
