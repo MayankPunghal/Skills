@@ -1,0 +1,721 @@
+{
+ "_doc": "Server-hosted services the code talks to (caches, search, mail, file transfer, queues, document stores, hosted logging) and the AWS managed service each can move to, with the code-side work per option. Read by aws_native.py. detect: packages = NuGet / assembly id regex (anchored, case-insensitive); client = regex for direct use of the client library on one code line (strings and comments are blanked first, except where client_in_strings is true); keyword = identifier fragment that names the service (used to find the repository's own wrappers and the call sites into them); config_keys = regex on configuration lines (assembly binding lines are ignored); config_values = regex on configuration values; legacy = client API that needs a rewrite whatever the target. targets: the first is the default unless the caller chooses another. change: config = settings, TLS and authentication only; client-swap = another client library behind the same wrapper; rewrite = the wrapper is rewritten for another service model; remove = the dependency is taken out. Hours are manual-equivalent (multiply by the AI factor named in factor: code or redesign, as for every other coding item): fixed = once per repository that uses the service; per_provider_file = each file that calls the client library directly (the wrapper); per_consumer_site = each code line that calls the wrapper; per_config_key = each configuration entry; legacy_per_provider_file replaces per_provider_file when the legacy API is found. Work that is not code (creating the AWS resource, networking, DNS, verified mail domains, data migration) belongs to DevOps and is not in these hours.",
+ "services": [
+  {
+   "id": "redis",
+   "label": "Redis",
+   "kind": "cache",
+   "detect": {
+    "packages": "^(StackExchange\\.Redis\\w*|ServiceStack\\.Redis|Microsoft\\.Extensions\\.Caching\\.StackExchangeRedis|NRedisStack|Microsoft\\.AspNetCore\\.SignalR\\.StackExchangeRedis|RedLock\\.net|CacheManager\\.StackExchange\\.Redis|Redis\\.OM)$",
+    "client": "\\b(ConnectionMultiplexer|IConnectionMultiplexer|RedisClient|RedisCache|UseRedisCache|AddStackExchangeRedisCache|IDatabase|RedisKey|RedisValue|RedisManagerPool)\\b|using\\s+(StackExchange|ServiceStack)\\.Redis",
+    "keyword": "redis",
+    "config_keys": "(?i)redis",
+    "config_values": "(?i)\\bredis://|:6379\\b"
+   },
+   "targets": [
+    {
+     "id": "elasticache-valkey",
+     "aws": "Amazon ElastiCache (Valkey or Redis OSS)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the client at the ElastiCache endpoint; turn on TLS (ssl=true) and AUTH token or IAM authentication read from Secrets Manager; abortConnect=false and reconnect handling for failover; with cluster mode, check multi-key commands use hash tags.",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      1,
+      2
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "memcached",
+   "label": "Memcached",
+   "kind": "cache",
+   "detect": {
+    "packages": "^(EnyimMemcached\\w*|Enyim\\.Caching\\w*|MemcachedProviders\\w*|BeIT\\.MemCached|Memcached\\.ClientLibrary|CacheManager\\.Memcached|Amazon\\.ElastiCacheCluster)$",
+    "client": "\\b(MemcachedClient|MemcachedClientConfiguration|MemcachedCluster|EnyimMemcached|StoreMode|IMemcachedClient)\\b|using\\s+Enyim\\.Caching",
+    "keyword": "mem_?cache",
+    "config_keys": "(?i)memcache",
+    "config_values": ":11211\\b"
+   },
+   "targets": [
+    {
+     "id": "elasticache-memcached",
+     "aws": "Amazon ElastiCache for Memcached",
+     "change": "client-swap",
+     "factor": "code",
+     "work": "EnyimMemcached 2.x is .NET Framework only: swap to EnyimMemcachedCore (or the ElastiCache cluster client for auto-discovery) behind the existing wrapper; point it at the cluster configuration endpoint; TLS if in-transit encryption is on.",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0,
+      0.1
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "elasticache-valkey",
+     "aws": "Amazon ElastiCache (Valkey), one cache engine for Redis and Memcached users",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Rewrite the Memcached wrapper on StackExchange.Redis; keep the wrapper's method signatures; check expiry, serialisation and value-size behaviour at each call site.",
+     "fixed": [
+      6,
+      12
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "aerospike",
+   "label": "Aerospike",
+   "kind": "cache",
+   "detect": {
+    "packages": "^(Aerospike\\.Client|AerospikeClient)$",
+    "client": "\\b(AerospikeClient|AsyncClient|ClientPolicy|WritePolicy|BatchPolicy|QueryPolicy|ScanPolicy|AerospikeException)\\b|\\bnew\\s+(Bin|Key)\\s*\\(|using\\s+Aerospike\\.Client",
+    "keyword": "aero_?spike",
+    "config_keys": "(?i)aerospike",
+    "config_values": ":3000\\b"
+   },
+   "targets": [
+    {
+     "id": "elasticache-valkey",
+     "aws": "Amazon ElastiCache (Valkey); AWS has no managed Aerospike",
+     "change": "rewrite",
+     "factor": "redesign",
+     "work": "Rewrite the Aerospike wrapper on StackExchange.Redis: namespace / set / bins become key prefixes and hashes, TTLs map directly, batch reads become MGET or pipelines, record-size limits and 'record too big' handling change, generation checks become WATCH or Lua; check each call site's result handling; load test.",
+     "fixed": [
+      12,
+      24
+     ],
+     "per_provider_file": [
+      4,
+      8
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "dynamodb",
+     "aws": "Amazon DynamoDB (with DAX if latency matters)",
+     "change": "rewrite",
+     "factor": "redesign",
+     "work": "Rewrite the wrapper on AWSSDK.DynamoDBv2: table and key design, TTL attribute, 400 KB item limit (large values to S3), conditional writes for generation checks.",
+     "fixed": [
+      16,
+      32
+     ],
+     "per_provider_file": [
+      6,
+      10
+     ],
+     "per_consumer_site": [
+      0.5,
+      1
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "aerospike-on-aws",
+     "aws": "Keep Aerospike, self-managed on EC2 / EKS or Aerospike Cloud (not AWS native)",
+     "change": "config",
+     "factor": "code",
+     "work": "Seed hosts, TLS and credentials only; the client library is already .NET Standard.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.25,
+      0.5
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "elasticsearch",
+   "label": "Elasticsearch",
+   "kind": "search",
+   "detect": {
+    "packages": "^(NEST|NEST\\.\\w+|Elasticsearch\\.Net\\w*|Elastic\\.Clients\\.Elasticsearch|Elastic\\.Transport|Serilog\\.Sinks\\.Elasticsearch|Elastic\\.CommonSchema\\w*)$",
+    "client": "\\b(ElasticClient|IElasticClient|ElasticLowLevelClient|ElasticsearchClient|ConnectionSettings|SearchDescriptor|QueryContainer)\\b|using\\s+(Nest|Elasticsearch\\.Net|Elastic\\.Clients)\\b",
+    "keyword": "elastic",
+    "config_keys": "(?i)elastic",
+    "config_values": ":920[01]\\b"
+   },
+   "targets": [
+    {
+     "id": "opensearch",
+     "aws": "Amazon OpenSearch Service",
+     "change": "client-swap",
+     "factor": "code",
+     "work": "Swap NEST / Elasticsearch.Net for OpenSearch.Client / OpenSearch.Net (a fork of NEST 7.10, mostly namespace changes); SigV4 signing (OpenSearch.Net.Auth.AwsSigV4) or fine-grained access control; ILM rollover policies become ISM policies; index templates re-checked. Elasticsearch 8 clients (Elastic.Clients.Elasticsearch) need a real rewrite: use the high end.",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      1,
+      2
+     ],
+     "per_consumer_site": [
+      0,
+      0.1
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-SEARCH-OPENSEARCH"
+   ]
+  },
+  {
+   "id": "smtp",
+   "label": "SMTP mail server",
+   "kind": "mail",
+   "detect": {
+    "packages": "^(MailKit|MimeKit|FluentEmail\\.\\w+|AE\\.Net\\.Mail|Postal\\.Mvc\\w*)$",
+    "client": "\\bSmtpClient\\b|\\bnew\\s+MailMessage\\b|using\\s+(System\\.Net\\.Mail|MailKit)\\b",
+    "keyword": "smtp|send_?e?mail|mail_?sender",
+    "config_keys": "(?i)smtp|mail[._-]?(host|server|port)|mailserver|mailSettings",
+    "config_values": "(?i)<smtp\\b|:(25|465|587)\\b"
+   },
+   "targets": [
+    {
+     "id": "ses-smtp",
+     "aws": "Amazon SES (SMTP interface)",
+     "change": "config",
+     "factor": "code",
+     "work": "Host email-smtp.<region>.amazonaws.com, port 587 with STARTTLS (EnableSsl = true), SES SMTP credentials from Secrets Manager; senders must be verified identities. System.Net.Mail.SmtpClient still works on .NET 10 but is not recommended: MailKit if the wrapper is touched anyway.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "ses-api",
+     "aws": "Amazon SES (API, AWSSDK.SimpleEmailV2)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Send through the SES v2 API with the task's IAM role (no SMTP password); configuration sets for bounces and complaints through SNS; attachments as raw MIME.",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0,
+      0.1
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-EMAIL-SES"
+   ]
+  },
+  {
+   "id": "sftp-ftp",
+   "label": "SFTP / FTP server",
+   "kind": "file-transfer",
+   "detect": {
+    "packages": "^(SSH\\.NET|Renci\\.SshNet\\w*|WinSCP\\w*|FluentFTP|Tamir\\.SharpSSH|edtFTPnj|Rebex\\.\\w*|WinSCPnet|FtpLib)$",
+    "client": "\\b(FtpWebRequest|SftpClient|ScpClient|FtpClient|AsyncFtpClient)\\b|using\\s+(Renci\\.SshNet|WinSCP|FluentFTP)\\b",
+    "client_in_strings": "\\bs?ftps?://",
+    "keyword": "s?ftp",
+    "config_keys": "(?i)(^|[^a-z])s?ftps?([^a-z]|$)|ftp[._-]?(host|server|url|user)",
+    "config_values": "(?i)\\bs?ftps?://"
+   },
+   "targets": [
+    {
+     "id": "transfer-family",
+     "aws": "AWS Transfer Family (SFTP / FTPS endpoint over Amazon S3 or EFS)",
+     "change": "config",
+     "factor": "code",
+     "work": "Keep the SFTP client code; new endpoint, host key and user key pair from Secrets Manager. Plain FTP must become SFTP or FTPS (Transfer Family serves FTP only inside a VPC). Only for servers the client runs: a partner's SFTP server stays where it is.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "s3-direct",
+     "aws": "Amazon S3 directly (AWSSDK.S3), for internal file hand-offs",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Replace upload / download / list / delete with S3 calls under the task's IAM role; S3 event notifications instead of polling a folder.",
+     "fixed": [
+      6,
+      12
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "file-share",
+   "label": "SMB / UNC file share",
+   "kind": "file-share",
+   "detect": {
+    "packages": "^$",
+    "client": "(?!)",
+    "client_in_strings": "@\"\\\\\\\\[A-Za-z0-9][A-Za-z0-9._-]+\\\\|\"\\\\\\\\\\\\\\\\[A-Za-z0-9][A-Za-z0-9._-]+\\\\\\\\",
+    "keyword": "unc_?path|network_?path|file_?share|share_?path",
+    "config_keys": "(?i)(unc|network[._-]?path|file[._-]?server|file[._-]?share|dropfolder)",
+    "config_values": "\\\\\\\\[A-Za-z0-9][A-Za-z0-9._-]+\\\\[A-Za-z0-9$._ -]+"
+   },
+   "targets": [
+    {
+     "id": "s3",
+     "aws": "Amazon S3 behind a small storage interface",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Put file reads and writes behind one storage interface with an S3 implementation; pre-signed URLs where users download; no shared folder needed by any container.",
+     "fixed": [
+      6,
+      12
+     ],
+     "per_provider_file": [
+      1.5,
+      3
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "efs-fsx",
+     "aws": "Amazon EFS (Linux containers) or FSx mounted into the task",
+     "change": "config",
+     "factor": "code",
+     "work": "Mount the file system into the task and point the path settings at the mount; Windows UNC paths become Linux paths.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.25,
+      0.5
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mongodb",
+   "label": "MongoDB",
+   "kind": "document-store",
+   "detect": {
+    "packages": "^(MongoDB\\.Driver\\w*|MongoDB\\.Bson|Odysseus\\.Mongo|mongocsharpdriver|Mongo2Go)$",
+    "client": "\\b(MongoClient|MongoServer|MongoDatabase|IMongoDatabase|MongoCollection|IMongoCollection|BsonDocument|MongoUrl|WriteConcern)\\b|using\\s+MongoDB\\.",
+    "keyword": "mongo",
+    "config_keys": "(?i)mongo",
+    "config_values": "(?i)\\bmongodb(\\+srv)?://|:27017\\b",
+    "legacy": "\\b(MongoServer|MongoDatabase|MongoCollection<|WriteConcern\\.Unacknowledged)\\b|\\.Insert<"
+   },
+   "targets": [
+    {
+     "id": "documentdb",
+     "aws": "Amazon DocumentDB (MongoDB compatible)",
+     "change": "client-swap",
+     "factor": "code",
+     "work": "Current MongoDB.Driver (the 1.x legacy API with MongoServer / MongoCollection<T>.Insert must be rewritten); TLS with the Amazon RDS CA bundle; retryWrites=false; check unsupported operators and index types.",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      1,
+      2
+     ],
+     "legacy_per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "rabbitmq",
+   "label": "RabbitMQ",
+   "kind": "queue",
+   "detect": {
+    "packages": "^(RabbitMQ\\.Client|MassTransit\\.RabbitMQ|EasyNetQ\\w*|NServiceBus\\.RabbitMQ|Rebus\\.RabbitMq|CAP\\.RabbitMQ|Wolverine\\.RabbitMQ)$",
+    "client": "\\b(ConnectionFactory|IModel|BasicPublish|BasicConsume|QueueDeclare|EventingBasicConsumer)\\b|using\\s+RabbitMQ\\.Client",
+    "keyword": "rabbit",
+    "config_keys": "(?i)rabbit|amqp",
+    "config_values": "(?i)\\bamqps?://|:5672\\b"
+   },
+   "targets": [
+    {
+     "id": "amazon-mq",
+     "aws": "Amazon MQ for RabbitMQ",
+     "change": "config",
+     "factor": "code",
+     "work": "amqps endpoint (TLS on 5671), broker user from Secrets Manager; no code change beyond the connection factory.",
+     "fixed": [
+      3,
+      6
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "sqs-sns",
+     "aws": "Amazon SQS + SNS",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Publish to SNS topics / SQS queues and consume with long polling; dead-letter queues for retries; exchanges and routing keys become topics and subscription filters.",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-MQ-SQS"
+   ]
+  },
+  {
+   "id": "kafka",
+   "label": "Kafka",
+   "kind": "queue",
+   "detect": {
+    "packages": "^(Confluent\\.Kafka|Confluent\\.SchemaRegistry\\w*|KafkaFlow\\w*|Streamiz\\.Kafka\\.Net|MassTransit\\.Kafka|Silverback\\.Integration\\.Kafka)$",
+    "client": "\\b(ProducerBuilder|ConsumerBuilder|KafkaConsumer|KafkaProducer|ProducerConfig|ConsumerConfig)\\b|using\\s+Confluent\\.Kafka",
+    "keyword": "kafka",
+    "config_keys": "(?i)kafka|bootstrap[._-]?servers",
+    "config_values": ":9092\\b"
+   },
+   "targets": [
+    {
+     "id": "msk",
+     "aws": "Amazon MSK",
+     "change": "config",
+     "factor": "code",
+     "work": "Bootstrap brokers, TLS, and IAM authentication (aws-msk-iam-sasl-signer-net) or SASL/SCRAM from Secrets Manager.",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      1,
+      2
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "sqs-sns-eventbridge",
+     "aws": "Amazon SQS / SNS / EventBridge",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Only where ordered replay is not needed: producers publish events, consumers poll queues; offsets and consumer groups disappear.",
+     "fixed": [
+      10,
+      20
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-KAFKA-SQS"
+   ]
+  },
+  {
+   "id": "msmq",
+   "label": "MSMQ",
+   "kind": "queue",
+   "detect": {
+    "packages": "^(System\\.Messaging|Experimental\\.System\\.Messaging)$",
+    "client": "\\b(MessageQueue|MessageQueueTransaction|XmlMessageFormatter|BinaryMessageFormatter)\\b|using\\s+System\\.Messaging",
+    "keyword": "msmq",
+    "config_keys": "(?i)msmq|queue[._-]?path",
+    "config_values": "(?i)FormatName:|\\\\private\\$\\\\"
+   },
+   "targets": [
+    {
+     "id": "sqs",
+     "aws": "Amazon SQS",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "System.Messaging does not exist on .NET 10: send and receive through SQS (FIFO queues where order matters), dead-letter queue for poison messages.",
+     "fixed": [
+      6,
+      12
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-MQ-SQS"
+   ]
+  },
+  {
+   "id": "logging-saas",
+   "label": "Hosted log service (Loggly, Splunk, Sumo Logic, Papertrail)",
+   "kind": "logging",
+   "detect": {
+    "packages": "^(log4net-loggly|loggly-csharp\\w*|Serilog\\.Sinks\\.Loggly|NLog\\.Targets\\.Loggly|Serilog\\.Sinks\\.Splunk|Splunk\\.Logging\\.\\w+|Serilog\\.Sinks\\.SumoLogic|SumoLogic\\.Logging\\.\\w+|Serilog\\.Sinks\\.Papertrail)$",
+    "client": "\\b(LogglyClient|LogglyConfig|LogglyAppender|SplunkViaHttp|HttpEventCollectorSender|SumoLogicTarget)\\b|using\\s+(log4net\\.loggly|Loggly|Splunk\\.Logging)",
+    "keyword": "loggly|splunk|sumo_?logic|papertrail",
+    "config_keys": "(?i)loggly|splunk|sumologic|papertrail",
+    "config_values": "(?i)loggly\\.com|splunkcloud\\.com|sumologic\\.com|papertrailapp\\.com"
+   },
+   "targets": [
+    {
+     "id": "cloudwatch",
+     "aws": "Amazon CloudWatch Logs (stdout from the container, FireLens or the awslogs driver)",
+     "change": "client-swap",
+     "factor": "code",
+     "work": "Replace the hosted-log appender with structured stdout logging (or AWS.Logger.Log4net / Serilog CloudWatch sink); any code that calls the log service's API directly moves to the normal logger; dashboards and alerts are rebuilt by DevOps.",
+     "fixed": [
+      3,
+      6
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0.05
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "session-state-server",
+   "label": "ASP.NET out-of-process session state",
+   "kind": "state",
+   "detect": {
+    "packages": "^(Microsoft\\.Web\\.RedisSessionStateProvider|Microsoft\\.AspNet\\.SessionState\\.\\w+)$",
+    "client": "(?!)",
+    "keyword": "session_?state_?server",
+    "config_keys": "(?i)stateConnectionString|sqlConnectionString(?=.*sessionState)",
+    "config_values": "(?i)<sessionState[^>]*mode\\s*=\\s*[\"'](StateServer|SQLServer|Custom)"
+   },
+   "targets": [
+    {
+     "id": "elasticache-session",
+     "aws": "ASP.NET Core session on IDistributedCache backed by Amazon ElastiCache (or DynamoDB)",
+     "change": "config",
+     "factor": "code",
+     "work": "AddStackExchangeRedisCache + AddSession; session values must be serialisable; data-protection keys shared across tasks.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  }
+ ],
+ "consumer_repo_fixed": [
+  1,
+  2
+ ],
+ "_doc_consumer": "consumer_repo_fixed: a repository that only calls a wrapper living in a shared library still runs its paths against the new endpoint once (smoke test, settings). The wrapper's own work (fixed + per_provider_file) is counted with the library.",
+ "_doc_supersedes": "supersedes_optional: generic items of migration-assessment's optional_modernizations.json that this service's row replaces in the same repository (same service, priced from the wrapper and call sites instead of a flat per-file rate)."
+}

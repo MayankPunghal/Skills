@@ -167,6 +167,7 @@ def linux_readiness(c):
         fam = a.get("framework_family", "")
         modern = "netcore" in fam and not any(t.endswith("-windows") for t in a.get("target_frameworks", []))
         hi = lambda xs: sum(1 for f in xs if f["severity"] in ("Blocker", "High"))
+        lr = (read_json(os.path.join(OUT, "linux", a["repo"], "linux-readiness.json")) or {}).get("summary")  # linux_readiness.py, step 3.2
         if a["r7"] == "Retire":
             status, level = "Retiring — not assessed for Linux", "na"
         elif a["type"] in ("winforms", "wpf"):
@@ -175,7 +176,7 @@ def linux_readiness(c):
             status, level = "Ready after porting + replacing Windows-only parts", "port"
         elif redesign:
             status, level = "Blocked — stays on Windows until redesigned", "blocked"
-        elif modern and not (hi(win_api) or hi(files) or fw or pk or auth):
+        elif modern and not (hi(win_api) or hi(files) or fw or pk or auth or (lr or {}).get("block_open")):
             status, level = "Linux-ready", "ready"
         else:
             status, level = "Ready after porting to .NET 10", "port"
@@ -194,11 +195,14 @@ def linux_readiness(c):
             issues.append(f"{sum(f.get('occurrences', 1) for f in files)} path/file-system issue(s)")
         if tz:
             issues.append("time zone / culture")
+        if lr and (lr["block_open"] or lr["warn"]):
+            issues.append(f"Linux readiness check (repository): {lr['block_open']} blocking, {lr['warn']} to review")
         if a["r7"] in ("Retain", "Rehost") and level not in ("windows", "na"):
             issues.append(f"decision: {a['r7']} on Windows")
         rows.append({"app": a["name"], "id": a["id"], "repo": a["repo"], "type": a["type"], "framework": ", ".join(a.get("target_frameworks", [])) or fam,
                      "r7": a["r7"], "status": status, "level": level, "windows_apis": len(win_api), "framework_blockers": len(fw), "packages": len(pk),
                      "paths": sum(f.get("occurrences", 1) for f in files), "time_culture": len(tz), "windows_auth": len(auth), "linux_build": build,
+                     "linux_checks": f"{lr['block_open']} / {lr['warn']}" if lr else "not run",
                      "summary": "; ".join(issues) or "no Linux blockers found"})
     return rows
 

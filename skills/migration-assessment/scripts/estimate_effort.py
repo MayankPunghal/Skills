@@ -1,8 +1,15 @@
 """Coding-effort estimate (v4): developer hours for code and SQL work only, from lines of code, project type, complexity and findings.
 
-    python <skill>/scripts/estimate_effort.py [--engineers 3] [--manual] [--hosting H] [--database D] [--explain]
+    python <skill>/scripts/estimate_effort.py [--engineers 3] [--manual] [--hosting H] [--database D] [--explain] [--model auto|days|hours]
 
-Not estimated, on purpose: QA, DevOps / infrastructure, project management, parallel-development drift, contingency, data migration.
+Two effort models. The modernize path (and compare) uses the engineer-days model below: nothing about it changes.
+The lift-and-shift track (assessment.json assessment_type lift-and-shift, set by the intake goal) uses the HOURS CALCULATOR instead
+(estimate_hours.py, data/hours.json): developer working hours, AI-assisted, 8 h per day, a low-high range per unit counted solution by
+solution (solutions.py, third_party.py) plus a 20% buffer, each line labelled sample-calibrated or inferred. This script runs the
+calculator for that track and merges it into estimate.json (basis "hours": totals, "hours" block); the engineer-days model is still
+computed and kept under "engineer_days_model" and in the scenario comparison, never as the headline. --model days|hours forces one.
+
+Engineer-days model. Not estimated, on purpose: QA, DevOps / infrastructure, project management, parallel-development drift, contingency, data migration.
 
 Code-side scenarios (assessment.json scenario.hosting, estimation.json hosting_scenarios):
   modernize        convert the .NET Windows applications to .NET 10 on Linux, per-application 7R decisions       (default)
@@ -34,6 +41,7 @@ import _dbinventory as DBI
 import _findings as F
 import _montecarlo as MC
 import _optional as O
+import aws_native as AN
 
 
 OPTIONAL_CACHE = {}
@@ -332,7 +340,11 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             notes.append(f"{repo}: {repo_kloc:,.0f} KLOC, so project conversion hours are scaled by {rscale:.2f} (diseconomy of scale, COCOMO II)"
                          + (f" and 'likely' sits {int(rpos * 100)}% of the way from low to high." if rpos != pos else "."))
         if repo not in OPTIONAL_CACHE:  # the scan does not depend on the scenario; compute() runs once per scenario
-            OPTIONAL_CACHE[repo] = O.scan_repo(inv["root"], inv)
+            # server-hosted services (caches, search, SMTP, SFTP, queues, MongoDB, hosted logging) priced from their wrapper,
+            # call sites and settings (aws_native.py); they replace the flat generic item for the same service
+            svc_rows = AN.optional_rows(AN.scan(inv["root"], choices=cfg.get("aws_native_choices") or {}))
+            gone = {x for r in svc_rows for x in r["supersedes"]}
+            OPTIONAL_CACHE[repo] = [o for o in O.scan_repo(inv["root"], inv) if o["id"] not in gone] + svc_rows
         optional += [dict(o, repo=repo) for o in OPTIONAL_CACHE[repo]]
 
         def skip(f, mode, desktop):
@@ -448,7 +460,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                                           "constructs": dbi.get("constructs", {}), "code": dbi.get("code", {}), "edmx_function_imports": dbi.get("edmx_function_imports", 0),
                                           "engine": dbi.get("engine"), "conversion": dbi.get("conversion", {}), "code_constructs": dbi.get("code_constructs", {}),
                                           "redesign_items": dbi.get("redesign_items", []), "parse_errors": dbi.get("parse_errors", []),
-                                          "code_sql_stats": dbi.get("code_sql_stats", {}), "note": dbi.get("note")}})
+                                          "code_sql_stats": dbi.get("code_sql_stats", {}), "note": dbi.get("note"),
+                                          "procedure_calls": dbi.get("procedure_calls", []), "raw_sql": dbi.get("raw_sql")}})
     ai_t, man_t, sim = rollup(items, packages, db_packages, est, {"code": code_f, "red": red_f, "db": db_f})
     team = est["team"]
     tot_h = [sum(p["bounds_hours"][i] for p in packages) for i in (0, 1)]
@@ -499,7 +512,12 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
     kloc_all = sum((p.get("loc_code") or 0) for r in F.repos(root) for p in (F.load_inventory(root, r) or {"projects": []})["projects"]) / 1000.0
     opt_rows = []
     for o in optional:
-        manual, assisted = O.hours(o, code_f)
+        if o.get("factor"):  # aws_native row: manual-equivalent hours already built from its evidence
+            manual = o["manual_hours"]
+            fac = red_f if o["factor"] == "redesign" else code_f
+            assisted = [manual[i] * fac[i] for i in (0, 1)]
+        else:
+            manual, assisted = O.hours(o, code_f)
         opt_rows.append(dict(o, manual_hours=r1(manual), hours=r1(assisted), likely_hours=round(lk(assisted, pos), 1)))
     opt_tot = [round(sum(o["hours"][i] for o in opt_rows)) for i in (0, 1)]
     rng_h, rng_man = [ai_t["p10"], ai_t["p90"]], [man_t["p10"], man_t["p90"]]
@@ -529,9 +547,50 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             "factors": {"code": code_f, "db": db_f, "redesign": red_f}, "scale": scale_by_repo, "likely_position": pos_by_repo, "explain": explain_rows}
 
 
+def uses_hours(cfg, hosting, model="auto"):
+    """The lift-and-shift track (intake goal lift-and-shift) is costed by the hours calculator; every other path by the engineer-days model."""
+    if model != "auto":
+        return model == "hours"
+    return hosting == "lift-and-shift" and cfg.get("assessment_type") == "lift-and-shift"
+
+
+def hours_track(root, cfg, out):
+    """Run solutions.py, third_party.py and estimate_hours.py in-process and make their numbers the estimate of the lift-and-shift track."""
+    import estimate_hours as EH
+    import solutions as SOL
+    import third_party as TP
+    SOL.build(root, cfg, quiet=True)
+    TP.build(root, cfg, quiet=True)
+    h = EH.compute(root, cfg)
+    write_json(os.path.join(OUT, EH.OUT_FILE), h)
+    mark_step(root, "estimate_hours")
+    tot = h["total"]
+    out["engineer_days_model"] = {"totals": out["totals"], "assumptions": out["assumptions"],
+                                  "note": "Engineer-days model (modernize path), computed for comparison only. The lift-and-shift estimate is the hours calculator in 'hours'."}
+    out["basis"] = "hours"
+    out["hours"] = h
+    out["scope"] = "developer hours of the lift-and-shift work items (hours calculator)"
+    out["totals"] = {"basis": "hours", "total_hours": [tot["low"], tot["high"]], "total_days": [h["days_low"], h["days_high"]], "hours_per_day": h["day_hours"],
+                     "subtotal_hours": [h["subtotal"]["low"], h["subtotal"]["high"]], "contingency_pct": h["contingency_pct"],
+                     "contingency_hours": [h["contingency"]["low"], h["contingency"]["high"]],
+                     "sample_basis_hours": [h["sample_basis"]["low"], h["sample_basis"]["high"]], "inferred_hours": [h["inferred_share"]["low"], h["inferred_share"]["high"]],
+                     "environments_assumed": h["environments_assumed"], "status": h["status"]}
+    out["timeline"], out["sprints"] = [], {}
+    names = {k: v["label"] for k, v in h["by_work_item"].items()}
+    out["assumptions"] = [
+        "Basis: developer working hours of the dev team, AI-assisted, " + f"{h['day_hours']} h per dev day. Each unit counted in the code has a [low, high] rate (scripts/data/hours.json); the total adds a {h['contingency_pct']}% buffer.",
+        "Work items in the estimate (chosen in the intake): " + ", ".join(names.values()) + ". Nothing else is included: server build, network, domain, VM migration, database migration, the client's own QA, project management and the modernization work are other teams' or later phases.",
+        "Lines labelled 'sample' are calibrated to the reference estimate; lines labelled 'inferred' are this skill's own estimate with nothing behind them yet. Both are shown, never blended silently.",
+        "A project shared by two solutions is counted once, in the first solution that lists it. A workload is one solution in one environment (its deployables sit inside it); an unknown environment list counts one environment per deployable and stays flagged UNKNOWN.",
+        "This is a DRAFT: nothing is final until the user says so, and every rate can be changed in data/hours.json."]
+    return h
+
+
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
+    ap.add_argument("--model", choices=["auto", "days", "hours"], default="auto",
+                    help="effort model: auto = hours calculator for the lift-and-shift track, engineer-days model otherwise (default)")
     ap.add_argument("--engineers", type=int)
     ap.add_argument("--manual", action="store_true", help="ignore AI assistance (manual estimate)")
     ap.add_argument("--hosting", help="modernize | windows-rehost | lift-and-shift (default: assessment.json scenario.hosting)")
@@ -594,8 +653,16 @@ def main():
                             f"{main_r['sprints']['sprints_p50']} sprint(s) at P50, {main_r['sprints']['sprints_p80']} at P80; the first {est['sprints']['onboarding_days']} day(s) "
                             "go to access, clone, restore, baseline build and existing tests (calendar time, not in the estimate).") if main_r["sprints"]["plan"] else "No sprint plan (nothing to code).",
                            "Needs-verification findings are assumed real until reviewed. Optional modernizations are listed separately and are not in the total."] + main_r["notes"]}
+    hours = hours_track(root, cfg, out) if uses_hours(cfg, hosting, a.model) else None
     write_json(os.path.join(OUT, "estimate.json"), out)
     mark_step(root, "estimate")
+    if hours:
+        import estimate_hours as EH
+        print(f"estimate [{hosting}] by the HOURS CALCULATOR (lift-and-shift track; the engineer-days model is kept for comparison only)")
+        EH.show(hours)
+        t = out["engineer_days_model"]["totals"]
+        print(f"engineer-days model for comparison: {t['total_hours'][0]}-{t['total_hours'][1]} h (likely {t['likely_hours']} h)")
+        return
     t = out["totals"]
     print(f"estimate [{hosting} / {database}] ({'AI-assisted' if ai_on else 'manual'}, coding only): {RANGE_LABEL} {t['total_hours'][0]}-{t['total_hours'][1]} h = {t['total_days'][0]}-{t['total_days'][1]} d, "
           f"P80 {t['p80_hours']} h, sum of extremes {t['bounds_hours'][0]}-{t['bounds_hours'][1]} h "

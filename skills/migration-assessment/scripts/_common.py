@@ -40,7 +40,29 @@ ASSESSMENT_TYPES = {
     "compare": "Compare: modernization plan with the lift-and-shift option costed beside it",
 }
 
-SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}
+SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}  # "packages" only when it is a NuGet restore folder: see skip_dir()
+
+
+def nuget_folder(path):
+    """A restored NuGet packages folder (repositories.config, or packages/<Id>.<version>/*.nupkg), not application source in a folder named Packages."""
+    try:
+        if os.path.exists(os.path.join(path, "repositories.config")):
+            return True
+        for sub in os.listdir(path)[:8]:
+            q = os.path.join(path, sub)
+            if os.path.isdir(q) and any(f.lower().endswith(".nupkg") for f in os.listdir(q)):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def skip_dir(parent, name, skip, fold=True):
+    """True when a walk should not enter folder `name` under `parent`: its name is in `skip`. A folder named packages is skipped only when it
+    is a NuGet restore folder: application source can live in a folder of that name."""
+    if name.lower() == "packages":
+        return "packages" in skip and nuget_folder(os.path.join(parent, name))
+    return (name.lower() if fold else name) in skip
 
 
 def utf8_stdout():
@@ -175,8 +197,13 @@ XML_SECRET_ATTR = re.compile(r'(?i)((?:password|pwd|secret|apikey|api_key|token|
 APPSETTING_SECRET = re.compile(r'(?i)(<add\s+key="[^"]*(?:pass|pwd|secret|token|apikey|api_key|key|credential)[^"]*"\s+value=")([^"]*)(")')
 
 
+URL_USERINFO = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:)([^\s/@\"'<>]+)(@)")  # scheme://user:password@host
+URL_USER_CONCAT = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:\"\s*\+\s*[\w.]*\(\s*)(\"[^\"]*\")")  # "ftp://user:" + Encode("password") + "@host"
+
+
 def mask(line):
     """Remove secret VALUES from an evidence snippet, keep the key names. Snippets never carry credentials."""
+    line = URL_USER_CONCAT.sub(lambda m: m.group(1) + '"***"', URL_USERINFO.sub(lambda m: m.group(1) + "***" + m.group(3), line))
     s = APPSETTING_SECRET.sub(lambda m: m.group(1) + ("***" if m.group(2) else "") + m.group(3), line)
     s = XML_SECRET_ATTR.sub(lambda m: m.group(1) + (_mask_conn(m.group(2)) if m.group(1).lower().startswith("connectionstring") else ("***" if m.group(2) else "")) + m.group(3), s)
     s = SQL_SECRET_PAIR.sub(lambda m: m.group(1) + "***" + m.group(3), s)

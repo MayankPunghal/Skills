@@ -6,7 +6,7 @@ shown beside the estimate and is never part of its total.
 import os
 import re
 
-from _common import SOURCE_DIR_SKIP, data, read_text, rel
+from _common import skip_dir, SOURCE_DIR_SKIP, data, read_text, rel
 
 SOURCE_EXT = (".cs", ".vb", ".config", ".cshtml", ".aspx")
 # Comments are blanked (line numbers kept); string literals are left alone so a // inside a URL is not read as a comment.
@@ -29,7 +29,7 @@ def scan_repo(root, inv):
     for p in inv["projects"]:
         pdir = os.path.join(root, os.path.dirname(p["path"]))
         for d, dirs, files in os.walk(pdir):
-            dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
             for fn in files:
                 if not fn.lower().endswith(SOURCE_EXT):
                     continue

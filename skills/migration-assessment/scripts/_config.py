@@ -12,7 +12,7 @@ import os
 import re
 from collections import OrderedDict
 
-from _common import SOURCE_DIR_SKIP, read_text, rel
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, read_json, read_text, rel, save_config
 from _infra import plausible_host
 
 CFG_EXT = {".config", ".json", ".xml", ".ini", ".properties", ".env", ".conf", ".settings", ".toml", ".yml", ".yaml", ".pubxml"}
@@ -22,6 +22,7 @@ SKIP_FILE = re.compile(r"(?i)(package(-lock)?\.json$|yarn\.lock|tsconfig|launchs
 SECRET_KEY = re.compile(r"(?i)(pass(word|wd|phrase)?$|pwd$|secret|token$|api[_-]?key|access[_-]?key|private[_-]?key|credential|client[_-]?key|shared[_-]?key|signing[_-]?key|salt$|hash$|license[_-]?key|authorization)")
 HOST_KEY = re.compile(r"(?i)(host|server|address|endpoint|url|uri|broker|smtp|proxy|bootstrap|nodes?|redis|memcache|aerospike|elastic|kafka|ldap|ftp|baseaddress|datasource|"
                       r"cache|queue|domain|origin|location|gateway|service|api|callback|redirect|webhook|feed)")
+HOST_LAST = re.compile(r"(?i)host|server|address|endpoint|url|uri|broker|bootstrap|smtp|node|redis|memcache|aerospike|elastic|kafka|ldap|ftp|proxy|domain")  # a bare word is a host only when the LAST part of the setting name says so (DataSource, ServiceType, text are not)
 PATH_KEY = re.compile(r"(?i)(path|dir|directory|folder|file|share|root|location|logs?|temp|tmp|template|export|import|drop|inbox|outbox|archive|storage|cache)")
 URL_RX = re.compile(r"\b(https?|ftps?|sftp|ldaps?|net\.tcp|tcp|amqps?|redis|rediss|mongodb(?:\+srv)?|smtp|wss?|rtmp|jdbc:\w+)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9.\-]+|\[[0-9a-fA-F:]+\])(?::(\d{2,5}))?")
 IP_RX = re.compile(r"(?<![\d.\w])((?:\d{1,3}\.){3}\d{1,3})(?::(\d{2,5}))?(?![\d.]*\w)")
@@ -118,7 +119,7 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
             out.append(("local drive path", path, None, "path", "local drive path"))
     for m in UNIX_RX.finditer(v):
         out.append(("unix path", m.group(1)[:150], None, "path", "unix path"))
-    if not out and HOST_KEY.search(key) and not SECRET_KEY.search(key) and len(v) < 120 and not re.search(r"\s", v):
+    if not out and HOST_LAST.search(re.split(r"[./@:]", key)[-1]) and not SECRET_KEY.search(key) and len(v) < 120 and not re.search(r"\s", v):
         m = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?::(\d{2,5}))?", v)
         if m and plausible_host(m.group(1), m.group(2)) and not re.fullmatch(r"\d+(\.\d+)*", m.group(1)) and not re.fullmatch(r"(?i)\d{1,2}-[a-z]{3}-\d{4}|[\d-]+", m.group(1)) and len(m.group(1)) >= 3:
             h = m.group(1)
@@ -227,7 +228,7 @@ def config_map(repo_root, inv, cfg, host_kind, private_ip):
     pdirs = sorted(((os.path.normpath(os.path.dirname(os.path.join(repo_root, p["path"]))), p["name"]) for p in inv["projects"]), key=lambda x: -len(x[0]))
     rows, files = [], OrderedDict()
     for d, dirs, fns in os.walk(repo_root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
         for fn in sorted(fns):
             ext = os.path.splitext(fn)[1].lower()
             low = fn.lower()
@@ -351,3 +352,47 @@ def network_access(repo, inv, facts, cfgrows, host_kind, private_ip, company, in
     order = {"private IP": 0, "internal host name": 1, "company domain": 2, "UNC share": 3, "public IP": 4, "external service": 5}
     out.sort(key=lambda r: (order.get(r["class"], 9), r["project"], r["destination"]))
     return out
+
+
+_GENERIC_TOKENS = {"repos", "repo", "src", "code", "source", "sourcefuse", "projects", "client", "clients", "gitlab", "github", "work", "dev", "main"}
+_INTERNAL_TLDS = {"local", "lan", "internal", "corp", "intranet", "localdomain", "home"}  # internal names are handled as internal host names, not company domains
+_SECOND_LEVEL = {"co", "com", "org", "net", "gov", "ac", "edu"}
+
+
+def _registrable(host):
+    labels = host.lower().strip(".").split(".")
+    if len(labels) < 2 or not re.search(r"[a-z]", labels[-1]) or labels[-1] in _INTERNAL_TLDS:
+        return None
+    n = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
+    return ".".join(labels[-n:])
+
+
+def detect_company_domains(cfg):
+    """The client's own web domains, guessed from the hosts the scans found: a registrable domain whose name starts like the client name or like
+    a folder of the repository path (client Acme + repos/Acme/ws -> acme.com). Returns [(domain, hosts)] by count."""
+    tokens = set(re.findall(r"[a-z0-9]+", (cfg.get("client") or "").lower()))
+    for r in cfg.get("estate_roots") or []:
+        tokens |= set(re.findall(r"[a-z0-9]+", r.lower().replace("\\", "/")))
+    stems = {t[:5] for t in tokens if len(t) >= 5 and t not in _GENERIC_TOKENS}
+    seen = {}
+    sdir = os.path.join(OUT, "scan")
+    for fn in sorted(os.listdir(sdir)) if os.path.isdir(sdir) else []:
+        d = read_json(os.path.join(sdir, fn), {}) or {}
+        for e in d.get("endpoints", []):
+            dom = _registrable(e.get("host", ""))
+            if dom and any(dom.split(".")[-2 if len(dom.split(".")) == 2 else -3].startswith(s) for s in stems):
+                seen[dom] = seen.get(dom, 0) + int(e.get("occurrences", 1) or 1)
+    return sorted(seen.items(), key=lambda kv: -kv[1])
+
+
+def ensure_company_domains(root, cfg):
+    """assessment.json company_domains if set (by the user), else the detected ones, stored with company_domains_auto = true so the report asks to confirm."""
+    if cfg.get("company_domains"):
+        return [d.lower() for d in cfg["company_domains"]]
+    found = [d for d, _ in detect_company_domains(cfg)]
+    if found:
+        cfg["company_domains"] = found
+        cfg["company_domains_auto"] = True
+        save_config(root, cfg)
+        print("company web domains (detected from the hosts in the code, confirm with the client): " + ", ".join(found))
+    return found

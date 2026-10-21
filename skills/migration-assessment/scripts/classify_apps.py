@@ -5,10 +5,13 @@
 Reads inventory, findings (+ reviews) and data/decision_rules.json; writes assessment/classification.json.
 The reviewer then confirms or overrides each application in assessment/decisions.json:
     {"<app id>": {"r7": "Refactor", "target": "...", "rationale": ["..."], "by": "name", "date": "YYYY-MM-DD"}}
+(optional per application: "why_not", "then", "risks", "sign_off" lists; otherwise they come from data/decision_rules.json
+r7_guidance for the chosen R: why not the other Rs, what happens next, risks, who signs off)
 and reruns this script; decisions always win over rules (marked decision_source = "review").
 Rules implemented (see references/seven-rs.md):
   - modern .NET, no Windows-bound findings            -> Replatform to Linux containers (upgrade TFM if out of support)
   - .NET Framework web/service, portable               -> Replatform (port to .NET 10 on Linux)
+  - Web Forms project with a token UI (<= 3 pages, markup < 5% of the code) -> Replatform (pages rewritten in the port)
   - Web Forms UI                                       -> Refactor (UI rewrite) when small, else Retain on .NET Framework
                                                           + hybrid (.NET Standard 2.0 shared libraries) - the hybrid pattern
   - Windows-bound blockers (COM, Win32, Office, Crystal, WF, Remoting, MSMQ, unsupported WCF bindings)
@@ -72,6 +75,10 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
         target = t["windows-retain"]
         rationale.append(f"Windows-bound dependencies ({', '.join(bound)}) need replacement before Linux; rehost on Windows now and refactor them as a follow-up.")
         options.append(f"Refactor: replace {', '.join(bound)} and replatform to {target_fw} on Linux (higher effort, removes Windows licensing).")
+    elif ui and pages <= rules.get("webforms_token_ui", {}).get("pages", 0) and             sum(p.get("loc_markup") or 0 for p in inv["projects"] if p["path"] in app["projects"]) <=             rules["webforms_token_ui"]["markup_share"] * max(1, sum(p.get("loc_handwritten") or 0 for p in inv["projects"] if p["path"] in app["projects"])):
+        r7, target = "Replatform", t["linux-container"].format(target=target_fw)
+        rationale.append(f"Web Forms project whose UI is a token ({pages} page(s), markup under {rules['webforms_token_ui']['markup_share']:.0%} of the code): "
+                         "it is a service (handlers, services, back-end logic), so it is ported; the page(s) are rewritten inside the port.")
     elif ui:
         big = kloc >= rules["webforms_retain_thresholds"]["kloc"] or pages >= rules["webforms_retain_thresholds"]["pages"]
         if big:
@@ -162,11 +169,18 @@ def main():
                 c["r7"], c["target"] = "Rehost", rules["targets"]["ec2-same-os"]
                 c["rationale"] = ["Lift-and-shift (client's choice in the intake): the server moves to Amazon EC2 with the same operating system and no code port; "
                                   "only what must change to run on AWS is in scope."] + [r for r in c["rationale"] if "rehost" in r.lower() or "Windows-bound" in r]
+            g = rules.get("r7_guidance", {}).get(c["r7"].split()[0].split("/")[0].strip(), {})
+            for k in ("why_not", "then", "risks", "sign_off"):
+                c.setdefault(k, g.get(k, []))
             entry = {"id": a["id"], "repo": repo, "name": a["name"], "type": a["type"], "entry": a["entry"], "framework_family": a["framework_family"],
                      "target_frameworks": a["target_frameworks"], "loc": a["loc"], "projects": a["projects"], **c, "decision_source": "rules"}
             d = decisions.get(a["id"])
             if d:
-                entry.update({k: v for k, v in d.items() if k in ("r7", "target", "rationale", "options", "risk", "confidence", "notes")})
+                entry.update({k: v for k, v in d.items() if k in ("r7", "target", "rationale", "options", "risk", "confidence", "notes", "why_not", "then", "risks", "sign_off")})
+                g = rules.get("r7_guidance", {}).get(entry["r7"].split()[0].split("/")[0].strip(), {})
+                for k in ("why_not", "then", "risks", "sign_off"):  # a changed R brings its own guidance unless the reviewer wrote it
+                    if k not in d:
+                        entry[k] = g.get(k, [])
                 entry["decision_source"] = "review"
                 entry["decided_by"] = d.get("by")
             apps_out.append(entry)

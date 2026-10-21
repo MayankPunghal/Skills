@@ -18,7 +18,7 @@ import os
 import re
 from collections import defaultdict, deque
 
-from _common import OUT, SOURCE_DIR_SKIP, read_json, read_text
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, read_json, read_text
 import _findings as F
 
 REACH_RELATIONS = {"calls", "inherits", "implements", "dispatches_to", "indirect_call"}  # dispatches_to: DI / override / message edges from csharp_resolve
@@ -194,7 +194,7 @@ def _entry_points(root, inv):
     contracts = set()  # WCF service contracts anywhere in the repository (often in a shared contracts project)
     for p in inv["projects"]:
         for d, dirs, files in os.walk(os.path.join(root, os.path.dirname(p["path"]))):
-            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and x.lower() not in ("bin", "obj") and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP) and x.lower() not in ("bin", "obj") and not x.startswith(".")]
             for fn in files:
                 if fn.lower().endswith(".cs") and os.path.getsize(os.path.join(d, fn)) < 2_000_000:
                     t = read_text(os.path.join(d, fn))
@@ -205,7 +205,7 @@ def _entry_points(root, inv):
         pdir = os.path.join(root, os.path.dirname(p["path"]))
         is_exe = (p.get("output_type") or "").lower() in ("exe", "winexe") or p["type"] in ("aspnet-core", "netcore-other", "netcore-console", "netcore-worker")
         for d, dirs, files in os.walk(pdir):
-            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and x.lower() not in ("bin", "obj") and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP) and x.lower() not in ("bin", "obj") and not x.startswith(".")]
             for fn in files:
                 full = os.path.join(d, fn)
                 rp = os.path.relpath(full, root).replace("\\", "/")

@@ -1,0 +1,23 @@
+{
+ "_doc": "Licensed or account-bound components found by package id or assembly reference (case-insensitive regex, anchored). kind: licensed = a commercial licence or licence key; saas = needs an account or agent key. Used by third_party.py with the online NuGet licence text; add a row when a client uses a vendor that is missing. Unlisted packages are not guessed.",
+ "components": [
+  {"match": "Select\\.?Pdf.*", "vendor": "SelectPdf", "kind": "licensed", "note": "Licence key; some editions bind the licence to the machine or domain."},
+  {"match": "Highsoft\\..*|Highstock.*|Highcharts.*|Highmaps.*", "vendor": "Highsoft (Highcharts)", "kind": "licensed", "note": "Commercial use needs a licence; the licence may name the site domain."},
+  {"match": "Telerik\\..*|Kendo.*|UI\\.for\\.(ASP|MVC|WinForms|WPF).*", "vendor": "Progress Telerik", "kind": "licensed", "note": "Licence key file; build agents need the licence too."},
+  {"match": "DevExpress.*", "vendor": "DevExpress", "kind": "licensed", "note": "Licence key; build agents need the licence too."},
+  {"match": "Syncfusion.*", "vendor": "Syncfusion", "kind": "licensed", "note": "Licence key registered at start-up."},
+  {"match": "GrapeCity.*|ComponentOne.*|C1\\..*|ActiveReports.*|FarPoint.*|Spread\\.NET.*", "vendor": "GrapeCity / MESCIUS", "kind": "licensed", "note": "Licence key or licenses.licx."},
+  {"match": "Aspose\\..*", "vendor": "Aspose", "kind": "licensed", "note": "Licence file."},
+  {"match": "itext.*", "vendor": "iText", "kind": "licensed", "note": "AGPL or commercial licence; commercial use needs a licence file."},
+  {"match": "Infragistics.*", "vendor": "Infragistics", "kind": "licensed", "note": "Licence key."},
+  {"match": "Stimulsoft.*|FastReport.*|Spire\\..*|IronPdf.*|IronOcr.*|IronBarCode.*|Leadtools.*|Dynamsoft.*|Xceed\\..*|Dundas.*|NCalc.*Pro|PostSharp.*|Quartz\\.Pro.*|CrystalDecisions.*", "vendor": "Commercial component", "kind": "licensed", "note": "Licence key or licence file."},
+  {"match": "StackifyLib|Stackify\\..*", "vendor": "Stackify", "kind": "saas", "note": "Needs the Stackify account key."},
+  {"match": "NewRelic.*|Datadog.*|Dynatrace.*|AppDynamics.*|Raygun.*|Sentry.*|Bugsnag.*|Elmah\\.Io.*|Loggly.*|Splunk.*", "vendor": "Monitoring service", "kind": "saas", "note": "Needs the service account or licence key."}
+ ],
+ "integration_key_groups": {
+  "_doc": "Environment variable and setting names are grouped by their vendor word after the application prefix. These words are infrastructure, not integrations; they are counted as connection values instead.",
+  "skip": ["DATABASE", "DB", "SMTP", "MAIL", "HOST", "PORT", "URL", "ENV", "LOG", "PATH", "SQL", "REDIS", "FTP", "SFTP", "CONNECTION", "CONN"],
+  "two_word": ["AZURE", "AWS", "GOOGLE", "MS", "MICROSOFT"]
+ },
+ "ignore_hosts": "(schemas?\\.|w3\\.org|xmlsoap\\.org|purl\\.org|localhost|example\\.|microsoft\\.com/fwlink|nuget\\.org|visualstudio\\.com|jsfiddle|bootstrapcdn|cdnjs|jsdelivr|unpkg|googleapis\\.com/css|gstatic|googletagmanager|google-analytics|cloudflare|rawgit|pexels|naturalearthdata|highcharts\\.com|code\\.jquery|aspnetcdn|ajax\\.googleapis)"
+}

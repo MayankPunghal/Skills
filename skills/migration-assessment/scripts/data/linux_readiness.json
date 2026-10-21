@@ -1,0 +1,7382 @@
+{
+ "_doc": "Linux readiness checks for .NET applications moving from Windows to Linux containers on AWS. Generated from the research catalogue (reference/linux-readiness.md). level: block / warn / info. patterns: regex + file globs; automated = every pattern has file types (linux_readiness.py scans it), else it is a checklist item for review. coverage: COVERED / PARTIAL / GAP against the migration-assessment rules.json and the residue rules at generation time. Items whose source is K are engineering knowledge, not a cited page.",
+ "sources": {
+  "S1": "Platform compatibility analyzer: https://learn.microsoft.com/en-us/dotnet/standard/analyzers/platform-compat-analyzer",
+  "S2": "CA1416 rule: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1416 (linked from S1; not fetched)",
+  "S3": "Upgrade .NET apps overview (porting): https://learn.microsoft.com/en-us/dotnet/core/porting/",
+  "S4": ".NET Framework technologies unavailable on .NET 6+: https://learn.microsoft.com/en-us/dotnet/core/porting/net-framework-tech-unavailable",
+  "S5": "Windows Compatibility Pack: https://learn.microsoft.com/en-us/dotnet/core/porting/windows-compat-pack",
+  "S7": "System.Drawing.Common Windows-only: https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/6.0/system-drawing-common-windows-only",
+  "S8": "ASP.NET Core default port 8080: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/aspnet-port",
+  "S9": "Globalization and ICU: https://learn.microsoft.com/en-us/dotnet/core/extensions/globalization-icu",
+  "S10": "Globalization config (invariant, NLS): https://learn.microsoft.com/en-us/dotnet/core/runtime-config/globalization",
+  "S11": "Cross-platform cryptography: https://learn.microsoft.com/en-us/dotnet/standard/security/cross-platform-cryptography",
+  "S12": "ProtectedData: https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.protecteddata",
+  "S13": "ProcessStartInfo.UseShellExecute: https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.useshellexecute",
+  "S14": "Path.GetInvalidFileNameChars: https://learn.microsoft.com/en-us/dotnet/api/system.io.path.getinvalidfilenamechars",
+  "S15": "Environment.GetFolderPath: https://learn.microsoft.com/en-us/dotnet/api/system.environment.getfolderpath (Unix note linked: https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/getfolderpath-unix, not fetched)",
+  "S16": "CodePagesEncodingProvider: https://learn.microsoft.com/en-us/dotnet/api/system.text.codepagesencodingprovider",
+  "S17": "FileSystemWatcher: https://learn.microsoft.com/en-us/dotnet/api/system.io.filesystemwatcher",
+  "S18": "Windows service worker (BackgroundService): https://learn.microsoft.com/en-us/dotnet/core/extensions/windows-service",
+  "S19": "Garbage collector config: https://learn.microsoft.com/en-us/dotnet/core/runtime-config/garbage-collector",
+  "S20": "BinaryFormatter removal (.NET 9): https://learn.microsoft.com/en-us/dotnet/core/compatibility/serialization/9.0/binaryformatter-removal",
+  "S21": "ASP.NET Core Windows authentication: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/windowsauth",
+  "S22": "AWS Transform, Visual Studio: https://docs.aws.amazon.com/transform/latest/userguide/dotnet-ide-vs.html",
+  "S23": "AWS Transform, how it works: https://docs.aws.amazon.com/transform/latest/userguide/dotnet-ide-how.html",
+  "S24": "AWS Transform, .NET capabilities and limitations: https://docs.aws.amazon.com/transform/latest/userguide/dotnet.html",
+  "S25": "Re-architecting as a Linux container: https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-net-applications/refactor-linux.html",
+  "S26": "Porting Assistant for .NET: https://aws.amazon.com/porting-assistant-dotnet/",
+  "S27": "Rootless containers, UID 1654 and USER $APP_UID: https://devblogs.microsoft.com/dotnet/securing-containers-with-rootless",
+  "S28": ".NET container images, ICU and tzdata in Alpine/chiseled: https://github.com/dotnet/dotnet-docker/discussions/4995",
+  "S29": "Cross-platform time zones with .NET Core: https://devblogs.microsoft.com/dotnet/cross-platform-time-zones-with-net-core/",
+  "S30": "Case sensitivity write-up: https://www.benlocke.co.uk/case-sensitivity/",
+  "S31": "URL case sensitivity and assembly loading: https://blogs.msdn.microsoft.com/junfeng/2005/03/20/url-case-sensitivity-and-assembly-loading/",
+  "S32": "Umbraco thread on case-sensitive file names: https://discord-chats.umbraco.com/t/22323315/handling-case-sensitivity-of-filenames-when-transferring-to-?t=v2",
+  "S33": "DevTx KB 19 and migration-assessment rules (see section 22 and the rule catalogues named in section 23)."
+ },
+ "rules": [
+  {
+   "id": "LNX-BLD-CA1416",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows-only API called from cross-platform code: CA1416 warns at build, call throws PlatformNotSupportedException at runtime",
+   "detect": "build log on Linux: `warning CA1416`; cs",
+   "fix": "Replace, remove, or guard with `OperatingSystem.IsWindows()`",
+   "sources": [
+    "S1",
+    "S2"
+   ],
+   "already_in": "PARTIAL: validate_linux_build.py builds on Linux; no rule parses CA1416 output",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "warning CA1416",
+     "files": null,
+     "kinds": [
+      "build log on linux"
+     ]
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-BLD-TFM-WINDOWS",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`-windows` TFM makes the whole assembly Windows-only",
+   "detect": "proj: `<TargetFrameworks?>[^<]*-windows`",
+   "fix": "Multi-target `net10.0` for shared code; keep `-windows` only on Windows-only projects",
+   "sources": [
+    "S1"
+   ],
+   "already_in": "GAP (PROJ-NETFX-TFM covers net4x only)",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<TargetFrameworks?>[^<]*-windows",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-WINFORMS-WPF",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WinForms/WPF SDK flags pull in Windows desktop targets",
+   "detect": "proj: `<UseWindowsForms>true|<UseWPF>true|Microsoft\\.NET\\.Sdk\\.WindowsDesktop`",
+   "fix": "Move logic to a class library; UI stays on Windows",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "PARTIAL: DESK-WINFORMS (cs/vb), DESK-WPF (proj)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "<UseWindowsForms>true|<UseWPF>true|Microsoft\\.NET\\.Sdk\\.WindowsDesktop",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-RID-WINDOWS",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Publish pinned to a Windows RID; artifact is not a Linux binary",
+   "detect": "proj/pubxml: `<RuntimeIdentifier>win[-\\w]*<`; `win-x64|win-x86`",
+   "fix": "Publish `linux-x64` (or `linux-arm64` for Graviton/Fargate ARM)",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<RuntimeIdentifier>win[-\\w]*<",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".pubxml",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj",
+      "pubxml"
+     ]
+    },
+    {
+     "regex": "win-x64|win-x86",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-BLD-MSDEPLOY-PUBLISH",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS/MSDeploy publish profile has no container equivalent",
+   "detect": "pubxml: `WebDeploy|MSDeploy`",
+   "fix": "`dotnet publish` plus Dockerfile",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: IIS-PUBLISH (info)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "WebDeploy|MSDeploy",
+     "files": [
+      ".pubxml"
+     ],
+     "kinds": [
+      "pubxml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-WINDOWS-PACKAGES",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block if server code uses them",
+   "what": "Packages that are Windows-only (their APIs throw or are absent on Linux)",
+   "detect": "proj: `Include=\"(System\\.Drawing\\.Common|System\\.DirectoryServices[\\w.]*|System\\.Management|System\\.ServiceProcess\\.ServiceController|System\\.Diagnostics\\.PerformanceCounter|System\\.Diagnostics\\.EventLog|System\\.Messaging|System\\.Security\\.Cryptography\\.ProtectedData|System\\.Speech|System\\.Windows\\.Extensions|Microsoft\\.Win32\\.Registry)\"`",
+   "fix": "Replace per API row below; add a post-build package check",
+   "sources": [
+    "S5",
+    "S7",
+    "S12"
+   ],
+   "already_in": "PARTIAL: WIN-* rules match code, not package references",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Include=\"(System\\.Drawing\\.Common|System\\.DirectoryServices[\\w.]*|System\\.Management|System\\.ServiceProcess\\.ServiceController|System\\.Diagnostics\\.PerformanceCounter|System\\.Diagnostics\\.EventLog|System\\.Messaging|System\\.Security\\.Cryptography\\.ProtectedData|System\\.Speech|System\\.Windows\\.Extensions|Microsoft\\.Win32\\.Registry)\"",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-WINCOMPAT-PACK",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Windows Compatibility Pack (~20k APIs) compiles, but its Windows parts still fail on Linux",
+   "detect": "proj: `Include=\"Microsoft\\.Windows\\.Compatibility\"`",
+   "fix": "Keep only for Windows-only projects; otherwise remove and fix call sites",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Include=\"Microsoft\\.Windows\\.Compatibility\"",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-MODULE-OUTPUT",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Multi-module assemblies (`OutputType=Module`) unsupported in .NET 6+",
+   "detect": "proj: `<OutputType>Module<`",
+   "fix": "Merge modules into one assembly",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<OutputType>Module<",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-REFLECTION-EMIT-SAVE",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block (on .NET 8)",
+   "what": "AssemblyBuilder.Save / RunAndSave / ReflectionOnly unavailable through .NET 8 (PersistedAssemblyBuilder added in .NET 9)",
+   "detect": "cs: `AssemblyBuilderAccess\\.(RunAndSave|Save|ReflectionOnly)`; `\\.Save\\(` near `DefineDynamicAssembly`",
+   "fix": "Use PersistedAssemblyBuilder on .NET 9+, or do not persist",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "AssemblyBuilderAccess\\.(RunAndSave|Save|ReflectionOnly)",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    },
+    {
+     "regex": "\\.Save\\(",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false,
+   "context": "DefineDynamicAssembly"
+  },
+  {
+   "id": "LNX-BLD-APPDOMAIN",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Creating app domains is not supported; CreateDomain throws",
+   "detect": "cs/vb: `AppDomain\\.CreateDomain\\(|AppDomainSetup|AppDomain\\.CurrentDomain\\.SetData`",
+   "fix": "Separate process or container; AssemblyLoadContext for plugins",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "AppDomain\\.CreateDomain\\(|AppDomainSetup|AppDomain\\.CurrentDomain\\.SetData",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-CAS-ATTRIBUTES",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Code Access Security / security transparency is not a boundary; attributes are no-ops",
+   "detect": "cs/vb: `SecurityPermission|PermissionSet|CodeAccessPermission|SecurityTransparent|AllowPartiallyTrustedCallers`",
+   "fix": "Remove; rely on OS/container isolation",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-CAS (low)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SecurityPermission|PermissionSet|CodeAccessPermission|SecurityTransparent|AllowPartiallyTrustedCallers",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-DELEGATE-BEGININVOKE",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Delegate BeginInvoke/EndInvoke throw PlatformNotSupportedException",
+   "detect": "cs/vb: `\\.BeginInvoke\\(|\\.EndInvoke\\(` (review each hit; delegates only)",
+   "fix": "Task.Run / async-await",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.BeginInvoke\\(|\\.EndInvoke\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-PREBUILD-WINDOWS-CMD",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Pre/post-build events call Windows commands; build fails on Linux",
+   "detect": "proj: `<(Pre|Post)BuildEvent>[^<]*(copy |xcopy|del |cmd|powershell|\\\\\\\\|%[A-Za-z]+%)`",
+   "fix": "Replace with MSBuild Copy/Exec using `$(MSBuildProjectDirectory)`",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: BUILD-EVENTS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<(Pre|Post)BuildEvent>[^<]*(copy |xcopy|del |cmd|powershell|\\\\\\\\|%[A-Za-z]+%)",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-NUGET-WINDOWS-SOURCE",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "NuGet source is a UNC or drive-letter path",
+   "detect": "NuGet.Config: `value=\"(\\\\\\\\|[A-Za-z]:\\\\)`",
+   "fix": "Use a URL feed (CodeArtifact / Azure Artifacts)",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "PARTIAL: BUILD-PRIVATE-FEED",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "value=\"(\\\\\\\\|[A-Za-z]:\\\\)",
+     "files": [
+      "NuGet.Config",
+      "nuget.config"
+     ],
+     "kinds": [
+      "nuget.config"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-USINGTASK-WINDOWS",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Custom MSBuild task loaded from a Windows path or Program Files",
+   "detect": "proj/targets: `<UsingTask[^>]*AssemblyFile=\"[^\"]*(Program Files|\\\\\\\\|[A-Za-z]:)`; `\\$\\(ProgramFiles|MSBuildExtensionsPath32`",
+   "fix": "Ship the task as a cross-platform NuGet package",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<UsingTask[^>]*AssemblyFile=\"[^\"]*(Program Files|\\\\\\\\|[A-Za-z]:)",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj",
+      "targets"
+     ]
+    },
+    {
+     "regex": "\\$\\(ProgramFiles|MSBuildExtensionsPath32",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-BLD-NATIVE-DLL-COPY",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block (if loaded)",
+   "what": "Windows native DLLs copied into output; not loadable on Linux",
+   "detect": "proj: `<(Content|None|Reference)[^>]*Include=\"[^\"]*\\.dll\"`; `HintPath>[^<]*\\\\(x64|x86)\\\\`",
+   "fix": "Use Linux `.so` builds per RID",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "PARTIAL: WIN-PINVOKE-NATIVE (cs only)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "<(Content|None|Reference)[^>]*Include=\"[^\"]*\\.dll\"",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    },
+    {
+     "regex": "HintPath>[^<]*\\\\(x64|x86)\\\\",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-BLD-GAC-REFERENCE",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Strong-named assembly resolved from GAC (no HintPath)",
+   "detect": "proj: `<Reference Include=` without `<HintPath>`",
+   "fix": "Replace with NuGet package",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: BUILD-GAC-REFERENCE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<Reference Include=",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    },
+    {
+     "regex": "<HintPath>",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "reference_without_hintpath",
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-WEB-TARGETS",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "VS web application targets are Windows build tooling",
+   "detect": "proj: `Microsoft\\.WebApplication\\.targets|WebApplicationProjectGuid`",
+   "fix": "SDK-style web project",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: PROJ-WEB-TARGETS, BUILD-WEB-TARGETS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.WebApplication\\.targets|WebApplicationProjectGuid",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-INSTALLER",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "InstallUtil, WiX and setup projects are Windows-only",
+   "detect": "proj/cs: `\\.wixproj|System\\.Configuration\\.Install|RunInstallerAttribute`",
+   "fix": "Container image replaces the installer",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: BUILD-INSTALLER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\.wixproj|System\\.Configuration\\.Install|RunInstallerAttribute",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-BLD-LEGACY-CSPROJ",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Non SDK-style project does not build with `dotnet` on Linux",
+   "detect": "proj: `<Project\\s+ToolsVersion=`",
+   "fix": "Convert to SDK-style",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: PROJ-LEGACY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<Project\\b(?![^>]*\\bSdk=)[^>]*(ToolsVersion=|msbuild/2003)",
+     "files": [
+      ".csproj",
+      ".vbproj",
+      ".fsproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-CASE-LITERAL",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Path literal differs in case from the file on disk: works on NTFS, not found on ext4/overlayfs",
+   "detect": "cs/vb/markup/cfg: `\"~?/?[^\"]+\\.(cshtml|css|js|json|png|jpg|gif|svg|xml|config|resx|txt|html)\"`, then compare with `git ls-files` (case-sensitive)",
+   "fix": "Rename file or literal (`git mv` for case-only renames); add a Linux CI check",
+   "sources": [
+    "S30",
+    "S32"
+   ],
+   "already_in": "GAP: FILE-CASE-MISMATCH is documented in migration-assessment/references/linux-pitfalls.md but is not in rules.json or any script",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\\"~?/?([^\\\"<>|*?:\\s]+\\.(cshtml|css|js|json|png|jpg|gif|svg|xml|config|resx|txt|html|xslt?))\\\"",
+     "files": [
+      ".cs",
+      ".vb",
+      ".cshtml",
+      ".razor",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "case_exact",
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-CASE-VIEW-NAME",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Razor view or partial named with different case than the .cshtml file",
+   "detect": "cs/markup: `\\b(View|PartialView|RenderPartial|Partial|RenderAction)\\(\\s*\"([^\"]+)\"` checked against Views/ file list",
+   "fix": "Match casing exactly",
+   "sources": [
+    "S30"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\b(View|PartialView|RenderPartial|Partial|RenderAction)\\(\\s*\"([^\"]+)\"",
+     "files": [
+      ".ascx",
+      ".aspx",
+      ".cs",
+      ".cshtml",
+      ".master",
+      ".razor"
+     ],
+     "kinds": [
+      "cs",
+      "markup"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-CASE-STATIC-URL",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Script, style or image reference differs in case from wwwroot file",
+   "detect": "markup: `(src|href)=\"(/?[^\"#?]+\\.(js|css|png|jpg|gif|svg|woff2?))\"` checked against wwwroot",
+   "fix": "Fix casing; add lowercase file-name convention",
+   "sources": [
+    "S30"
+   ],
+   "already_in": "GAP (FILE-CASE-MISMATCH not implemented)",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(?:src|href)=\\\"(?!https?:|//|#|data:)~?/?([^\\\"#?<>]+\\.(?:js|css|png|jpg|jpeg|gif|svg|ico|woff2?))\\\"",
+     "files": [
+      ".cshtml",
+      ".razor",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".html",
+      ".htm"
+     ],
+     "kinds": [
+      "markup"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "case_exact",
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-CASE-EMBEDDED-RESOURCE",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "GetManifestResourceStream name must match exactly; default names come from folder/namespace casing",
+   "detect": "cs: `GetManifestResourceStream\\(\"([^\"]+)\"`; proj: `<EmbeddedResource Include=` without `LogicalName`",
+   "fix": "Set explicit `LogicalName`; compare names in a test",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetManifestResourceStream\\(\\s*\\\"([^\\\"]+)\\\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-CASE-ASSEMBLY-NAME",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Assembly and type loads by name differ in case from the DLL file",
+   "detect": "cs: `Assembly\\.Load(From)?\\(\\s*\"[^\"]+\"\\)`; `Type\\.GetType\\(\"[^\"]+,\\s*[^\"]+\"\\)`",
+   "fix": "Exact assembly names; prefer typed references",
+   "sources": [
+    "S31"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Assembly\\.Load(From)?\\(\\s*\"[^\"]+\"\\)",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    },
+    {
+     "regex": "Type\\.GetType\\(\"[^\"]+,\\s*[^\"]+\"\\)",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-FS-CASE-APPSETTINGS",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Host loads `appsettings.{Environment}.json` by exact name; `appsettings.production.json` vs `Production` fails",
+   "detect": "file list: `appsettings\\.[A-Za-z]+\\.json`, compare with ASPNETCORE_ENVIRONMENT value",
+   "fix": "Single agreed casing; CI check",
+   "sources": [
+    "S30"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(^|/)appsettings\\.(?!(Development|Staging|Production)\\.json$)(?i:development|staging|production)\\.json$",
+     "files": [
+      "@path"
+     ],
+     "kinds": [
+      "file"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-BACKSLASH-LITERAL",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`\\` is a valid name character on Linux; paths built with it are wrong",
+   "detect": "cs/vb: `(Path\\.Combine|File\\.|Directory\\.|new FileInfo|new DirectoryInfo)\\([^)]*\"[^\"]*\\\\\\\\[^\"]*\"`",
+   "fix": "`Path.Combine` and `/`",
+   "sources": [
+    "S14"
+   ],
+   "already_in": "COVERED: FILE-BACKSLASH; FILE-BACKSLASH-JOIN (residue)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(Path\\.Combine|File\\.|Directory\\.|new FileInfo|new DirectoryInfo)\\([^)]*\"[^\"]*\\\\\\\\[^\"]*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-SPLIT-BACKSLASH",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Parsing paths by splitting on `\\`",
+   "detect": "cs/vb: `\\.Split\\(\\s*(@?\"\\\\\\\\?\"|'\\\\\\\\')`",
+   "fix": "`Path.DirectorySeparatorChar` / Path APIs",
+   "sources": [
+    "S14"
+   ],
+   "already_in": "PARTIAL: FILE-BACKSLASH",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\.Split\\(\\s*(@?\"\\\\\\\\?\"|'\\\\\\\\')",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-DRIVE-LETTER",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Drive letter paths do not exist in containers",
+   "detect": "cs/cfg/sql/proj: `@?\"[A-Za-z]:\\\\`",
+   "fix": "Configured path on mounted storage (EFS) or S3",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FILE-DRIVE (residue); FILE-DRIVE-LETTER (rules)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "@?\"[A-Za-z]:\\\\",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".sql",
+      ".targets",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "cfg",
+      "sql",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-UNC-PATH",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "UNC share paths do not resolve on Linux",
+   "detect": "cs/cfg: `@?\"\\\\\\\\[A-Za-z0-9._-]+\\\\`",
+   "fix": "EFS / S3 / SDK",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FILE-UNC (residue); NET-UNC-SHARE (rules)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "@\\\"\\\\\\\\[\\w.-]+\\\\|(?<!@)\\\"\\\\\\\\\\\\\\\\[\\w.-]+\\\\\\\\",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    },
+    {
+     "regex": "\\\"\\\\\\\\[\\w.-]+\\\\",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "\\\"\\\\\\\\\\\\\\\\[\\w.-]+\\\\\\\\",
+     "files": [
+      "appsettings*.json",
+      "*.runtimeconfig.json"
+     ],
+     "kinds": [
+      "json"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-SPECIAL-FOLDER",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block if result used as a path",
+   "what": "GetFolderPath returns \"\" when the folder does not physically exist; several Windows SpecialFolder values have no Linux equivalent",
+   "detect": "cs/vb: `GetFolderPath\\(\\s*Environment\\.SpecialFolder\\.(ProgramFiles|ProgramFilesX86|Windows|System|SystemX86|CommonProgramFiles|Programs|Startup|StartMenu|Favorites|Cookies|Recent|SendTo|Templates|CommonApplicationData)`",
+   "fix": "Configuration or IConfiguration path; test with empty value",
+   "sources": [
+    "S15"
+   ],
+   "already_in": "PARTIAL: FILE-WIN-FOLDERS",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "GetFolderPath\\(\\s*Environment\\.SpecialFolder\\.(ProgramFiles|ProgramFilesX86|Windows|System|SystemX86|CommonProgramFiles|Programs|Startup|StartMenu|Favorites|Cookies|Recent|SendTo|Templates|CommonApplicationData)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-WIN-ENV-VAR-PATH",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`%windir%`, `%ProgramData%`, `%APPDATA%` etc. are not defined on Linux",
+   "detect": "cfg/proj/cs: `%(SystemRoot|windir|ProgramData|ProgramFiles|APPDATA|LOCALAPPDATA|TEMP|TMP|SystemDrive)%`; `ExpandEnvironmentVariables\\(`",
+   "fix": "Config keys, not env expansion",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FILE-WIN-FOLDERS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "%(SystemRoot|windir|ProgramData|ProgramFiles|APPDATA|LOCALAPPDATA|TEMP|TMP|SystemDrive)%",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "proj",
+      "cs"
+     ]
+    },
+    {
+     "regex": "ExpandEnvironmentVariables\\(",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-FS-TEMP-PATH",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Path.GetTempPath() is /tmp, which is ephemeral per ECS task; code assumes a Windows temp folder or persistence",
+   "detect": "cs/vb: `GetTempPath\\(\\)`; `\"C:\\\\\\\\Temp`",
+   "fix": "Explicit temp dir on a mounted volume; cleanup on startup",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetTempPath\\(\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "\"C:\\\\\\\\Temp",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-FS-INVALID-NAME-CHECK",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Validation via GetInvalidFileNameChars assumes Windows set; on Linux only `/` and NUL are invalid, so `:*?\"<>|` pass and break on Windows or S3",
+   "detect": "cs/vb: `GetInvalidFileNameChars|GetInvalidPathChars`",
+   "fix": "Explicit allow-list for uploaded/derived file names",
+   "sources": [
+    "S14"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetInvalidFileNameChars|GetInvalidPathChars",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-LOCAL-WRITE-APPDIR",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Writes into app folder (AppContext.BaseDirectory, CurrentDirectory) fail when the root filesystem is read-only or owned by root",
+   "detect": "cs: `(AppContext\\.BaseDirectory|Directory\\.GetCurrentDirectory\\(\\)|Assembly\\.GetExecutingAssembly\\(\\)\\.Location|AppDomain\\.CurrentDomain\\.BaseDirectory)` near `File\\.(Create|Write|Append|Open)|StreamWriter|CreateDirectory` (heuristic)",
+   "fix": "Write to a mounted volume (EFS) or S3; app dir read-only",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: FILE-LOCAL-WRITE (state-scale)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "(AppContext\\.BaseDirectory|Directory\\.GetCurrentDirectory\\(\\)|Assembly\\.GetExecutingAssembly\\(\\)\\.Location|AppDomain\\.CurrentDomain\\.BaseDirectory)",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "File\\.(Create|Write|Append|Open)|StreamWriter|CreateDirectory"
+  },
+  {
+   "id": "LNX-FS-LONG-PATH-PREFIX",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`\\\\?\\` long-path prefix is a literal file name on Linux",
+   "detect": "cs/vb: `\"\\\\\\\\\\?\\\\`",
+   "fix": "Remove prefix; keep paths short",
+   "sources": [
+    "S14"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\"\\\\\\\\\\?\\\\",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-FILE-LOCKING",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Locks are advisory on Linux (no mandatory share modes); cross-process FileShare.None assumptions break",
+   "detect": "cs/vb: `FileShare\\.(None|Read)` with file-based coordination",
+   "fix": "Use a DB or lock service for coordination",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: FILE-LOCKING (low)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FileShare\\.(None|Read)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-CASE-INSENSITIVE-COMPARE",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Path equality done case-insensitively: wrong on Linux",
+   "detect": "cs/vb: `(path|file|dir)[\\w.]*\\s*(==|\\.Equals\\()[^;]*(OrdinalIgnoreCase|ToLower\\(|ToUpper\\()` (heuristic)",
+   "fix": "Compare normalized full paths with Path.GetFullPath, ordinal",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(path|file|dir)[\\w.]*\\s*(==|\\.Equals\\()[^;]*(OrdinalIgnoreCase|ToLower\\(|ToUpper\\()",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-WATCHER-SEMANTICS",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "FileSystemWatcher on Linux uses inotify; buffer overflow drops events; rename/move events and network mounts behave differently",
+   "detect": "cs/vb: `new FileSystemWatcher|FileSystemWatcher\\(`",
+   "fix": "Polling fallback, idempotent processing, reconcile on startup",
+   "sources": [
+    "S17"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "new FileSystemWatcher|FileSystemWatcher\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-SYMLINK-JUNCTION",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Junctions do not exist on Linux; symlinks are used instead",
+   "detect": "cs/vb/ps1/sh/bat: `mklink|CreateSymbolicLink|\\.Junction|mklink /J`",
+   "fix": "Use symlinks or path config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "mklink|CreateSymbolicLink|\\.Junction|mklink /J",
+     "files": [
+      ".bat",
+      ".cmd",
+      ".cs",
+      ".ps1",
+      ".sh",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "ps1",
+      "sh",
+      "bat"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-ATTRIBUTE-FLAGS",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ReadOnly / Hidden attributes are not Linux permissions; hidden means leading dot",
+   "detect": "cs/vb: `FileAttributes\\.(ReadOnly|Hidden|System)`; `File\\.SetAttributes\\(`",
+   "fix": "Use file mode / explicit checks",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "FileAttributes\\.(ReadOnly|Hidden|System)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "File\\.SetAttributes\\(",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-FS-SCRIPT-EXEC-BIT",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Shell scripts committed without executable bit: `Permission denied` at container start",
+   "detect": "git: `git ls-files -s '*.sh'` mode not `100755`; df `ENTRYPOINT [\"./`",
+   "fix": "`git update-index --chmod=+x` or `chmod +x` in Dockerfile",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": false,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-CRLF-SCRIPTS",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "CRLF line endings in shell scripts or Dockerfile: `/usr/bin/env: 'bash\\r'`",
+   "detect": "`\\r$` in `*.sh`, `Dockerfile`, `*.yml`, `entrypoint*` (grep)",
+   "fix": "`.gitattributes`: `*.sh text eol=lf`; convert files",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: FILE-CRLF (cs/vb only, low)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\r$",
+     "files": [
+      ".sh",
+      "entrypoint*",
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "sh",
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "crlf",
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-DELETE-OPEN-FILE",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Deleting or renaming a file that another handle has open succeeds on Linux but fails on Windows; code written on Linux can break on Windows",
+   "detect": "cs/vb: `File\\.(Delete|Move)` near open streams (review)",
+   "fix": "Explicit close before delete; test on both",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "File\\.(Delete|Move)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-TZ-WINDOWS-ID",
+   "area": "Time zones",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows IDs resolve on Linux only through ICU; fail without ICU, in invariant mode, or on tzdata-less images",
+   "detect": "cs/vb/cfg/sql: `\"(Eastern|Central|Mountain|Pacific|GMT|W\\. Europe|India|China|AUS Eastern|Tokyo|Romance|Romance) Standard Time\"|\"[A-Za-z .]+ Standard Time\"`",
+   "fix": "Store IANA IDs; convert with TimeZoneInfo.TryConvertWindowsIdToIanaId or TimeZoneConverter",
+   "sources": [
+    "S9",
+    "S29"
+   ],
+   "already_in": "COVERED: TZ-WINDOWS-ID (residue); TZ-WINDOWS-ID (rules)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\"(Eastern|Central|Mountain|Pacific|GMT|W\\. Europe|India|China|AUS Eastern|Tokyo|Romance|Romance) Standard Time\"|\"[A-Za-z .]+ Standard Time\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".sql",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg",
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-TZ-IANA-ID-IN-CODE",
+   "area": "Time zones",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IANA IDs (`America/New_York`) work on Windows only on .NET 6+ with ICU; old Windows or NLS mode fail",
+   "detect": "cs/vb/cfg: `\"(America|Europe|Asia|Australia|Africa|Pacific)/[A-Za-z_]+\"`",
+   "fix": "Keep one canonical id per deployment; test on Windows and Linux",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\"(America|Europe|Asia|Australia|Africa|Pacific)/[A-Za-z_]+\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-TZ-LOCAL-NOW",
+   "area": "Time zones",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Containers run UTC; DateTime.Now / Today and TimeZoneInfo.Local silently change behaviour",
+   "detect": "cs/vb: `DateTime\\.(Now|Today)\\b|DateTimeOffset\\.Now|TimeZoneInfo\\.Local\\b`",
+   "fix": "Explicit business zone or UTC",
+   "sources": [
+    "S29"
+   ],
+   "already_in": "COVERED: TZ-LOCAL-TIME (rules); TZ-LOCAL (residue)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "DateTime\\.(Now|Today)\\b|DateTimeOffset\\.Now|TimeZoneInfo\\.Local\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-TZ-SQL-LOCAL-TIME",
+   "area": "Time zones",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SQL Server GETDATE/SYSDATETIME use DB-server local time, not app time",
+   "detect": "sql/cs: `\\b(GETDATE|SYSDATETIME|SYSDATETIMEOFFSET)\\s*\\(`",
+   "fix": "GETUTCDATE / app-supplied UTC",
+   "sources": [
+    "S29"
+   ],
+   "already_in": "COVERED: TZ-SQL-LOCAL-TIME (rules)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\b(GETDATE|SYSDATETIME|SYSDATETIMEOFFSET)\\s*\\(",
+     "files": [
+      ".cs",
+      ".sql"
+     ],
+     "kinds": [
+      "sql",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-TZ-TZDATA-MISSING",
+   "area": "Time zones",
+   "level": "block",
+   "severity_note": "block (if zones used)",
+   "what": "Image without tzdata (alpine, chiseled): TimeZoneInfo throws TimeZoneNotFoundException for IANA ids",
+   "detect": "df: `FROM .*(alpine|chiseled|distroless)` and no `tzdata` line",
+   "fix": "Install tzdata or use full Debian/Ubuntu image",
+   "sources": [
+    "S28"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+.*(alpine|chiseled|distroless)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "tzdata",
+   "tuned": true
+  },
+  {
+   "id": "LNX-TZ-DISPLAY-NAME",
+   "area": "Time zones",
+   "level": "info",
+   "severity_note": "info",
+   "what": "StandardName / DisplayName text differs on Linux (ICU display names)",
+   "detect": "cs/cshtml: `\\.(StandardName|DaylightName|DisplayName)\\b`",
+   "fix": "Do not show zone names from the OS; use a fixed label table",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(StandardName|DaylightName|DisplayName)\\b",
+     "files": [
+      ".cs",
+      ".cshtml"
+     ],
+     "kinds": [
+      "cs",
+      "cshtml"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "TimeZoneInfo|TimeZone\\b",
+   "tuned": true
+  },
+  {
+   "id": "LNX-TZ-CONVERT-DST",
+   "area": "Time zones",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Ambiguous/invalid local times around DST resolved per tzdata version; differs across images",
+   "detect": "cs/vb: `TimeZoneInfo\\.ConvertTime(ToUtc)?\\(`",
+   "fix": "Store UTC; convert at the edge; test DST boundaries",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "TimeZoneInfo\\.ConvertTime(ToUtc)?\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-HARDCODED-CULTURE",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Culture name hardcoded; culture data comes from ICU/CLDR and differs",
+   "detect": "cs/vb/cfg: `new CultureInfo\\(\"[a-z]{2}-[A-Z]{2}\"\\)|GetCultureInfo\\(\"[a-z]{2}-[A-Z]{2}\"\\)`",
+   "fix": "Explicit invariant or request culture",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "COVERED: CULT-HARDCODED (rules)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "new CultureInfo\\(\"[a-z]{2}-[A-Z]{2}\"\\)|GetCultureInfo\\(\"[a-z]{2}-[A-Z]{2}\"\\)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-IMPLICIT-STRING-COMPARE",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn (block for identifiers)",
+   "what": "Culture-sensitive default comparisons: ICU and NLS order and match differently (zero-weight `\\0`, ligatures, apostrophes)",
+   "detect": "cs/vb: `\\.(StartsWith|EndsWith|IndexOf|LastIndexOf)\\(\"[^\"]*\"\\)` (no comparison arg); `string\\.Compare\\(` without StringComparison",
+   "fix": "`StringComparison.Ordinal` for identifiers; run CA1307/CA1309",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "PARTIAL: CULT-HARDCODED",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\.(StartsWith|EndsWith|IndexOf|LastIndexOf)\\(\\\"[^\\\"]{2,}\\\"\\)|\\bstring\\.Compare\\(|\\bString\\.Compare\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "StringComparison|CompareOptions|CultureInfo",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CUL-SORT-DEFAULT",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "List/Order sorting of strings uses culture rules: order changes (`bill's` vs `bills`)",
+   "detect": "cs/vb: `OrderBy\\(|\\.Sort\\(\\)|Array\\.Sort\\(` on strings with no comparer",
+   "fix": "Explicit comparer",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "OrderBy\\(|\\.Sort\\(\\)|Array\\.Sort\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-CASE-CONVERSION",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ToUpper/ToLower use current culture (Turkish I) and ICU casing",
+   "detect": "cs/vb: `\\.(ToUpper|ToLower)\\(\\)` on keys, codes, identifiers",
+   "fix": "`ToUpperInvariant()` / Ordinal",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(ToUpper|ToLower)\\(\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-SHORTEST-DAY-NAME",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Day abbreviations changed: GetShortestDayName gives one character on .NET 5+",
+   "detect": "cs/vb: `GetShortestDayName|GetAbbreviatedDayName`",
+   "fix": "Explicit format strings",
+   "sources": [
+    "S9"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetShortestDayName|GetAbbreviatedDayName",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-DEFAULT-NUMBER-FORMAT",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ToString(\"C\"/\"N\"/\"D\"/\"F\") uses current culture; containers default to invariant (no LANG)",
+   "detect": "cs/vb: `\\.ToString\\(\\s*\"[CNDFP]\"\\s*\\)`",
+   "fix": "Explicit culture for user-facing output",
+   "sources": [
+    "S10"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.ToString\\(\\s*\"[CNDFP]\"\\s*\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-INVARIANT-MODE",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn (block if culture-sensitive app)",
+   "what": "InvariantGlobalization removes culture data: CultureInfo(\"de-DE\") behaves as invariant",
+   "detect": "proj: `<InvariantGlobalization>true`; df/yml: `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`; cfg: `System.Globalization.Invariant\": true`",
+   "fix": "Enable only when culture-free; verify formatting",
+   "sources": [
+    "S10"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<InvariantGlobalization>true",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    },
+    {
+     "regex": "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1",
+     "files": [
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml"
+     ]
+    },
+    {
+     "regex": "System.Globalization.Invariant\": true",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-ICU-MISSING-IMAGE",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Non-invariant app on an image without libicu: process fails at startup (\"Failed to load system ICU\")",
+   "detect": "df: `FROM .*(alpine|chiseled|distroless)` without invariant flag or ICU install",
+   "fix": "Use Debian/Ubuntu base or `icu-libs` / invariant mode",
+   "sources": [
+    "S9",
+    "S28"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+.*(alpine|chiseled|distroless)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "icu-libs|libicu|DOTNET_SYSTEM_GLOBALIZATION_INVARIANT|chiseled-extra|-extra\\b",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CUL-NLS-SWITCH",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "UseNls is Windows-only; Linux ignores it, so Windows-like behaviour is not reproduced",
+   "detect": "cfg/proj/env: `System\\.Globalization\\.UseNls|DOTNET_SYSTEM_GLOBALIZATION_USENLS`",
+   "fix": "Remove; test under ICU",
+   "sources": [
+    "S10"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "System\\.Globalization\\.UseNls|DOTNET_SYSTEM_GLOBALIZATION_USENLS",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "proj",
+      "env"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-LCID-CULTURE",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Numeric LCID (Windows) used to create CultureInfo; invalid or different on Linux",
+   "detect": "cs/vb: `new CultureInfo\\(\\s*0x?[0-9A-Fa-f]{3,4}\\s*\\)`",
+   "fix": "Named cultures",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "new CultureInfo\\(\\s*0x?[0-9A-Fa-f]{3,4}\\s*\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-LIST-SEPARATOR",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Parsing input or CSV with the current culture list separator or decimal separator",
+   "detect": "cs/vb: `ListSeparator|NumberDecimalSeparator` used in parsers",
+   "fix": "Explicit separators for file formats",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ListSeparator|NumberDecimalSeparator",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-CODEPAGE-LITERAL",
+   "area": "Encodings, line endings and text",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Code pages other than UTF and ASCII/Latin-1 are not built in (.NET 5+); GetEncoding throws",
+   "detect": "cs/vb: `Encoding\\.GetEncoding\\(\\s*(?!65001|1200|1201|12000|12001|20127|28591|65000)\\d+\\s*\\)`; `GetEncoding\\(\"(windows-125\\d|iso-8859-(?!1\\b)\\d+|shift_jis|gb2312|big5|euc-kr)\"`",
+   "fix": "Register CodePagesEncodingProvider; or move to UTF-8",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "PARTIAL: FILE-ENCODING",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Encoding\\.GetEncoding\\(\\s*(?!65001|1200|1201|12000|12001|20127|28591|65000)\\d+\\s*\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "GetEncoding\\(\"(windows-125\\d|iso-8859-(?!1\\b)\\d+|shift_jis|gb2312|big5|euc-kr)\"",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-ENC-CODEPAGE-PROVIDER-MISSING",
+   "area": "Encodings, line endings and text",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Code pages used but System.Text.Encoding.CodePages not referenced or not registered",
+   "detect": "proj: absent `System.Text.Encoding.CodePages`; cs: `Encoding.RegisterProvider` absent",
+   "fix": "Add package and `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Encoding\\.GetEncoding\\(\\s*(\\d{3,5}\\b|\\\"(windows-|iso-8859|ibm|shift_jis|gb2312|big5|euc-|koi8))",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "RegisterProvider",
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENC-DEFAULT-ENCODING",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Encoding.Default is UTF-8 on .NET 5+ (ANSI on .NET Framework): legacy files read as mojibake",
+   "detect": "cs/vb: `Encoding\\.Default\\b`",
+   "fix": "Explicit encoding everywhere",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "COVERED: FILE-ENCODING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Encoding\\.Default\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-NO-ENCODING-ARG",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "StreamReader / File.ReadAll* without encoding: legacy 1252/BOM files misread",
+   "detect": "cs/vb: `new StreamReader\\((?![^)]*Encoding)`; `File\\.ReadAll(Text|Lines)\\((?![^)]*Encoding)`",
+   "fix": "Explicit encoding",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "new StreamReader\\((?![^)]*Encoding)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "File\\.ReadAll(Text|Lines)\\((?![^)]*Encoding)",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-ENC-BOM-SENSITIVE",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Byte-level signatures, hashes and XML change with BOM presence",
+   "detect": "cs/vb: `UTF8Encoding\\(true\\)|GetPreamble\\(\\)|\\\\uFEFF`",
+   "fix": "Consistent BOM policy, documented",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "UTF8Encoding\\(true\\)|GetPreamble\\(\\)|\\\\uFEFF",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-CRLF-PROTOCOL",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Protocol or format built with `\\r\\n` literal; partners or parsers differ",
+   "detect": "cs/vb: `\"\\\\r\\\\n\"` in Write/Send/Format calls",
+   "fix": "Use explicit CRLF constant where the protocol requires it",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: FILE-CRLF (cs/vb, low)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\"\\\\r\\\\n\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-NEWLINE-SPLIT",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Splitting text on `\\r\\n` only; LF-only files from Linux tooling are not split",
+   "detect": "cs/vb: `\\.Split\\(\\s*(new\\s*string\\[\\]\\s*\\{\\s*)?\"\\\\r\\\\n\"`",
+   "fix": "Split on `\\r?\\n` or Environment.NewLine plus tolerant parsing",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: FILE-CRLF",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\.Split\\(\\s*(new\\s*string\\[\\]\\s*\\{\\s*)?\"\\\\r\\\\n\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-HASH-TEXT-FILE",
+   "area": "Encodings, line endings and text",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Hash or signature over file bytes; CRLF on Windows checkout and LF on Linux give different hashes",
+   "detect": "cs/vb: `ComputeHash\\(File\\.ReadAllBytes`; `SHA256\\.HashData\\(File\\.`; repo: no `.gitattributes` with `text=auto`",
+   "fix": "Normalize line endings before hashing; `.gitattributes`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ComputeHash\\(File\\.ReadAllBytes",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "SHA256\\.HashData\\(File\\.",
+     "files": null,
+     "kinds": []
+    },
+    {
+     "regex": ".gitattributes",
+     "files": null,
+     "kinds": []
+    },
+    {
+     "regex": "text=auto",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-ENC-XML-DECLARATION",
+   "area": "Encodings, line endings and text",
+   "level": "block",
+   "severity_note": "block",
+   "what": "XML declares a Windows code page (windows-1252) the parser cannot read without the provider",
+   "detect": "cfg/cs: `encoding=\"(windows-125\\d|iso-8859-\\d|shift_jis)\"` in XML or XmlWriterSettings",
+   "fix": "Register provider or re-encode to UTF-8",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "encoding=\"(windows-125\\d|iso-8859-\\d|shift_jis)\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-EXE-SUFFIX",
+   "area": "Processes, shell, console and signals",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Process started with a `.exe` name; Linux binaries have no suffix",
+   "detect": "cs/vb: `FileName\\s*=\\s*\"[^\"]*\\.exe\"|Process\\.Start\\(\\s*\"[^\"]*\\.exe\"`",
+   "fix": "Use executable names per platform or library calls",
+   "sources": [
+    "S13"
+   ],
+   "already_in": "COVERED: WIN-SHELL-EXEC",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FileName\\s*=\\s*\"[^\"]*\\.exe\"|Process\\.Start\\(\\s*\"[^\"]*\\.exe\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-WINDOWS-TOOLS",
+   "area": "Processes, shell, console and signals",
+   "level": "block",
+   "severity_note": "block",
+   "what": "cmd, powershell, cscript, regsvr32, icacls, xcopy, sc, reg, netsh etc. do not exist in Linux images",
+   "detect": "cs/vb/cfg/ps1/yml: `\"(cmd(\\.exe)?|powershell(\\.exe)?|cscript|wscript|regsvr32|msiexec|sc\\.exe|icacls|xcopy|robocopy|reg\\.exe|netsh|tasklist|taskkill)\"`",
+   "fix": "Library calls or pwsh / sh equivalents",
+   "sources": [
+    "S13"
+   ],
+   "already_in": "PARTIAL: WIN-SHELL-EXEC",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\"(cmd(\\.exe)?|powershell(\\.exe)?|cscript|wscript|regsvr32|msiexec|sc\\.exe|icacls|xcopy|robocopy|reg\\.exe|netsh|tasklist|taskkill)\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".ps1",
+      ".vb",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "appsettings*.json",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg",
+      "ps1",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-SHELL-SCRIPTS-BAT",
+   "area": "Processes, shell, console and signals",
+   "level": "block",
+   "severity_note": "block",
+   "what": "App or pipeline runs .bat/.cmd/.ps1/.vbs",
+   "detect": "cs/vb/yml/proj: `\"[^\"]*\\.(bat|cmd|ps1|vbs)\"`",
+   "fix": "Port to sh or pwsh",
+   "sources": [
+    "S13"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\"[^\"]*\\.(bat|cmd|ps1|vbs)\"",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "yml",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-SHELLEXECUTE-DOCS",
+   "area": "Processes, shell, console and signals",
+   "level": "block",
+   "severity_note": "block",
+   "what": "UseShellExecute opens files through the desktop shell; not present in containers",
+   "detect": "cs/vb: `UseShellExecute\\s*=\\s*true`; `Process\\.Start\\(\\s*\"[^\"]*\\.(pdf|docx|xlsx|html?|txt)\"`",
+   "fix": "Library rendering (no shell)",
+   "sources": [
+    "S13"
+   ],
+   "already_in": "COVERED: WIN-SHELL-ASSOC",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "UseShellExecute\\s*=\\s*true",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "Process\\.Start\\(\\s*\"[^\"]*\\.(pdf|docx|xlsx|html?|txt)\"",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-PROC-USER-LOGON",
+   "area": "Processes, shell, console and signals",
+   "level": "block",
+   "severity_note": "block",
+   "what": "ProcessStartInfo UserName / LoadUserProfile needs Windows logon",
+   "detect": "cs/vb: `\\.(UserName|LoadUserProfile)\\s*=|\\.Domain\\s*=`",
+   "fix": "Run as container user; no impersonation",
+   "sources": [
+    "S13"
+   ],
+   "already_in": "COVERED: WIN-PROCESS-USER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\.(UserName|LoadUserProfile)\\s*=|\\.Domain\\s*=",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "ProcessStartInfo|Process\\.Start",
+   "tuned": true
+  },
+  {
+   "id": "LNX-PROC-PROCESS-NAME-MATCH",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Process names on Linux have no `.exe` and are truncated; name matching fails",
+   "detect": "cs/vb: `GetProcessesByName\\(\\s*\"[^\"]*\\.exe\"|ProcessName\\s*==\\s*\"[^\"]*\"`",
+   "fix": "Match on executable path or id",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetProcessesByName\\(\\s*\"[^\"]*\\.exe\"|ProcessName\\s*==\\s*\"[^\"]*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-PATH-SEMICOLON",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "PATH split on `;` (Windows) instead of `:`",
+   "detect": "cs/vb: `Split\\(\\s*';'\\s*\\)` near `PATH`",
+   "fix": "`Path.PathSeparator`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Split\\(\\s*';'\\s*\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "PATH"
+  },
+  {
+   "id": "LNX-PROC-CTRLC-HANDLER",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SetConsoleCtrlHandler (Windows API) and console key handling differ; SIGTERM is the Linux stop signal",
+   "detect": "cs/vb: `SetConsoleCtrlHandler|CancelKeyPress|TreatControlCAsInput`",
+   "fix": "Host lifetime (IHostApplicationLifetime)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: WIN-CONSOLE-WINDOW (low)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "SetConsoleCtrlHandler|CancelKeyPress|TreatControlCAsInput",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PROC-NO-HOST-LIFETIME",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "App ignores SIGTERM: ECS sends SIGTERM then SIGKILL after stopTimeout (30 s default); loops without cancellation keep running",
+   "detect": "cs: `static .* Main\\(` in Program.cs with `while\\s*\\(\\s*true\\s*\\)` or `Thread\\.Sleep\\(Timeout\\.Infinite\\)` and no `IHost`/`BackgroundService`/`WebApplication`",
+   "fix": "Generic host / BackgroundService with cancellation tokens",
+   "sources": [
+    "S18"
+   ],
+   "already_in": "PARTIAL: HOST-WINDOWS-SERVICE-LIFETIME",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "while\\s*\\(\\s*true\\s*\\)|Thread\\.Sleep\\(\\s*Timeout\\.Infinite\\s*\\)|Console\\.ReadLine\\(\\)",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "static\\s+[\\w<>\\s]*\\bMain\\s*\\(",
+   "unless_in_file": "\\bIHost\\b|BackgroundService|WebApplication|Host\\.Create|IHostedService",
+   "tuned": true
+  },
+  {
+   "id": "LNX-PROC-SHELL-FORM-ENTRYPOINT",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Dockerfile shell form: shell is PID 1 and does not forward SIGTERM to dotnet",
+   "detect": "df: `^(CMD|ENTRYPOINT)\\s+[^\\[]`",
+   "fix": "Exec form `ENTRYPOINT [\"dotnet\", \"App.dll\"]`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^(CMD|ENTRYPOINT)\\s+[^\\[]",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CON-READKEY-NO-TTY",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Console.ReadKey / WindowWidth / SetCursorPosition fail without a TTY (container)",
+   "detect": "cs/vb: `Console\\.(ReadKey|WindowWidth|WindowHeight|SetCursorPosition|Beep|ReadLine)` in non-console apps",
+   "fix": "Guard with `Console.IsInputRedirected` or remove",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: WIN-CONSOLE-WINDOW",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Console\\.(ReadKey|WindowWidth|WindowHeight|SetCursorPosition|Beep|ReadLine)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENV-VAR-CASE",
+   "area": "Environment, identity and user",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Environment variable names are case-sensitive on Linux; ECS task definition name differs from code",
+   "detect": "cs/vb: `GetEnvironmentVariable\\(\"([^\"]+)\"`; compare with task definition names",
+   "fix": "One casing; test in container",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetEnvironmentVariable\\(\"([^\"]+)\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENV-DOUBLE-UNDERSCORE",
+   "area": "Environment, identity and user",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Hierarchical config via env needs `__`; `:` in env names is not portable through shells and ECS",
+   "detect": "yml/df/task json: env names containing `:`",
+   "fix": "Use `__` (DevTx 19 documents this)",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*ENV\\s+[A-Za-z_]\\w*:\\w+",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    },
+    {
+     "regex": "\\\"name\\\"\\s*:\\s*\\\"[A-Za-z_]\\w*:[A-Za-z_]",
+     "files": [
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "task json"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENV-WINDOWS-VARS",
+   "area": "Environment, identity and user",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Reads of Windows-only variables return null on Linux",
+   "detect": "cs/vb: `GetEnvironmentVariable\\(\"(USERPROFILE|HOMEDRIVE|HOMEPATH|COMPUTERNAME|USERDOMAIN|LOGONSERVER|APPDATA|LOCALAPPDATA|TEMP|TMP|OS|PROCESSOR_ARCHITECTURE|NUMBER_OF_PROCESSORS|SystemRoot|windir)\"`",
+   "fix": "Use .NET APIs (AppContext, Path) or config",
+   "sources": [
+    "S15"
+   ],
+   "already_in": "COVERED: FILE-WIN-FOLDERS (partial)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "GetEnvironmentVariable\\(\"(USERPROFILE|HOMEDRIVE|HOMEPATH|COMPUTERNAME|USERDOMAIN|LOGONSERVER|APPDATA|LOCALAPPDATA|TEMP|TMP|OS|PROCESSOR_ARCHITECTURE|NUMBER_OF_PROCESSORS|SystemRoot|windir)\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENV-HOME-ASSUMPTION",
+   "area": "Environment, identity and user",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Code writes to /root or assumes ~ for the non-root app user (UID 1654 in .NET 8+ images)",
+   "detect": "cs/vb/cfg/df: `\"/root/|~/|/home/`",
+   "fix": "Config path; test with non-root user",
+   "sources": [
+    "S27"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\\"(/root/|/home/\\w+)|\\\"~/\\.|SpecialFolder\\.(UserProfile|Personal|MyDocuments|Desktop)\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".config",
+      "appsettings*.json",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg",
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENV-DOTNET-VS-ASPNETCORE",
+   "area": "Environment, identity and user",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Both DOTNET_ENVIRONMENT and ASPNETCORE_ENVIRONMENT set with different values; config loaded from the wrong file",
+   "detect": "df/yml/task json: both keys present",
+   "fix": "One variable",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": false
+  },
+  {
+   "id": "LNX-ENV-MACHINE-NAME",
+   "area": "Environment, identity and user",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Container host name changes per task; logic keyed on machine name",
+   "detect": "cs/vb: `Environment\\.MachineName`",
+   "fix": "Explicit instance id config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: HOST-MACHINE-NAME, HV-MACHINE-NAME",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Environment\\.MachineName",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENV-PROCESSOR-ARCH",
+   "area": "Environment, identity and user",
+   "level": "info",
+   "severity_note": "info",
+   "what": "PROCESSOR_ARCHITECTURE / Is64BitOperatingSystem reflect the container arch; Graviton is arm64",
+   "detect": "cs/vb: `PROCESSOR_ARCHITECTURE|Is64BitOperatingSystem`",
+   "fix": "Avoid arch assumptions",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "PROCESSOR_ARCHITECTURE|Is64BitOperatingSystem",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-DPAPI",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "ProtectedData (DPAPI) is Windows-only; PlatformNotSupportedException on .NET Core non-Windows",
+   "detect": "cs/vb: `ProtectedData\\.(Protect|Unprotect)|DataProtectionScope`",
+   "fix": "Data Protection API with KMS/Secrets Manager key store",
+   "sources": [
+    "S12"
+   ],
+   "already_in": "COVERED: WIN-PROTECTEDDATA",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "ProtectedData\\.(Protect|Unprotect)|DataProtectionScope",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-ASPNET-DATAPROTECTION-KEYS",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block (multi-task)",
+   "what": "ASP.NET Core Data Protection keys default to a per-container folder; cookies/antiforgery break across tasks",
+   "detect": "cs: `AddDataProtection\\(\\)` without `PersistKeysTo|ProtectKeysWith`",
+   "fix": "Persist keys to shared store (S3/SSM/Secrets Manager)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "AddDataProtection\\(",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "PersistKeysTo|ProtectKeysWith",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-CNG-CSP",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "CNG and CSP key containers are Windows-only: RSACng, ECDsaCng, CngKey.Open, CspParameters throw on Linux",
+   "detect": "cs/vb: `CspParameters|RSACryptoServiceProvider|DSACryptoServiceProvider|CngKey\\.Open|RSACng|ECDsaCng|ECDiffieHellmanCng`",
+   "fix": "Load keys from PEM/PFX via X509 APIs; use RSA.Create",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "COVERED: WIN-CNG-CSP (rated medium; should be high)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "CspParameters|RSACryptoServiceProvider|DSACryptoServiceProvider|CngKey\\.Open|RSACng|ECDsaCng|ECDiffieHellmanCng",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-LOCALMACHINE-STORE",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "LocalMachine\\My, Root (write), Disallowed not supported on Linux",
+   "detect": "cs/vb: `StoreLocation\\.LocalMachine|X509Store\\(` with LocalMachine",
+   "fix": "Mount PEM/PFX; load from file",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "COVERED: WIN-CERTSTORE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "StoreLocation\\.LocalMachine|X509Store\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-THUMBPRINT-LOOKUP",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Certificate chosen by thumbprint from a Windows store",
+   "detect": "cs/vb/cfg: `FindByThumbprint|X509FindType\\.FindByThumbprint|thumbprint`",
+   "fix": "Name or file reference",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "COVERED: LS-CERT-THUMBPRINT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FindByThumbprint|X509FindType\\.FindByThumbprint|thumbprint",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-PFX-KEYSET-FLAGS",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "MachineKeySet / UserKeySet meaningless on Linux; EphemeralKeySet is the portable choice",
+   "detect": "cs/vb: `X509KeyStorageFlags\\.(MachineKeySet|UserKeySet|PersistKeySet)`",
+   "fix": "Flags: EphemeralKeySet or explicit file",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "PARTIAL: WIN-CERTSTORE",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "X509KeyStorageFlags\\.(MachineKeySet|UserKeySet|PersistKeySet)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-KEY-FILE-PERMS",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Private key or PFX mounted unreadable by UID 1654 (non-root): CryptographicException at startup",
+   "detect": "df/task json: `COPY .*\\.(pfx|p12|key|pem)`; mounted secrets file mode; manual check",
+   "fix": "Make readable to app user; use secret mount with correct owner",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "COPY .*\\.(pfx|p12|key|pem)",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df",
+      "task json"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-PRIVATE-CA-TRUST",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Corporate/private CA trusted via Windows store is missing in the Linux image; TLS to internal services fails",
+   "detect": "cs/vb/cfg: `ServerCertificateCustomValidationCallback` absent but internal https endpoints; df: no `ca-certificates` / `SSL_CERT_FILE`",
+   "fix": "Add CA to image bundle or SSL_CERT_FILE; OpenSSL trust paths",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": false,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-DES-RC2-CFB",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "DES/3DES/RC2 CBC/ECB work; RC2-CFB is unsupported on all platforms",
+   "detect": "cs/vb: `RC2.*CFB|RC2CryptoServiceProvider|DESCryptoServiceProvider|TripleDESCryptoServiceProvider`",
+   "fix": "Move to AES-GCM / AES-CBC with HMAC",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "PARTIAL: API-WEAK-CRYPTO (residue), SEC-WEAK-CRYPTO",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "RC2.*CFB|RC2CryptoServiceProvider|DESCryptoServiceProvider|TripleDESCryptoServiceProvider",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-ECC-NAMED-CURVES",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Brainpool and other named curves depend on distro OpenSSL",
+   "detect": "cs/vb: `brainpool|ECCurve\\.NamedCurves\\.`",
+   "fix": "Use NIST P-256/384/521 or explicit curves",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "brainpool|ECCurve\\.NamedCurves\\.",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-OPENSSL-ALGORITHMS",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SHA-3, SHAKE, KMAC, ML-KEM/ML-DSA/SLH-DSA need OpenSSL 1.1.1+ / 3.x / 3.5+ in the image",
+   "detect": "cs/vb: `SHA3_|SHAKE|KMAC|MLKem|MLDsa|SlhDsa`; df: OpenSSL version",
+   "fix": "Check `IsSupported`; pin image",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SHA3_|SHAKE|KMAC|MLKem|MLDsa|SlhDsa",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-ALGORITHM-FACTORY",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "HashAlgorithm.Create / SymmetricAlgorithm.Create by name map differently across providers",
+   "detect": "cs/vb: `(Hash|Symmetric|RSA|DSA)Algorithm\\.Create\\(\\s*\"`",
+   "fix": "Concrete types",
+   "sources": [
+    "S11"
+   ],
+   "already_in": "COVERED: API-CRYPTO-FACTORY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(Hash|Symmetric|RSA|DSA)Algorithm\\.Create\\(\\s*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-WINDOWS-AUTH-IIS",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`windowsAuthentication enabled=true` / `<authentication mode=\"Windows\">` is IIS-only",
+   "detect": "cfg: `windowsAuthentication\\s+enabled=\"true\"|<authentication\\s+mode=\"Windows\"`",
+   "fix": "OIDC / JWT; or Negotiate with Kerberos",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: AUTH-WINDOWS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "windowsAuthentication\\s+enabled=\"true\"|<authentication\\s+mode=\"Windows\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-NEGOTIATE-KERBEROS",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Negotiate on Kestrel works on Linux only with Kerberos (keytab, realm, SPN) and 1:1 proxy affinity",
+   "detect": "cs: `AddNegotiate\\(|NegotiateDefaults|Microsoft\\.AspNetCore\\.Authentication\\.Negotiate`",
+   "fix": "Kerberos on image (krb5.conf, keytab) or move to OIDC",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "PARTIAL: AUTH-WINDOWS",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "AddNegotiate\\(|NegotiateDefaults|Microsoft\\.AspNetCore\\.Authentication\\.Negotiate",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-HTTPSYS",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "HTTP.sys (UseHttpSys) is Windows-only; Windows auth delegated to it",
+   "detect": "cs: `UseHttpSys|HttpSysOptions|HttpSysDefaults`",
+   "fix": "Kestrel + Negotiate",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: HOST-HTTPSYS-IIS-INPROC",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "UseHttpSys|HttpSysOptions|HttpSysDefaults",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-WINDOWSIDENTITY",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WindowsIdentity.Impersonate / GetCurrent for user context: Windows-only",
+   "detect": "cs/vb: `WindowsIdentity\\.(Impersonate|GetCurrent)|WindowsImpersonationContext`",
+   "fix": "Delegate auth to token or DB",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: API-WINDOWS-IDENTITY; AUTH-IMPERSONATION",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "WindowsIdentity\\.(Impersonate|GetCurrent)|WindowsImpersonationContext",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-WINDOWS-PRINCIPAL",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WindowsPrincipal / WindowsBuiltInRole role checks rely on Windows identity",
+   "detect": "cs/vb: `WindowsPrincipal|WindowsBuiltInRole|IsInRole\\(WindowsBuiltInRole`",
+   "fix": "Claims from token or DB",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "WindowsPrincipal|WindowsBuiltInRole|IsInRole\\(WindowsBuiltInRole",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-DIRECTORYSERVICES",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.DirectoryServices (ADSI) is Windows-only; LDAP via DirectoryServices.Protocols works on Linux",
+   "detect": "cs/vb: `System\\.DirectoryServices\\b|DirectoryEntry\\(|DirectorySearcher`",
+   "fix": "System.DirectoryServices.Protocols (LDAP)",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-DIRSERVICES",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.DirectoryServices\\b|DirectoryEntry\\(|DirectorySearcher",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-ACCOUNTMANAGEMENT",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "PrincipalContext / UserPrincipal (AccountManagement) are Windows-only",
+   "detect": "cs/vb: `PrincipalContext|UserPrincipal|GroupPrincipal|System\\.DirectoryServices\\.AccountManagement`",
+   "fix": "Protocols + LDAP queries",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "PARTIAL: WIN-DIRSERVICES",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "PrincipalContext|UserPrincipal|GroupPrincipal|System\\.DirectoryServices\\.AccountManagement",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-SQL-INTEGRATED",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Integrated Security / Trusted_Connection needs Kerberos or AD-joined host on Linux",
+   "detect": "cfg/cs/vb: `Integrated Security\\s*=\\s*(true|SSPI|yes)|Trusted_Connection\\s*=\\s*(true|yes)`",
+   "fix": "SQL auth via Secrets Manager, or Kerberos keytab (community guides; verify with driver docs)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DATA-INTEGRATED-SECURITY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Integrated Security\\s*=\\s*(true|SSPI|yes)|Trusted_Connection\\s*=\\s*(true|yes)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-MACHINEKEY",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "machineKey (ViewState, forms ticket keys) not used by Core; keys must be shared across tasks",
+   "detect": "cfg: `<machineKey`",
+   "fix": "Data Protection with shared keys",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: AUTH-MACHINEKEY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<machineKey",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-DEFAULT-CREDENTIALS",
+   "area": "Authentication and identity",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Outbound UseDefaultCredentials / DefaultCredentials need Kerberos/NTLM on Linux",
+   "detect": "cs/vb/cfg: `UseDefaultCredentials\\s*=\\s*true|CredentialCache\\.DefaultCredentials`",
+   "fix": "Service credentials from Secrets Manager",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: AUTH-DEFAULT-CREDENTIALS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "UseDefaultCredentials\\s*=\\s*true|CredentialCache\\.DefaultCredentials",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-NEGOTIATESTREAM-NTLM",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "NegotiateStream / NTLM client flows need GSSAPI or Kerberos; NTLM is not available on Linux GSSAPI",
+   "detect": "cs/vb: `NegotiateStream|NtlmClient`",
+   "fix": "Kerberos or token-based auth",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "NegotiateStream|NtlmClient",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-WSFED-ADFS",
+   "area": "Authentication and identity",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WS-Federation / WIF is Windows-centric",
+   "detect": "cfg/cs/vb: `microsoft\\.identityServices|WSFederationAuthenticationModule|System\\.IdentityModel\\.Services`",
+   "fix": "OIDC / SAML library",
+   "sources": [
+    "S21"
+   ],
+   "already_in": "COVERED: AUTH-WSFED",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "microsoft\\.identityServices|WSFederationAuthenticationModule|System\\.IdentityModel\\.Services",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-LOCALDB",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "LocalDB and (localdb) instances do not exist on Linux",
+   "detect": "cfg/cs/vb/test: `\\(localdb\\)|LocalDB|MSSQLLocalDB`",
+   "fix": "Test SQL container; dev DB",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\(localdb\\)|LocalDB|MSSQLLocalDB",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb",
+      "test"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-NAMED-INSTANCE",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Named instances (`host\\INSTANCE`, SQLEXPRESS) do not exist on Linux SQL Server",
+   "detect": "cfg/cs/vb: `Server\\s*=\\s*[^;\"]*\\\\\\\\[A-Za-z0-9_]+` (e.g. `\\\\SQLEXPRESS`)",
+   "fix": "Host/port, or `host,port`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Server\\s*=\\s*[^;\"]*\\\\\\\\[A-Za-z0-9_]+",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "\\\\SQLEXPRESS",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-LOCAL-SERVER-ALIAS",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`.`, `(local)` and `localhost\\INSTANCE` names resolve to the container, not a DB host",
+   "detect": "cfg/cs/vb: `Server\\s*=\\s*(\\.|\\(local\\)|localhost\\\\\\\\)`",
+   "fix": "Explicit DB host",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Server\\s*=\\s*(\\.|\\(local\\)|localhost\\\\\\\\)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-ATTACH-DBFILENAME",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "AttachDbFilename (.mdf) with Windows paths",
+   "detect": "cfg/cs/vb: `AttachDbFilename\\s*=`",
+   "fix": "Restore DB into server; no attach",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "AttachDbFilename\\s*=",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-ODBC-DRIVER-NAME",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "ODBC driver names like `{SQL Server}` or `{SQL Native Client}` are not installed in images",
+   "detect": "cfg/cs/vb: `Driver\\s*=\\s*\\{(SQL Server|SQL Native Client[^}]*)\\}`",
+   "fix": "Install msodbcsql18 and use its name",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: DATA-ODBC (generic), LS-ODBC-DSN",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Driver\\s*=\\s*\\{(SQL Server|SQL Native Client[^}]*)\\}",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-SQLCE",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SQL Server Compact is Windows-only",
+   "detect": "cs/vb/cfg: `SqlServerCe|System\\.Data\\.SqlServerCe`",
+   "fix": "Migrate to SQL Server or PostgreSQL",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SqlServerCe|System\\.Data\\.SqlServerCe",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-COLLATION",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "DDL or queries depend on Windows collation names; string ordering differs from app code",
+   "detect": "sql/cs: `COLLATE\\s+[A-Za-z_]+`",
+   "fix": "Explicit collation in queries; test",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "COLLATE\\s+[A-Za-z_]+",
+     "files": [
+      ".cs",
+      ".sql"
+     ],
+     "kinds": [
+      "sql",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-DB-MAIL",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "info",
+   "severity_note": "info (verify)",
+   "what": "sp_send_dbmail depends on server mail profile; verify availability on Linux SQL Server",
+   "detect": "sql: `sp_send_dbmail`",
+   "fix": "Send mail from app (SES)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "sp_send_dbmail",
+     "files": [
+      ".sql"
+     ],
+     "kinds": [
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-MSDTC",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "TransactionScope across connections needs MSDTC; distributed transactions not on Linux",
+   "detect": "cs/vb: `TransactionScope\\(|System\\.Transactions` with >1 connection",
+   "fix": "One connection per transaction; outbox pattern",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: DATA-DISTRIBUTED-TX; DB-MSDTC (sql)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "TransactionScope\\(|System\\.Transactions",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-FILESTREAM",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "FILESTREAM / FileTable use Windows file handles",
+   "detect": "sql/cs: `FILESTREAM|FILETABLE|GET_FILESTREAM_TRANSACTION_CONTEXT`",
+   "fix": "Store blobs in S3",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DB-FILESTREAM",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FILESTREAM|FILETABLE|GET_FILESTREAM_TRANSACTION_CONTEXT",
+     "files": [
+      ".cs",
+      ".sql"
+     ],
+     "kinds": [
+      "sql",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-SQLDEPENDENCY",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SqlDependency / SqlCacheDependency rely on Service Broker and notifications",
+   "detect": "cs/vb/cfg: `SqlDependency|SqlCacheDependency`",
+   "fix": "Polling or messaging",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DATA-SQLDEPENDENCY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SqlDependency|SqlCacheDependency",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-CLR",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SQL CLR assemblies do not run on Linux SQL Server",
+   "detect": "sql: `CREATE ASSEMBLY|EXTERNAL NAME`",
+   "fix": "Move logic to app",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DB-CLR",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "CREATE ASSEMBLY|EXTERNAL NAME",
+     "files": [
+      ".sql"
+     ],
+     "kinds": [
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-XP-CMDSHELL",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "xp_cmdshell and OLE automation procedures",
+   "detect": "sql: `xp_cmdshell|sp_OACreate`",
+   "fix": "Move to app / job",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DB-XP-CMDSHELL",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "xp_cmdshell|sp_OACreate",
+     "files": [
+      ".sql"
+     ],
+     "kinds": [
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-LINKED-SERVER",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Linked servers and OPENQUERY depend on OLE DB providers",
+   "detect": "sql: `OPENQUERY|OPENROWSET|sp_addlinkedserver`",
+   "fix": "Explicit ETL",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DB-LINKED-SERVER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "OPENQUERY|OPENROWSET|sp_addlinkedserver",
+     "files": [
+      ".sql"
+     ],
+     "kinds": [
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-BULK-FILE",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "BULK INSERT / OPENROWSET(BULK) read server-side Windows paths",
+   "detect": "sql: `BULK INSERT|OPENROWSET\\(BULK`",
+   "fix": "App-side bulk copy",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DB-BULK-FILE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "BULK INSERT|OPENROWSET\\(BULK",
+     "files": [
+      ".sql"
+     ],
+     "kinds": [
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-SQLBULKCOPY",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SqlBulkCopy is supported; file paths inside it are not",
+   "detect": "cs/vb: `SqlBulkCopy` with local file paths",
+   "fix": "Stream from S3",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: DATA-BULKCOPY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SqlBulkCopy",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-CROSS-DATABASE",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Three-part names across databases (may be fine on same server)",
+   "detect": "cs/vb/sql: `\\[?\\w+\\]?\\.\\[?\\w+\\]?\\.\\[?dbo\\]?\\.`",
+   "fix": "Single DB or explicit config",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: DB-CROSS-DATABASE, SQL-CROSS-DB",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\[?\\w+\\]?\\.\\[?\\w+\\]?\\.\\[?dbo\\]?\\.",
+     "files": [
+      ".cs",
+      ".sql",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-ERROR-NUMBER",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Error-number logic is SQL Server-only; PostgreSQL SQLSTATE differs",
+   "detect": "cs/vb: `SqlException.*\\.Number|\\.Number\\s*==\\s*\\d{3,5}`",
+   "fix": "Map by SQLSTATE per target",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: DATA-SQL-ERROR-NUMBERS, DB-SQLERROR-NUMBER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SqlException.*\\.Number|\\.Number\\s*==\\s*\\d{3,5}",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-OLEDB-JET",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "OLE DB / Jet / ACE providers are Windows-only",
+   "detect": "cs/vb/cfg: `Microsoft\\.(Jet|ACE)\\.OLEDB|Provider\\s*=\\s*Microsoft\\.(Jet|ACE)`",
+   "fix": "Replace with supported provider",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: DATA-OLEDB",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.(Jet|ACE)\\.OLEDB|Provider\\s*=\\s*Microsoft\\.(Jet|ACE)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-ORACLE-UNMANAGED",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Unmanaged ODP.NET is Windows-only; managed driver works",
+   "detect": "cs/vb/proj: `Oracle\\.DataAccess|Oracle\\.ManagedDataAccess` (verify)",
+   "fix": "Managed driver",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: DATA-ORACLE-UNMANAGED",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Oracle\\.DataAccess|Oracle\\.ManagedDataAccess",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-UDP-BROADCAST",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "UDP broadcast/multicast discovery does not cross VPC/ECS networking",
+   "detect": "cs/vb/cfg: `IPAddress\\.Broadcast|EnableBroadcast\\s*=\\s*true|JoinMulticastGroup`",
+   "fix": "Service discovery (Cloud Map)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LS-BROADCAST-MULTICAST",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "IPAddress\\.Broadcast|EnableBroadcast\\s*=\\s*true|JoinMulticastGroup",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-HOSTS-FILE",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Code or config relies on the server hosts file",
+   "detect": "cs/vb/cfg/ps1/sh: `(drivers\\\\\\\\etc\\\\\\\\hosts|/etc/hosts)`",
+   "fix": "Route 53 private zones",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LS-HOSTS-FILE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(drivers\\\\\\\\etc\\\\\\\\hosts|/etc/hosts)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".ps1",
+      ".sh",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg",
+      "ps1",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-DNS-MACHINENAME",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Dns.GetHostEntry(Environment.MachineName) and NetBIOS names differ in containers",
+   "detect": "cs/vb: `Dns\\.GetHostEntry\\(\\s*Environment\\.MachineName`",
+   "fix": "Explicit hostnames",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Dns\\.GetHostEntry\\(\\s*Environment\\.MachineName",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-SOCKET-WINDOWS-OPTIONS",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Windows-only socket options (ExclusiveAddressUse, SIO_* IOControl) throw or are ignored",
+   "detect": "cs/vb: `SocketOptionName\\.ExclusiveAddressUse|SIO_[A-Z_]+|\\.IOControl\\(`",
+   "fix": "Remove or guard with OperatingSystem checks",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SocketOptionName\\.ExclusiveAddressUse|SIO_[A-Z_]+|\\.IOControl\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-WINHTTP-HANDLER",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WinHttpHandler and WebRequestHandler are Windows / .NET Framework only",
+   "detect": "cs/vb/proj: `WinHttpHandler|WebRequestHandler`",
+   "fix": "SocketsHttpHandler (default on .NET 5+)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "WinHttpHandler|WebRequestHandler",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-SERVICEPOINT-MANAGER",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ServicePointManager settings (SecurityProtocol, connection limits) do not apply to HttpClient the same way",
+   "detect": "cs/vb: `ServicePointManager\\.(SecurityProtocol|ServerCertificateValidationCallback|DefaultConnectionLimit|Expect100Continue)`",
+   "fix": "HttpClient / SocketsHttpHandler config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: SEC-OLD-TLS",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "ServicePointManager\\.(SecurityProtocol|ServerCertificateValidationCallback|DefaultConnectionLimit|Expect100Continue)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-TLS-OLD-PROTOCOLS",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SSL3/TLS1.0/1.1 disabled by OpenSSL or distro policy; pinned old protocols fail",
+   "detect": "cs/vb/cfg: `SecurityProtocolType\\.(Ssl3|Tls)\\b|SslProtocols\\.(Ssl2|Ssl3|Tls|Tls11)\\b`",
+   "fix": "Remove pinning; TLS 1.2+",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: SEC-OLD-TLS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SecurityProtocolType\\.(Ssl3|Tls)\\b|SslProtocols\\.(Ssl2|Ssl3|Tls|Tls11)\\b",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-CERT-VALIDATION-OFF",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Certificate validation disabled in code",
+   "detect": "cs/vb: `ServerCertificateCustomValidationCallback\\s*=\\s*.*true|RemoteCertificateValidationCallback.*true`",
+   "fix": "Fix trust (see LNX-CRY-PRIVATE-CA-TRUST)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: SEC-CERT-VALIDATION-OFF",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "ServerCertificateCustomValidationCallback\\s*=\\s*.*true|RemoteCertificateValidationCallback.*true",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-SYSTEM-PROXY",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "DefaultWebProxy / system proxy from Windows settings; Linux uses HTTP_PROXY/HTTPS_PROXY/NO_PROXY",
+   "detect": "cs/vb/cfg: `DefaultWebProxy|GetSystemWebProxy|UseProxy\\s*=\\s*true|<defaultProxy`",
+   "fix": "Environment variables; explicit proxy config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: NET-PROXY",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "DefaultWebProxy|GetSystemWebProxy|UseProxy\\s*=\\s*true|<defaultProxy",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-SMTP-PICKUP",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SMTP pickup directory (IIS) is a local folder on Windows",
+   "detect": "cfg/cs/vb: `deliveryMethod=\"SpecifiedPickupDirectory\"|SmtpDeliveryMethod\\.SpecifiedPickupDirectory`",
+   "fix": "SES SMTP / API",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: INT-SMTP-PICKUP-IIS; NET-SMTP (partial)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "deliveryMethod=\"SpecifiedPickupDirectory\"|SmtpDeliveryMethod\\.SpecifiedPickupDirectory",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-SMTP-PORT25",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Port 25 blocked from ECS/VPC by default",
+   "detect": "cfg/cs/vb: `port\\s*=\\s*\"?25\"?`",
+   "fix": "Port 587 with SES",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LS-SMTP-PORT25",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "port\\s*=\\s*\"?25\"?",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-NETSH-URLACL",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "netsh http urlacl / advfirewall are Windows commands used in setup scripts",
+   "detect": "ps1/sh/bat/yml/cs: `netsh\\s+(http|advfirewall)|urlacl`",
+   "fix": "Container port config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "netsh\\s+(http|advfirewall)|urlacl",
+     "files": [
+      ".bat",
+      ".cmd",
+      ".cs",
+      ".ps1",
+      ".sh",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "ps1",
+      "sh",
+      "bat",
+      "yml",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-WCF-NETTCP",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "NetTcpBinding / netTcp, NetNamedPipeBinding and port sharing are not in CoreWCF",
+   "detect": "cfg/cs/vb: `netTcpBinding|NetTcpBinding|netNamedPipeBinding|NetNamedPipeBinding|net\\.tcp|net\\.pipe`",
+   "fix": "HTTP/JSON or gRPC",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WCF-BINDING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "netTcpBinding|NetTcpBinding|netNamedPipeBinding|NetNamedPipeBinding|net\\.tcp|net\\.pipe",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-WCF-CLIENT",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Generated WCF proxies reference GAC/System.ServiceModel classic",
+   "detect": "cs/vb/cfg: `System\\.ServiceModel\\.ClientBase|svcutil|<client>`",
+   "fix": "Regenerate with dotnet-svcutil",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WCF-CLIENT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.ServiceModel\\.ClientBase|svcutil|<client>",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-LOCALHOST-DEP",
+   "area": "Networking",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Config expects service on localhost (sidecar assumption)",
+   "detect": "cfg/cs: `(localhost|127\\.0\\.0\\.1)[:/]` for downstream services",
+   "fix": "Service endpoints by config",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LS-LOCALHOST-SERVICE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(localhost|127\\.0\\.0\\.1)[:/]",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-NAMED-PIPE-ACL",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Named pipe security (PipeSecurity, PipeAccessRule, pipe GetAccessControl) is Windows-only",
+   "detect": "cs/vb: `PipeSecurity|PipeAccessRule|PipeAccessControl|GetAccessControl\\(\\)|SetAccessControl\\(` near Named pipe classes",
+   "fix": "Anonymous pipe / Unix socket / gRPC over TCP with auth",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "PipeSecurity|PipeAccessRule|PipeAccessControl|GetAccessControl\\(\\)|SetAccessControl\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-PIPE-PATH",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Named pipe names of the form `\\\\.\\pipe\\name` are Windows paths",
+   "detect": "cs/vb/cfg: `\\\\\\\\\\.\\\\pipe\\\\` and `\\\\\\\\\\.\\\\pipe`",
+   "fix": "Logical pipe name (not path)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\\\\\\\\\.\\\\pipe\\\\",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    },
+    {
+     "regex": "\\\\\\\\\\.\\\\pipe",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-NAMED-MUTEX",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Named Mutex, Semaphore, EventWaitHandle for cross-process use: behaviour and naming differ on Linux",
+   "detect": "cs/vb: `new (Mutex|Semaphore|EventWaitHandle)\\([^)]*\"` with Global\\\\ prefix",
+   "fix": "Distributed lock (DynamoDB / Redis)",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: API-NAMED-SYNC",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "new (Mutex|Semaphore|EventWaitHandle)\\([^)]*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-NAMED-MMF",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Named memory-mapped files for cross-process sharing are not portable",
+   "detect": "cs/vb: `MemoryMappedFile\\.(CreateOrOpen|CreateNew)\\([^)]*\"`",
+   "fix": "Shared store / socket",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: WIN-NAMED-MMF",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "MemoryMappedFile\\.(CreateOrOpen|CreateNew)\\([^)]*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-WINDOW-MESSAGES",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SendMessage / PostMessage / window messages are Windows-only",
+   "detect": "cs/vb: `SendMessage|PostMessage|user32\\.dll`",
+   "fix": "Remove",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: WIN-PINVOKE-WIN32",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "SendMessage|PostMessage|user32\\.dll",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-REGISTRY",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Microsoft.Win32.Registry throws PlatformNotSupportedException",
+   "detect": "cs/vb: `Microsoft\\.Win32\\.Registry|Registry\\.(LocalMachine|CurrentUser|ClassesRoot|Users)|RegistryKey`",
+   "fix": "Configuration + SSM Parameter Store",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: API-REGISTRY; WIN-REGISTRY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Win32\\.Registry|Registry\\.(LocalMachine|CurrentUser|ClassesRoot|Users)|RegistryKey",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-EVENTLOG",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.Diagnostics.EventLog is Windows-only",
+   "detect": "cs/vb/cfg: `EventLog\\b|System\\.Diagnostics\\.EventLog|EventLogLoggerProvider`",
+   "fix": "ILogger to stdout (CloudWatch)",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: API-EVENTLOG; WIN-EVENTLOG",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "EventLog\\b|System\\.Diagnostics\\.EventLog|EventLogLoggerProvider",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-WMI",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.Management / WMI is Windows-only",
+   "detect": "cs/vb: `System\\.Management|ManagementObjectSearcher|ManagementClass|ManagementScope`",
+   "fix": "Read metrics via SDK or OS files",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-WMI",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Management|ManagementObjectSearcher|ManagementClass|ManagementScope",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-PERFCOUNTER",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Windows performance counters (not on Linux)",
+   "detect": "cs/vb: `PerformanceCounter|System\\.Diagnostics\\.PerformanceCounter`",
+   "fix": "EventCounters / OpenTelemetry metrics",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: API-PERFCOUNTER; WIN-PERFCOUNTER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "PerformanceCounter|System\\.Diagnostics\\.PerformanceCounter",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-SERVICECONTROLLER",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ServiceController (controls Windows services)",
+   "detect": "cs/vb: `ServiceController|System\\.ServiceProcess`",
+   "fix": "Remove or ECS-level control",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-SERVICECONTROLLER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "ServiceController|System\\.ServiceProcess",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-DRAWING",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block (server)",
+   "what": "System.Drawing.Common is Windows-only from .NET 6 (GDI+) on server",
+   "detect": "cs/vb/proj: `System\\.Drawing\\.(Bitmap|Graphics|Image|Font|Imaging)|System\\.Drawing\\.Common`",
+   "fix": "SkiaSharp or ImageSharp",
+   "sources": [
+    "S7"
+   ],
+   "already_in": "COVERED: API-DRAWING; WIN-DRAWING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Drawing\\.(Bitmap|Graphics|Image|Font|Imaging)|System\\.Drawing\\.Common",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-PRINTING",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "PrintDocument / PrinterSettings / PageSettings and printer spooler are Windows-only",
+   "detect": "cs/vb: `PrintDocument|PrinterSettings|PageSettings|System\\.Drawing\\.Printing`",
+   "fix": "PDF generation library (headless)",
+   "sources": [
+    "S7"
+   ],
+   "already_in": "COVERED: INT-PRINTING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "PrintDocument|PrinterSettings|PageSettings|System\\.Drawing\\.Printing",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-COM-INTEROP",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "COM interop and ComImport need Windows COM",
+   "detect": "cs/vb/proj: `\\[ComImport\\]|\\[ComVisible|CoCreateInstance|Interop\\.(?!Npgsql)`",
+   "fix": "Replace COM component",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-COM; WIN-COM-INTEROP",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\[ComImport\\]|\\[ComVisible|CoCreateInstance|Interop\\.(?!Npgsql)",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-COMPLUS",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.EnterpriseServices (COM+) not supported",
+   "detect": "cs/vb/cfg: `System\\.EnterpriseServices|ServicedComponent|ContextUtil`",
+   "fix": "Transactions via library",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-ENTERPRISESERVICES",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.EnterpriseServices|ServicedComponent|ContextUtil",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-MSMQ",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.Messaging / MSMQ not available",
+   "detect": "cs/vb/cfg: `System\\.Messaging|MessageQueue|MSMQ`",
+   "fix": "Amazon SQS",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: API-MSMQ; WIN-MSMQ",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Messaging|MessageQueue|MSMQ",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-SPEECH-UI",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Speech, sound and desktop-only UI libraries",
+   "detect": "cs/vb/proj: `System\\.Speech|SoundPlayer|SystemSounds|System\\.Windows\\.Forms` in server code",
+   "fix": "Remove from server",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-SPEECH-UI; WIN-SOUND",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Speech|SoundPlayer|SystemSounds|System\\.Windows\\.Forms",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-SYSTEM-EVENTS",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Microsoft.Win32.SystemEvents (session, power, display events)",
+   "detect": "cs/vb: `SystemEvents\\.`",
+   "fix": "Remove or host-specific",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: WIN-SYSTEMEVENTS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "SystemEvents\\.",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-SERIAL-COM-PORT",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "COM1..COMn port names: Linux uses /dev/ttyS*, /dev/ttyUSB*",
+   "detect": "cs/vb/cfg: `\"COM\\d+\"`",
+   "fix": "Port name in config; device mapping",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: HV-LOCAL-DEVICE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\"COM\\d+\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-DLLIMPORT-WIN32",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "P/Invoke into kernel32, user32, advapi32, ole32, oleaut32, shell32, gdi32, netapi32, ws2_32, crypt32, wininet, winspool",
+   "detect": "cs/vb: `DllImport\\(\"(kernel32|user32|advapi32|ole32|oleaut32|shell32|gdi32|netapi32|ws2_32|crypt32|wininet|winspool|msvcrt)\\.dll\"`",
+   "fix": "Replace with managed API or Linux native lib",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-PINVOKE-WIN32; API-PINVOKE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "DllImport\\(\"(kernel32|user32|advapi32|ole32|oleaut32|shell32|gdi32|netapi32|ws2_32|crypt32|wininet|winspool|msvcrt)\\.dll\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-DLLIMPORT-DLL-SUFFIX",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Native library named with `.dll` suffix: Linux probes `name.so`, not `name.dll`",
+   "detect": "cs/vb: `DllImport\\(\"[^\"]+\\.dll\"\\)`",
+   "fix": "Name without suffix; per-RID `.so` files",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: WIN-PINVOKE-NATIVE",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "DllImport\\(\"[^\"]+\\.dll\"\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-UNMANAGED-WCHAR-LONG",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "wchar_t is 4 bytes on Linux (2 on Windows); C `long` is 8 bytes on Linux x64 (4 on Windows): marshalling breaks",
+   "detect": "cs/vb: `UnmanagedType\\.(LPWStr|BStr)|CharSet\\.Unicode`; `\\blong\\b` in DllImport signatures",
+   "fix": "Explicit sized types; test on Linux",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "UnmanagedType\\.(LPWStr|BStr)|CharSet\\.Unicode",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "\\blong\\b",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-API-CALLING-CONVENTION",
+   "area": "Windows-only APIs (inventory)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "StdCall / ThisCall ignored on x64 Linux; Winapi maps to platform default",
+   "detect": "cs/vb: `CallingConvention\\.(StdCall|ThisCall|Winapi)`",
+   "fix": "Use Cdecl for Linux libs",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "CallingConvention\\.(StdCall|ThisCall|Winapi)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-STA-THREADS",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "COM STA apartment threads: Windows-only",
+   "detect": "cs/vb: `\\[STAThread\\]|ApartmentState\\.STA|SetApartmentState`",
+   "fix": "Remove; MTA",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: WIN-STA",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\[STAThread\\]|ApartmentState\\.STA|SetApartmentState",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-REMOTING",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": ".NET Remoting unsupported in .NET 6+",
+   "detect": "cs/vb/cfg: `System\\.Runtime\\.Remoting|MarshalByRefObject|RemotingConfiguration`",
+   "fix": "gRPC / HTTP JSON",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-REMOTING; API-CALLCONTEXT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Runtime\\.Remoting|MarshalByRefObject|RemotingConfiguration",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-CALLCONTEXT",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "CallContext.LogicalSetData / Remoting-era state (use AsyncLocal)",
+   "detect": "cs/vb: `CallContext\\.`",
+   "fix": "AsyncLocal<T>",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-CALLCONTEXT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "CallContext\\.",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-XSLT-SCRIPT",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "XSLT script blocks (msxsl:script) unsupported",
+   "detect": "any: `msxsl:script|<msxsl:script`",
+   "fix": "Rewrite transform",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-XSLT-SCRIPT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "msxsl:script|<msxsl:script",
+     "files": [
+      "*"
+     ],
+     "kinds": [
+      "any"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-WORKFLOW",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows Workflow Foundation not in .NET 6+",
+   "detect": "cs/vb/proj/cfg: `System\\.Workflow|WorkflowRuntime`",
+   "fix": "CoreWF or code",
+   "sources": [
+    "S4"
+   ],
+   "already_in": "COVERED: API-WORKFLOW",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Workflow|WorkflowRuntime",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-SECURITY-IDENTIFIER",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SecurityIdentifier / WellKnownSidType are Windows-only",
+   "detect": "cs/vb: `SecurityIdentifier|WellKnownSidType`",
+   "fix": "Remove",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SecurityIdentifier|WellKnownSidType",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-DESKTOP-UI",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows Forms / WPF / UI in server code",
+   "detect": "cs/vb/proj: `System\\.Windows\\.Forms|System\\.Windows\\.(Controls|Media)`",
+   "fix": "Split UI from server",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: DESK-WINFORMS; DESK-WPF",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Windows\\.Forms|System\\.Windows\\.(Controls|Media)",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-FILE-ACL",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "FileSystemAclExtensions / FileSecurity / DirectorySecurity / FileSystemAccessRule are Windows-only",
+   "detect": "cs/vb: `FileSystemAclExtensions|FileSecurity|DirectorySecurity|FileSystemAccessRule|GetAccessControl\\(\\)`",
+   "fix": "Unix permissions in image",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-ACL",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FileSystemAclExtensions|FileSecurity|DirectorySecurity|FileSystemAccessRule|GetAccessControl\\(\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-SYSTEMWEB",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.Web namespaces (not on .NET 8+)",
+   "detect": "cs/vb: `\\bSystem\\.Web\\.(UI|Mvc|Http(?!Utility)|Security|SessionState|Hosting|Caching|Routing)\\b`",
+   "fix": "ASP.NET Core",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WEB-SYSTEMWEB-NS; WEB-SYSTEMWEB",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "\\bSystem\\.Web\\.(UI|Mvc|Http(?!Utility)|Security|SessionState|Hosting|Caching|Routing)\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-HTTPCONTEXT-CURRENT",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "HttpContext.Current / HttpRuntime",
+   "detect": "cs/vb: `HttpContext\\.Current|HttpRuntime\\.`",
+   "fix": "IHttpContextAccessor",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WEB-HTTPCONTEXT-CURRENT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "HttpContext\\.Current|HttpRuntime\\.",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-MAPPATH",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Server.MapPath / HostingEnvironment.MapPath",
+   "detect": "cs/vb/markup: `Server\\.MapPath|HostingEnvironment\\.MapPath`",
+   "fix": "IWebHostEnvironment",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FILE-MAPPATH",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Server\\.MapPath|HostingEnvironment\\.MapPath",
+     "files": [
+      ".ascx",
+      ".aspx",
+      ".cs",
+      ".cshtml",
+      ".master",
+      ".razor",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-GLOBAL-ASAX",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Global.asax application events",
+   "detect": "file: `global\\.asax$`",
+   "fix": "Program.cs / middleware",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WEB-GLOBAL-ASAX",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "global\\.asax$",
+     "files": [
+      "@path"
+     ],
+     "kinds": [
+      "file"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-VIEWSTATE",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "ViewState / postbacks",
+   "detect": "markup/cs: `__VIEWSTATE|EnableViewState`",
+   "fix": "Not portable; redesign",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FE-VIEWSTATE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "__VIEWSTATE|EnableViewState",
+     "files": [
+      ".ascx",
+      ".aspx",
+      ".cs",
+      ".cshtml",
+      ".master",
+      ".razor"
+     ],
+     "kinds": [
+      "markup",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-BUNDLING",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "System.Web.Optimization bundling",
+   "detect": "cs/vb/markup: `BundleConfig|System\\.Web\\.Optimization|@Scripts\\.Render`",
+   "fix": "Static asset pipeline",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: FE-BUNDLING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "BundleConfig|System\\.Web\\.Optimization|@Scripts\\.Render",
+     "files": [
+      ".ascx",
+      ".aspx",
+      ".cs",
+      ".cshtml",
+      ".master",
+      ".razor",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-CONTENT-REMOVE",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Content Remove/Update drops wwwroot or views from publish output",
+   "detect": "proj: `<Content (Remove|Update)=\"[^\"]*(wwwroot|Views)`",
+   "fix": "Remove the exclusion",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<Content (Remove|Update)=\"[^\"]*(wwwroot|Views)",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-RAZOR-COMPILE",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Razor views compiled at build vs runtime; missing views (case) appear only at runtime",
+   "detect": "proj: `<RazorCompileOnBuild>false|<RazorCompileOnBuild>true` changes; markup hits in test",
+   "fix": "Compile on build; test all views on Linux",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<RazorCompileOnBuild>false|<RazorCompileOnBuild>true",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-SESSION-INPROC",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "InProc session state: lost per task; sticky sessions needed",
+   "detect": "cfg: `<sessionState\\s+mode=\"InProc\"`; cs: `Session\\[`",
+   "fix": "Distributed cache or DB session",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: IIS-SESSION-STATE; STATE-SESSION",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<sessionState\\s+mode=\"InProc\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "Session\\[",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-SIGNALR-LEGACY",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASP.NET SignalR legacy (Owin)",
+   "detect": "cs/vb/js: `Microsoft\\.AspNet\\.SignalR`",
+   "fix": "ASP.NET Core SignalR",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: WEB-SIGNALR-LEGACY",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.AspNet\\.SignalR",
+     "files": [
+      ".cs",
+      ".js",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "js"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-INPROC-IIS",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "aspNetCore module with inprocess hosting; AspNetCoreModuleV2",
+   "detect": "cfg: `AspNetCoreModuleV2|hostingModel=\"inprocess\"`",
+   "fix": "Kestrel in container",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: HOST-HTTPSYS-IIS-INPROC; IIS-MODULES-HANDLERS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "AspNetCoreModuleV2|hostingModel=\"inprocess\"",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-WEBCONFIG-PRESENT",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "web.config present in publish; ignored by Kestrel except ASP.NET Core module section",
+   "detect": "file: `(^|/)web\\.config$`",
+   "fix": "Move settings to appsettings / env",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: CFG-WEBCONFIG-APP",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(^|/)web\\.config$",
+     "files": [
+      "@path"
+     ],
+     "kinds": [
+      "file"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-URL-REWRITE",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS URL Rewrite rules in web.config are not applied by Kestrel",
+   "detect": "cfg: `<rewrite>|<rule name=`",
+   "fix": "UseRewriter middleware",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: IIS-REWRITE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<rewrite>|<rule name=",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-APPPOOL-IDENTITY",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "IIS application pool identities and IIS APPPOOL accounts",
+   "detect": "cfg/ps1/yml: `IIS APPPOOL\\\\|ApplicationPoolIdentity|applicationPools`",
+   "fix": "Container user; IAM task role",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "IIS APPPOOL\\\\|ApplicationPoolIdentity|applicationPools",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".ps1",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "appsettings*.json",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "ps1",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-TOPSHELF",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Topshelf (HostFactory) runs as Windows service: no Linux equivalent in code",
+   "detect": "cs/vb/proj: `Topshelf|HostFactory\\.(Run|New)`",
+   "fix": "Generic host / BackgroundService in container",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Topshelf|HostFactory\\.(Run|New)",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vb",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-SERVICEBASE",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "ServiceBase / ServiceInstaller",
+   "detect": "cs/vb: `ServiceBase|ServiceInstaller|ServiceProcess`",
+   "fix": "Worker service (+systemd or ECS)",
+   "sources": [
+    "S18"
+   ],
+   "already_in": "COVERED: WIN-SERVICE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "ServiceBase|ServiceInstaller|ServiceProcess",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-USEWINDOWSSERVICE-ONLY",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "UseWindowsService without a Linux host path: no-op on Linux, service does not start under systemd",
+   "detect": "cs: `UseWindowsService\\(` without `UseSystemd`",
+   "fix": "Add Microsoft.Extensions.Hosting.Systemd for systemd hosts (ECS does not need it)",
+   "sources": [
+    "S18"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "UseWindowsService\\(",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "UseSystemd",
+   "tuned": true
+  },
+  {
+   "id": "LNX-HOST-FORWARDED-HEADERS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Behind ALB: scheme/host/client IP lost; http redirects, cookie Secure flag and links wrong",
+   "detect": "cs: absence of `UseForwardedHeaders|ForwardedHeadersOptions`",
+   "fix": "UseForwardedHeaders with trusted proxies",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "UseForwardedHeaders|ForwardedHeadersOptions",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-PORT-80",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": ".NET 8+ container default port is 8080; port 80 mapping fails unless ASPNETCORE_HTTP_PORTS=80",
+   "detect": "df/yml/task json: `EXPOSE\\s+80\\b`; `ASPNETCORE_URLS=http://\\+?\\*?:80\\b`; `-p\\s+\\d+:80\\b`; ALB target port 80 with app on 8080",
+   "fix": "Set ASPNETCORE_HTTP_PORTS=8080 and matching target group port",
+   "sources": [
+    "S8"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "EXPOSE\\s+80\\b",
+     "files": [
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json"
+     ]
+    },
+    {
+     "regex": "ASPNETCORE_URLS=http://\\+?\\*?:80\\b",
+     "files": null,
+     "kinds": []
+    },
+    {
+     "regex": "-p\\s+\\d+:80\\b",
+     "files": null,
+     "kinds": []
+    }
+   ],
+   "automated": false
+  },
+  {
+   "id": "LNX-HOST-HEALTHCHECK-CURL",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Dockerfile HEALTHCHECK calls curl; .NET images do not ship curl by default [K: verify on image]",
+   "detect": "df: `HEALTHCHECK\\s+CMD\\s+curl`",
+   "fix": "Use ECS health check on /health with a tool present, or built-in probe",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP (DevTx KB uses it)",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "HEALTHCHECK\\s+CMD\\s+curl",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-HTTPS-CERT-IN-IMAGE",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "PFX certificate copied into image and password in ENV (secret in image and history)",
+   "detect": "df: `COPY .*\\.pfx|Kestrel__Certificates__Default__Password=`",
+   "fix": "TLS at ALB; secret from Secrets Manager",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: CFG-HARDCODED-SECRET (cfg only); GAP for df",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "COPY .*\\.pfx|Kestrel__Certificates__Default__Password=",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-DOTNET-BUILD-ON-HOST",
+   "area": "Web platform and IIS hosting",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Windows-only install tasks (IIS features) in provisioning scripts",
+   "detect": "ps1/yml: `Install-WindowsFeature|Enable-WindowsOptionalFeature`",
+   "fix": "Remove for containers",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Install-WindowsFeature|Enable-WindowsOptionalFeature",
+     "files": [
+      ".ps1",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "ps1",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-WINDOWS-BASE",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows base image (servercore/nanoserver) cannot run on Linux ECS/EKS nodes",
+   "detect": "df: `FROM .*(windowsservercore|nanoserver)`",
+   "fix": "Linux base",
+   "sources": [
+    "S3"
+   ],
+   "already_in": "COVERED: HOST-WINDOWS-CONTAINER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "FROM .*(windowsservercore|nanoserver)",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-LIBGDIPLUS",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "System.Drawing on Linux needs libgdiplus; EnableUnixSupport switch existed only in .NET 6",
+   "detect": "df: `libgdiplus`; proj/cfg: `System\\.Drawing\\.EnableUnixSupport`; df: missing libgdiplus with System.Drawing",
+   "fix": "Replace library (SkiaSharp/ImageSharp)",
+   "sources": [
+    "S7"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "libgdiplus",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    },
+    {
+     "regex": "System\\.Drawing\\.EnableUnixSupport",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "proj",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-FONTS",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Server-side rendering (PDF, images, charts) needs fonts; no fonts = boxes or missing glyphs",
+   "detect": "proj: `SkiaSharp|ImageSharp|QuestPDF|iText|PdfSharp|wkhtmltopdf|Rotativa|PuppeteerSharp|DinkToPdf`; df: no `fonts-` package",
+   "fix": "Install fonts in image (licensed corporate fonts)",
+   "sources": [
+    "S7"
+   ],
+   "already_in": "PARTIAL: LIN-FONTS (cs/vb, low)",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Include=\\\"(SkiaSharp|SixLabors\\.ImageSharp|QuestPDF|itext7?|iTextSharp|PdfSharp\\w*|Rotativa\\w*|PuppeteerSharp|DinkToPdf|Wkhtmltopdf\\w*)\\\"",
+     "files": [
+      ".csproj",
+      ".vbproj",
+      ".props"
+     ],
+     "kinds": [
+      "proj"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-NATIVE-ARCH",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Native .so/.dll built for x64 breaks on arm64 Graviton/Fargate ARM",
+   "detect": "proj/df/yml: `linux-arm64|linux-x64` absent or mixed; native files",
+   "fix": "Multi-arch build or pick one arch",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": false,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-BUILD-ARCH",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Image built on arm64 laptop runs on x86 ECS: `exec format error`",
+   "detect": "yml/sh: `docker build` without `--platform`",
+   "fix": "`--platform linux/amd64` (or arm64) explicit",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "docker\\s+(buildx\\s+)?build\\b",
+     "files": [
+      ".yml",
+      ".yaml",
+      ".sh",
+      "buildspec*.yml",
+      "Jenkinsfile"
+     ],
+     "kinds": [
+      "yml",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "--platform",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-NONROOT-NUMERIC",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Non-root user set by name: Kubernetes runAsNonRoot cannot verify names",
+   "detect": "df: `^USER\\s+(?!\\d|\\$APP_UID)`",
+   "fix": "`USER $APP_UID` (1654 in .NET 8+)",
+   "sources": [
+    "S27"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^USER\\s+(?!\\d|\\$APP_UID)",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-USER-MISSING",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "No USER directive: process runs as root",
+   "detect": "df: no `^USER\\s` line",
+   "fix": "Non-root user",
+   "sources": [
+    "S27"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*USER\\s",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "file_lacks",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-TAG-MISMATCH",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Build and runtime image tags differ or are unpinned (latest / no tag)",
+   "detect": "df: `FROM .*dotnet/(aspnet|runtime|sdk):(?!\\d)`; sdk and aspnet major mismatch",
+   "fix": "Pin tags by digest or major version",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "FROM .*dotnet/(aspnet|runtime|sdk):(?!\\d)",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-SDK-IN-FINAL-STAGE",
+   "area": "Containers and images",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Final stage uses sdk image: large attack surface and size",
+   "detect": "df: last `FROM` contains `/sdk:`",
+   "fix": "Use aspnet/runtime in final stage",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "last_from_sdk",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-DOCKERIGNORE",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "No .dockerignore: bin/obj, .vs, *.user and appsettings with secrets are copied",
+   "detect": "file: `.dockerignore` absent",
+   "fix": "Add .dockerignore",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": true,
+   "check": "absent",
+   "when_path": "(^|/)Dockerfile[^/]*$",
+   "absent_path": "(^|/)\\.dockerignore$",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-SECRETS-COPIED",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Secret or environment files copied into image",
+   "detect": "df: `COPY .*\\.(env|pfx|p12|key|pem)\\b|COPY .*appsettings\\.(Production|Development)?\\.json`",
+   "fix": "Inject at runtime (Secrets Manager / SSM)",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: CFG-HARDCODED-SECRET (partial)",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "COPY .*\\.(env|pfx|p12|key|pem)\\b|COPY .*appsettings\\.(Production|Development)?\\.json",
+     "files": [
+      "*.dockerfile",
+      "Dockerfile*"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-ASPNET-DEVELOPMENT",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASPNETCORE_ENVIRONMENT=Development in image: developer exception pages and dev settings",
+   "detect": "df/yml: `ASPNETCORE_ENVIRONMENT=Development`",
+   "fix": "Set per environment at runtime",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ASPNETCORE_ENVIRONMENT=Development",
+     "files": [
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-HARDCODED-SECRET",
+   "area": "Configuration and secrets",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Passwords, keys, tokens in config or code (also a container image risk)",
+   "detect": "cfg/cs/vb: `(Password|pwd|secret|apikey|token)\\s*[=:]\\s*\"?[^\";\\s]{6,}` (review hits)",
+   "fix": "Secrets Manager / SSM",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: CFG-HARDCODED-SECRET",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(?i)\\b(password|pwd|passwd|secret|apikey|api_key|accesskey|token)\\w*\\s*=\\s*\\\"[^\\\"\\s{}]{6,}\\\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    },
+    {
+     "regex": "(?i)\\b(password|pwd)\\s*=\\s*[^;\\\"'\\s{}$]{3,}",
+     "files": [
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "(?i)key=\\\"[^\\\"]*(password|secret|apikey|api_key|token)[^\\\"]*\\\"\\s+value=\\\"[^\\\"]{4,}\\\"",
+     "files": [
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CFG-PROTECTED-SECTION",
+   "area": "Configuration and secrets",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Protected configuration (DPAPI / RSA key container) cannot be decrypted in containers",
+   "detect": "cfg: `configProtectionProvider|aspnet_regiis|<configProtectedData`",
+   "fix": "Secrets Manager + config provider",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: CFG-PROTECTED; CFG-PROTECTED-SECTION",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "configProtectionProvider|aspnet_regiis|<configProtectedData",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-CONFIGMANAGER",
+   "area": "Configuration and secrets",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "System.Configuration.ConfigurationManager for app settings; works but not IConfiguration",
+   "detect": "cs/vb: `ConfigurationManager\\.(AppSettings|ConnectionStrings)`",
+   "fix": "IConfiguration",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: CFG-CONFIGMANAGER; API-CONFIGMANAGER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "ConfigurationManager\\.(AppSettings|ConnectionStrings)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-TRANSFORMS",
+   "area": "Configuration and secrets",
+   "level": "info",
+   "severity_note": "info",
+   "what": "web.config / app.config transforms not applied in container builds",
+   "detect": "proj/file: `*.Release.config|*.Production.config|SlowCheetah`",
+   "fix": "Environment variables / appsettings",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: CFG-TRANSFORMS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "(^|/)[^/]*\\.Release\\.config$|(^|/)[^/]*\\.Production\\.config$|(^|/)SlowCheetah$",
+     "files": [
+      "@path"
+     ],
+     "kinds": [
+      "proj",
+      "file"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-LOG-PATH",
+   "area": "Configuration and secrets",
+   "level": "block",
+   "severity_note": "block",
+   "what": "File logging to Windows path (log4net, NLog file targets)",
+   "detect": "cfg: `file(Name)?\\s*=\\s*\"[A-Za-z]:\\\\|value=\"[A-Za-z]:\\\\` in log4net/NLog",
+   "fix": "stdout logging",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: LOG-FILE-TARGETS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "file(Name)?\\s*=\\s*\"[A-Za-z]:\\\\|value=\"[A-Za-z]:\\\\",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-LOG-EVENTLOG",
+   "area": "Logging, performance, GC and runtime",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Event Log sink (Windows)",
+   "detect": "cfg/cs: `EventLogTraceListener|EventLogLoggerProvider`",
+   "fix": "Console (stdout)",
+   "sources": [
+    "S18"
+   ],
+   "already_in": "COVERED: API-EVENTLOG",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "EventLogTraceListener|EventLogLoggerProvider",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-LOG-ELMAH",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ELMAH error log (System.Web)",
+   "detect": "cfg/cs: `elmah`",
+   "fix": "Serilog / ILogger",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LOG-ELMAH",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "elmah",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-LOG-TRACE-LISTENER",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "System.Diagnostics trace listeners (file or Windows)",
+   "detect": "cfg: `<add type=\"System\\.Diagnostics\\.`",
+   "fix": "ILogger",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: LOG-TRACE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<add type=\"System\\.Diagnostics\\.",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PERF-WORKING-SET",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Process working set / private memory differ in meaning (RSS on Linux)",
+   "detect": "cs/vb: `\\.(WorkingSet64|PrivateMemorySize64|VirtualMemorySize64)`",
+   "fix": "Use GC.GetGCMemoryInfo / cgroup numbers",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(WorkingSet64|PrivateMemorySize64|VirtualMemorySize64)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PERF-GC-CONTAINER-LIMIT",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Container memory limit drives GC heap (75% default in containers); no limit set means unbounded",
+   "detect": "cfg/proj/df/task json: `GCHeapHardLimit|ServerGarbageCollection|ConcurrentGarbageCollection`; task def: no `memory`",
+   "fix": "Set task memory and GC heap limit; load test",
+   "sources": [
+    "S19"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GCHeapHardLimit|ServerGarbageCollection|ConcurrentGarbageCollection",
+     "files": [
+      ".config",
+      "appsettings*.json",
+      "*.runtimeconfig.json",
+      ".csproj",
+      ".vbproj",
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "cfg",
+      "proj",
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-PERF-PROCESSOR-COUNT",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Environment.ProcessorCount reflects cgroup CPU limit; thread-pool sizing changes with Fargate task size",
+   "detect": "cs/vb: `Environment\\.ProcessorCount`",
+   "fix": "Load test; explicit thread settings if needed",
+   "sources": [
+    "S19"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Environment\\.ProcessorCount",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PERF-CPU-GROUPS",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "GC CpuGroup / Thread_UseAllCpuGroups are Windows-only settings",
+   "detect": "cfg/proj: `System\\.GC\\.CpuGroup|Thread_UseAllCpuGroups|DOTNET_GCCpuGroup`",
+   "fix": "Remove on Linux",
+   "sources": [
+    "S19"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "System\\.GC\\.CpuGroup|Thread_UseAllCpuGroups|DOTNET_GCCpuGroup",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-PERF-THREAD-ABORT",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Thread.Abort / Suspend / Resume unsupported in .NET 5+",
+   "detect": "cs/vb: `Thread\\.(Abort|Suspend|Resume)\\(`",
+   "fix": "Cooperative cancellation",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: API-THREAD-ABORT",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Thread\\.(Abort|Suspend|Resume)\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SCH-TASK-SCHEDULER",
+   "area": "Scheduling, messaging, serialization",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Windows Task Scheduler jobs (schtasks, TaskService)",
+   "detect": "cs/vb/ps1/yml: `Microsoft\\.Win32\\.TaskScheduler|schtasks|TaskService`",
+   "fix": "EventBridge Scheduler + ECS task",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: BG-TASK-SCHEDULER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Win32\\.TaskScheduler|schtasks|TaskService",
+     "files": [
+      ".cs",
+      ".ps1",
+      ".vb",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "ps1",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SCH-HANGFIRE-QUARTZ",
+   "area": "Scheduling, messaging, serialization",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Hangfire / Quartz server config with Windows paths or SQL Server locks",
+   "detect": "cfg/cs: `Hangfire|Quartz` with SQL Server connection",
+   "fix": "Test on Linux DB",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: BG-HANGFIRE-QUARTZ",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Hangfire|Quartz",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SCH-WEB-TIMER",
+   "area": "Scheduling, messaging, serialization",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Timers / background work inside web processes run per task (duplicate jobs)",
+   "detect": "cs/vb: `System\\.Timers\\.Timer|new Timer\\(` in Controllers/Global",
+   "fix": "Worker service",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: STATE-WEB-BACKGROUND",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "System\\.Timers\\.Timer|new Timer\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-MSG-MSMQ",
+   "area": "Scheduling, messaging, serialization",
+   "level": "block",
+   "severity_note": "block",
+   "what": "MSMQ transports (NServiceBus MSMQ, System.Messaging)",
+   "detect": "cs/vb/cfg: `MsmqTransport|System\\.Messaging|msmq`",
+   "fix": "SQS transport",
+   "sources": [
+    "S5"
+   ],
+   "already_in": "COVERED: WIN-MSMQ; API-MSMQ",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "MsmqTransport|System\\.Messaging|msmq",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SER-BINARYFORMATTER",
+   "area": "Scheduling, messaging, serialization",
+   "level": "block",
+   "severity_note": "block",
+   "what": "BinaryFormatter throws on .NET 9+ (even with old settings)",
+   "detect": "cs/vb: `BinaryFormatter`",
+   "fix": "System.Text.Json / protobuf",
+   "sources": [
+    "S20"
+   ],
+   "already_in": "COVERED: API-BINARYFORMATTER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "BinaryFormatter",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SER-OTHER-FORMATTERS",
+   "area": "Scheduling, messaging, serialization",
+   "level": "block",
+   "severity_note": "block",
+   "what": "SoapFormatter, NetDataContractSerializer, LosFormatter, ObjectStateFormatter: removed or unsupported on .NET 5+ [K: verify version]",
+   "detect": "cs/vb: `SoapFormatter|NetDataContractSerializer|LosFormatter|ObjectStateFormatter`",
+   "fix": "Json/XML/contract serializers",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SoapFormatter|NetDataContractSerializer|LosFormatter|ObjectStateFormatter",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-SER-TYPENAMEHANDLING",
+   "area": "Scheduling, messaging, serialization",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Json.NET TypeNameHandling (unsafe deserialisation)",
+   "detect": "cs/vb/cfg: `TypeNameHandling\\.(All|Auto|Objects|Arrays)`",
+   "fix": "None; explicit types",
+   "sources": [
+    "K"
+   ],
+   "already_in": "COVERED: SEC-TYPENAMEHANDLING",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "TypeNameHandling\\.(All|Auto|Objects|Arrays)",
+     "files": [
+      "*.runtimeconfig.json",
+      ".config",
+      ".cs",
+      ".vb",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-WINDOWS-RUNNER",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Pipeline runs on Windows agent; Linux image build not exercised",
+   "detect": "yml: `runs-on:\\s*windows|vmImage:\\s*['\"]?windows-`",
+   "fix": "Add Linux build job",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: BUILD-WINDOWS-CI",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "runs-on:\\s*windows|vmImage:\\s*['\"]?windows-",
+     "files": [
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-MSBUILD-EXE",
+   "area": "CI/CD and tests",
+   "level": "block",
+   "severity_note": "block",
+   "what": "msbuild.exe / nuget.exe / vstest.console.exe in pipeline",
+   "detect": "yml/ps1/sh: `msbuild\\.exe|nuget\\.exe|vstest\\.console\\.exe`",
+   "fix": "`dotnet build`, `dotnet test`, `dotnet restore`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "msbuild\\.exe|nuget\\.exe|vstest\\.console\\.exe",
+     "files": [
+      ".ps1",
+      ".sh",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "yml",
+      "ps1",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-POWERSHELL-EXE",
+   "area": "CI/CD and tests",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`powershell.exe` step (Windows PowerShell) instead of pwsh",
+   "detect": "yml: `\\bpowershell(\\.exe)?\\s`",
+   "fix": "`pwsh`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: BUILD-WINDOWS-CI",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\bpowershell(\\.exe)?\\s",
+     "files": [
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-VSTEST",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "MSTest v1 / Coded UI test runner",
+   "detect": "proj/cs: `Microsoft\\.VisualStudio\\.TestTools\\.UITest|CodedUITest`",
+   "fix": "Migrate to MSTest/xUnit on dotnet test",
+   "sources": [
+    "S33"
+   ],
+   "already_in": "COVERED: TEST-CODED-UI",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.VisualStudio\\.TestTools\\.UITest|CodedUITest",
+     "files": [
+      ".cs",
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj"
+     ],
+     "kinds": [
+      "proj",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-DOCKER-PLATFORM",
+   "area": "CI/CD and tests",
+   "level": "block",
+   "severity_note": "block",
+   "what": "docker build without target platform on Apple silicon runners",
+   "detect": "yml/sh: `docker build(?!.*--platform)`",
+   "fix": "Explicit `--platform`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "docker build(?!.*--platform)",
+     "files": [
+      ".sh",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "yml",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-GITATTRIBUTES",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "No .gitattributes: CRLF and exec bit drift between Windows and Linux checkouts",
+   "detect": "file: `.gitattributes` absent or without `text=auto`/`eol=lf`",
+   "fix": "Add .gitattributes",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [],
+   "automated": true,
+   "check": "absent",
+   "when_path": "\\.(cs|vb|csproj|vbproj|sln)$",
+   "absent_path": "(^|/)\\.gitattributes$",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CI-SIGNTOOL",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "signtool / sn.exe in pipeline (Windows-only signing)",
+   "detect": "yml/ps1: `signtool|sn\\.exe`",
+   "fix": "Remove for containers; sign image if needed",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "signtool|sn\\.exe",
+     "files": [
+      ".ps1",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "yml",
+      "ps1"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CI-TEST-ASSUMPTIONS",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Tests assume Windows paths, case-insensitive file or URL matching, or LocalDB",
+   "detect": "test cs/vb: `\"[A-Za-z]:\\\\\\\\|StringComparison\\.OrdinalIgnoreCase` in asserts",
+   "fix": "Platform-neutral test fixtures",
+   "sources": [
+    "K"
+   ],
+   "already_in": "PARTIAL: FILE-DRIVE-LETTER",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\"[A-Za-z]:\\\\\\\\|StringComparison\\.OrdinalIgnoreCase",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "test cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  }
+ ]
+}

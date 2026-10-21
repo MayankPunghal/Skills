@@ -56,5 +56,155 @@
   "database": "see database assessment",
   "ec2-same-os": "Amazon EC2 with the same operating system as today (Windows Server to Windows Server, Linux to Linux); same runtime, IIS / service hosting unchanged"
  },
- "windows_bound_max_files_to_replace": 10
+ "windows_bound_max_files_to_replace": 10,
+ "r7_guidance": {
+  "_doc": "Per 7R: why not the other Rs (the default reasoning, which the reviewer edits per application), what happens next, the usual risks and who signs off. Rendered with every application plan (classify_apps.py -> report). Sources: AWS Prescriptive Guidance, migration strategies (https://docs.aws.amazon.com/prescriptive-guidance/latest/large-migration-guide/migration-strategies.html); Microsoft, ASP.NET to ASP.NET Core migration (https://learn.microsoft.com/en-us/aspnet/core/migration/fx-to-core/).",
+  "Retire": {
+   "why_not": [
+    "Not Retain / Rehost: hosting and patching an application nobody needs costs money and carries security debt.",
+    "Not Replatform / Refactor: no business value left to carry forward."
+   ],
+   "then": [
+    "Name what replaces the capability: nothing, another application (which screens or calls move there), a SaaS, or a read-only archive.",
+    "Find hidden consumers first: IIS logs (last hit per path), service callers (WCF / ASMX / API clients), scheduled jobs, reports reading its database.",
+    "Export the data under the retention rule; keep a final backup for the retention period.",
+    "Decommission: stop the site, remove DNS and load-balancer entries, revoke service accounts and secrets, remove monitoring and firewall rules, archive the code."
+   ],
+   "risks": [
+    "Hidden consumers (partner calls, batch jobs, shared database readers)",
+    "Regulatory data retention",
+    "A shared database or library that other applications still use"
+   ],
+   "sign_off": [
+    "application owner",
+    "business owner",
+    "security / compliance (data retention)",
+    "DBA (database retirement)"
+   ]
+  },
+  "Retain": {
+   "why_not": [
+    "Not Replatform: a blocker cannot be removed now (unfunded UI rewrite, Windows-only dependency, compliance or a dependency that must move first).",
+    "Not Rehost: the client chose to keep it where it is for now (or keep it on Windows in AWS as part of a hybrid)."
+   ],
+   "then": [
+    "Set a review date and the exit criteria (what must be true to move it).",
+    "Keep .NET Framework 4.8.1 and Windows patched.",
+    "Move shared libraries to netstandard2.0 (hybrid) so the other applications can move without it.",
+    "Record which other applications it blocks (shared database, shared libraries)."
+   ],
+   "risks": [
+    "Retain becomes permanent",
+    "Security debt on an ageing stack",
+    "It blocks other moves through a shared database or library"
+   ],
+   "sign_off": [
+    "application owner",
+    "architecture lead"
+   ]
+  },
+  "Rehost": {
+   "why_not": [
+    "Not Replatform now: Windows-bound dependencies (COM, Office interop, WF, Remoting, MSMQ, unsupported WCF bindings, blocker packages) need replacing first, or a deadline allows no code change.",
+    "Not Retain: the data centre exit needs it in AWS."
+   ],
+   "then": [
+    "Move the server or IIS site to Amazon EC2 Windows (AWS Application Migration Service or images), same OS.",
+    "Secrets from web.config to Secrets Manager / Parameter Store; endpoints and file shares re-pointed.",
+    "Plan the follow-up: replace the blocking components, then Replatform."
+   ],
+   "risks": [
+    "Keeps Windows and SQL Server licence cost",
+    "Technical debt stays",
+    "The follow-up modernisation never gets funded"
+   ],
+   "sign_off": [
+    "application owner",
+    "infrastructure / DevOps lead"
+   ]
+  },
+  "Relocate": {
+   "why_not": [
+    "Not Rehost: the whole hypervisor estate moves unchanged (for example VMware Cloud on AWS); no per-application work."
+   ],
+   "then": [
+    "Infrastructure team moves the VMs; no code change."
+   ],
+   "risks": [
+    "Licence and dedicated-host cost",
+    "No modernisation benefit"
+   ],
+   "sign_off": [
+    "infrastructure lead"
+   ]
+  },
+  "Repurchase": {
+   "why_not": [
+    "Not Replatform / Refactor: a commodity product (reporting, CMS, fax, HR) covers the needed features for less than porting and running custom code."
+   ],
+   "then": [
+    "Map features against the product; plan data export and import.",
+    "Rebuild integrations (every caller of this application's services).",
+    "Single sign-on, user training, cutover, then Retire the old application."
+   ],
+   "risks": [
+    "Data migration",
+    "Integrations and customisations",
+    "Vendor lock-in and subscription cost"
+   ],
+   "sign_off": [
+    "business owner",
+    "procurement",
+    "security"
+   ]
+  },
+  "Replatform": {
+   "why_not": [
+    "Not Rehost: keeps Windows, IIS and the .NET Framework support clock; AWS lists the .NET Framework to .NET port for Linux as a replatform example.",
+    "Not Refactor / rewrite: the platform is the only blocker; the domain logic is kept, so the risk is in the port itself, controlled by build, residue and parity gates.",
+    "Not Retain: nothing found that cannot move."
+   ],
+   "then": [
+    "Port to .NET 10 with one porting engine (AWS DevTx toolkit or AWS Transform); Claude cleans up what it leaves (dotnet-modernization skill).",
+    "Shared class libraries first; Linux container on ECS Fargate behind an ALB; managed database.",
+    "Record request/response goldens first and replay them against the port."
+   ],
+   "risks": [
+    "Behaviour drift: path case, culture, time zones, line endings, serialisation defaults",
+    "Session, machineKey and auth-cookie compatibility",
+    "Packages with no .NET 10 build"
+   ],
+   "sign_off": [
+    "application owner",
+    "tech lead (gates passed)",
+    "QA (parity)"
+   ]
+  },
+  "Refactor": {
+   "why_not": [
+    "Not Replatform: part of the application has no .NET 10 counterpart (Web Forms UI, WCF bindings not in CoreWCF, MSMQ) or cannot meet demand as built, so that part is rewritten.",
+    "Not Retain: the rewrite is small enough, or the client funds it."
+   ],
+   "then": [
+    "Rewrite only the slice that has no counterpart (UI, a service boundary); port the rest as in Replatform.",
+    "Incrementally: YARP in front of the old application, routes moved one at a time, System.Web adapters for shared libraries and session, then remove the old route.",
+    "Characterisation tests and parity before each route moves."
+   ],
+   "risks": [
+    "Scope creep and second-system effect",
+    "Parallel-run cost",
+    "Business-rule drift in the rewritten slice"
+   ],
+   "sign_off": [
+    "business owner (UI / contract changes)",
+    "application owner",
+    "tech lead"
+   ]
+  }
+ },
+ "webforms_token_ui": {
+  "_doc": "A Web Forms project whose UI is a token (a few pages and markup under this share of its hand-written lines) is a service with a page or two, not a UI application: Replatform, with the pages rewritten inside the port.",
+  "pages": 3,
+  "markup_share": 0.05
+ }
 }

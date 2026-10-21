@@ -26,7 +26,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, data, documenter_dir, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
+from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, data, documenter_dir, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
                      utf8_stdout, write_json)
 
 # appsettings*.json, jobsettings.json, settings.json, secrets.json …: .NET configuration JSON (launchSettings is IDE-only)
@@ -35,7 +35,7 @@ SETTINGS_JSON = re.compile(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w
 TEMPLATE_FILE = re.compile(r"(?i)[._-](example|sample|template|tmpl|dist)([._-]|$)")
 PLACEHOLDER = re.compile(r"(?i)^\s*(|<.*>|\$\{.*\}|\$\(.*\)|#\{.*\}|%.*%|\{\{.*\}\}|\{\w*\}|x{3,}|\*+|\.+|changeme|change[-_ ]?me\w*|"
                          r"password|pass|pwd|secret|your[-_ ]?\w*|placeholder|replace[-_ ]?\w*|set[-_ ]by[-_ ].*|to[-_ ]?do|tbd|dummy|sample|example)\s*$")
-SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd$|secret|token$|apikey|api_key|accesskey|access_key|privatekey|private_key|credential|clientkey|sharedkey|signingkey)")
+SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd$|secret|token$|apikey|api_key|accesskey|access_key|privatekey|private_key|credential|clientkey|sharedkey|signingkey|licen[sc]e[._-]?key|activation[._-]?key)")
 # values that are never secrets: flags, numbers, unexpanded variables, URLs without user info
 TRIVIAL_VALUE = re.compile(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|\{.*\}|xxx+|\*+|changeme|[a-z][\w+.-]*://[^@\s]*)\s*")
 # __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
@@ -68,7 +68,7 @@ BLOCK_COMMENT = {"cs": re.compile(r"/\*.*?\*/", re.S), "js": re.compile(r"/\*.*?
                  "config": re.compile(r"<!--.*?-->", re.S), "proj": re.compile(r"<!--.*?-->", re.S), "markup": re.compile(r"<%--.*?--%>|<!--.*?-->", re.S),
                  "xml": re.compile(r"<!--.*?-->", re.S)}
 
-URL_RX = re.compile(r"(?i)\b(https?|net\.tcp|net\.pipe|ftp|sftp|ldaps?|amqps?|tcp)://([A-Za-z0-9_.\-]+|\[[0-9a-f:]+\])(:\d+)?([^\s\"'<>)]*)")
+URL_RX = re.compile(r"(?i)\b(https?|net\.tcp|net\.pipe|ftp|sftp|ldaps?|amqps?|tcp)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9_.\-]+|\[[0-9a-f:]+\])(:\d+)?([^\s\"'<>)]*)")
 IP_RX = re.compile(r"(?<![\w.])((?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})(?![\w.])")
 SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\.0\.0\.1|0\.0\.0\.0|\+|\*|example\.(com|org)|.*\.example\.com|tempuri\.org|schemas\.(microsoft|xmlsoap|openxmlformats)\.(com|org)|"
                         r"www\.w3\.org|w3\.org|go\.microsoft\.com|aka\.ms|json-schema\.org|purl\.org|xmlns\.com|docs\.(microsoft|oasis-open)\.(com|org)|"
@@ -259,7 +259,7 @@ class Scan:
         oos = [os.path.normpath(os.path.join(self.root, x)) for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]  # non-.NET projects: out of scope
         self.facts["out_of_scope_skipped"] = [x.replace("\\", "/") for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+            dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
             for fn in files:
                 path = os.path.join(d, fn)
                 ext = os.path.splitext(fn)[1].lower()
@@ -379,6 +379,11 @@ class Scan:
             if "://" in line:
                 for m in URL_RX.finditer(line):
                     scheme, host = m.group(1).lower(), m.group(2)
+                    if line[m.end(2):m.end(2) + 2] in (':"', ":'"):  # ftp://user:" + Encode(pw) + "@host/ : the name before the colon is a user, the host follows the @
+                        later = re.search(r"@([A-Za-z0-9_.\-]+)", line[m.end(2):])
+                        if not later:
+                            continue
+                        host = later.group(1)
                     if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS:
                         continue
                     self.endpoint(host, scheme, rp, project, i, line, ftype)
@@ -483,8 +488,8 @@ class Scan:
         server = next((v for k, v in parts.items() if CONN_KEYS["server"].match(k)), "")
         db = next((v for k, v in parts.items() if CONN_KEYS["database"].match(k)), "")
         integrated = bool(re.search(r"(?i)(integrated\s*security\s*=\s*(sspi|true|yes)|trusted_connection\s*=\s*(yes|true))", cs))
-        pwd = next((v for k, v in parts.items() if k in ("password", "pwd")), None)
-        has_pwd = pwd is not None and not PLACEHOLDER.match(pwd) and not TEMPLATE_FILE.search(os.path.basename(rp))
+        pw_value = next((v for k, v in parts.items() if k in ("password", "pwd")), None)
+        pw_present = pw_value is not None and not PLACEHOLDER.match(pw_value) and not TEMPLATE_FILE.search(os.path.basename(rp))
         ef = "metadata=" in cs.lower()
         if ef:
             inner = re.search(r'(?i)provider connection string\s*=\s*"?([^"]*)', cs)
@@ -492,20 +497,20 @@ class Scan:
                 return self.connection(rp, project, name, inner.group(1).replace("&quot;", ""), provider, line)
         host = re.split(r"[\\,:]", server.replace("tcp:", ""))[0] if server else ""
         entry = {"file": rp, "line": line, "name": name, "provider": provider, "server": server, "host": host, "database": db,
-                 "auth": "integrated" if integrated else ("sql-login" if has_pwd else "unspecified"), "password_in_config": has_pwd,
+                 "auth": "integrated" if integrated else ("sql-login" if pw_present else "unspecified"), "password_in_config": pw_present,
                  "attachdb": "attachdbfilename" in cs.lower(), "localdb": "(localdb)" in server.lower(),
                  "template": bool(TEMPLATE_FILE.search(os.path.basename(rp))), "git_ignored": self.git_ignored(rp)}
-        if pwd is not None and not has_pwd:
+        if pw_value is not None and not pw_present:
             entry["auth"] = "sql-login (placeholder password)"
         self.facts["connection_strings"].append(entry)
-        if has_pwd and entry["git_ignored"]:
+        if pw_present and entry["git_ignored"]:
             r = self.synthetic("CFG-LOCAL-DB-PASSWORD", "configuration-secrets", "Database password in a git-ignored local config file", "Low", "Confirmed",
                                "The file is excluded from the repository (.gitignore), so the password is not committed; it exists on this copy "
                                "of the code only. Deployed environments still need a secure source for the credential.",
                                "Keep local credentials out of git (as now); use Secrets Manager or environment variables for deployed environments.",
                                "User secrets / environment variables locally", "trivial", ["S11"])
-            self.add(r, project, rp, line, f'{name}: "…password=***…" (git-ignored local file)')
-        elif has_pwd and TOKEN_SHAPED.match(pwd):  # __name__: a placeholder, not a credential
+            self.add(r, project, rp, line, f'{name}: "…password=<masked>…" (git-ignored local file)')
+        elif pw_present and TOKEN_SHAPED.match(pw_value):  # __name__: a placeholder, not a credential
             entry["auth"] = "sql-login (placeholder password)"
             entry["password_in_config"] = False
             r = self.synthetic("CFG-DB-PASSWORD-PLACEHOLDER", "configuration-secrets", "Connection string with a placeholder password (real password supplied outside the file)",
@@ -517,12 +522,12 @@ class Scan:
                                "Secrets Manager + rotation", "trivial", ["S11"],
                                question="How is the real database password supplied to each environment today (token replacement, environment variable, secret store)?")
             self.add(r, project, rp, line, f'{name}: "…password=<placeholder>…"')
-        elif has_pwd:
+        elif pw_present:
             r = self.synthetic("CFG-PLAINTEXT-DB-PASSWORD", "configuration-secrets", "Database password in a connection string", "High", "Confirmed",
                                "Plain-text database credentials in config files are a compliance finding and block credential rotation.",
                                "Store credentials in AWS Secrets Manager (with rotation); build the connection string at start-up.",
                                "Secrets Manager + rotation", "trivial", ["S11"])
-            self.add(r, project, rp, line, f'{name}: "…password=***…"')
+            self.add(r, project, rp, line, f'{name}: "…password=<masked>…"')
         if host and not entry["localdb"] and host not in (".", "(local)", "localhost", "127.0.0.1"):
             self.endpoint(host, "sql", rp, project, line, f"connection string '{name}' -> {host}", "config")
 
@@ -781,7 +786,7 @@ class Scan:
                 fw["mstest-v1"] += 1
             base = os.path.dirname(os.path.join(self.root, p["path"]))
             for d, dirs, files in os.walk(base):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if fn.endswith((".cs", ".vb")):
                         try:
@@ -843,7 +848,7 @@ class Scan:
     def case_paths(self):
         idx = {}
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP) and not x.startswith(".")]
             for fn in files:
                 rp = rel(os.path.join(d, fn), self.root)
                 idx.setdefault(rp.lower(), rp)
@@ -852,7 +857,7 @@ class Scan:
             base = os.path.dirname(p["path"])
             pdir = os.path.join(self.root, base)
             for d, dirs, files in os.walk(pdir):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if os.path.splitext(fn)[1].lower() not in (".cs", ".vb", ".cshtml", ".aspx", ".ascx", ".master", ".config", ".vbhtml"):
                         continue

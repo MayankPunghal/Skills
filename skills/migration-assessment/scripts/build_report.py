@@ -24,6 +24,8 @@ import _findings as F
 import _dependencies as D
 import _analysis as A
 from intake import unanswered as intake_unanswered
+import intake as INTAKE
+import _hours_report as H
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
 
@@ -87,17 +89,19 @@ def b_headline(c):
     sev = Counter(f["severity"] for f in c.findings)
     r7 = Counter(a["r7"] for a in c.cls["applications"])
     loc = sum((c.inv[r] or {}).get("totals", {}).get("loc", 0) for r in c.repos)
+    hrs = c.est.get("hours") if H.is_hours(c.est) else None  # lift-and-shift track: the hours calculator is the estimate
     rows = [("Repositories / solutions / projects", f"{len(c.repos)} / {sum(len(c.inv[r]['solutions']) for r in c.repos if c.inv[r])} / {sum(len(c.inv[r]['projects']) for r in c.repos if c.inv[r])}"),
             ("Applications assessed", str(len(c.cls["applications"]))),
             ("Lines of code (C#, VB.NET, markup)", f"{loc:,}"),
             ("Recommended path (7R)", ", ".join(f"{k} {v}" for k, v in r7.most_common()) or "-"),
             ("Findings", ", ".join(f"{k} {sev[k]}" for k in SEVS if sev[k]) or "none"),
+            *(H.headline_rows(hrs) if hrs else [
             ("Effort" + (" (AI-assisted delivery)" if c.est.get("ai_assisted") else ""),
              f"likely (P50) {t.get('likely_hours', '-')} h / {t['likely_days']} d; 80% range (P10–P90) {hd(t['total_days'], t.get('total_hours'))}"
              + (f"; commitment (P80) {t['p80_hours']} h" if t.get("p80_hours") else "") if t.get("total_days") else "not estimated"),
             ("Manual-equivalent effort (for comparison)", hd(t["manual_equivalent_days"], t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "-"),
             ("Indicative duration", f"~{t.get('duration_weeks')} weeks at P50" + (f", ~{t['duration_weeks_p80']} weeks at P80" if t.get("duration_weeks_p80") else "")
-             + f" with {c.est.get('engineers')} engineers" + sprint_note(c.est.get("sprints") or {}) if t.get("duration_weeks") else "-"),
+             + f" with {c.est.get('engineers')} engineers" + sprint_note(c.est.get("sprints") or {}) if t.get("duration_weeks") else "-")]),
             ("Target platform", "Amazon EC2 with the same operating systems as today (Windows to Windows, Linux to Linux)" if lift(c.cfg)
              else f"{pretty_tfm(c.cfg.get('target_dotnet', 'net10.0'))} (LTS, supported to 2028-11-14) on Linux, AWS")]
     if lift(c.cfg):  # the 7R mix and Linux targets do not apply when every server moves as it is
@@ -140,7 +144,10 @@ def b_method(c):
             ("Endpoints", "URLs, host names, IPs and UNC paths classified internal (on-prem) vs external"),
             ("Linux file-system", "Path-literal case check against files on disk; drive letters; separators"),
             ("Review", "Findings marked Needs verification were read in context by the assessor; verdicts are recorded with the evidence"),
-            ("Estimation", f"Parametric model {c.est.get('model_version', '')}: coding hours only: project conversion by type, size and complexity + remediation per finding + database code conversion (no QA, DevOps, PM or contingency)")]
+            ("Estimation", ("Hours calculator (lift-and-shift track): developer hours, AI-assisted, solution by solution: counts found in the code (environment variables, config files, "
+                            f"addresses, re-keyed integrations, projects, deployables, workloads) x [low, high] rates, plus a {H.g(c.est['hours']['contingency_pct'])}% buffer; "
+                            "each line labelled calibrated to the sample or inferred") if H.is_hours(c.est) else
+             f"Parametric model {c.est.get('model_version', '')}: coding hours only: project conversion by type, size and complexity + remediation per finding + database code conversion (no QA, DevOps, PM or contingency)")]
     return table(["Step", "What was done"], rows)
 
 
@@ -171,11 +178,11 @@ def b_inventory(c):
 
 
 def b_linux_readiness(c):
-    rows = [(r["app"], r["framework"], r["status"], r["windows_apis"], r["framework_blockers"], r["packages"], r["paths"], r["time_culture"], r["windows_auth"], r["linux_build"], r["summary"])
+    rows = [(r["app"], r["framework"], r["status"], r["windows_apis"], r["framework_blockers"], r["packages"], r["paths"], r["time_culture"], r["windows_auth"], r["linux_build"], r["linux_checks"], r["summary"])
             for r in A.linux_readiness(c)]
     legend = ("\n\n**Linux-ready**: already cross-platform, no blockers. **Ready after porting**: moves to .NET 10 on Linux with code changes listed in the findings. "
               "**Blocked**: Windows-bound and kept on Windows by decision until redesigned (apps being ported replace their Windows-only parts and show as Ready after porting). **Windows-only (desktop)**: client app, runs on user machines.")
-    return table(["Application", "Framework", "Linux readiness", "Windows APIs", "Framework blockers", "Incompatible packages", "Path issues", "Time/culture", "Windows auth", "Linux build", "What stops it"], rows) + legend
+    return table(["Application", "Framework", "Linux readiness", "Windows APIs", "Framework blockers", "Incompatible packages", "Path issues", "Time/culture", "Windows auth", "Linux build", "Linux checks (block / warn)", "What stops it"], rows) + legend
 
 
 def b_linux_issues(c):
@@ -572,6 +579,8 @@ def b_jobs(c):
 def b_methodology(c):
     """How the estimate was calculated: the steps, the formulas and this assessment's own numbers as a worked example."""
     est, cfg = c.est, data("estimation.json")
+    if H.is_hours(est):
+        return H.method_md(est["hours"])
     t, sp = est.get("totals", {}), est.get("sprints") or {}
     if not t.get("likely_hours"):
         return "_Not estimated._"
@@ -857,6 +866,22 @@ def b_db_inventory(c):
             if code_cons:
                 out.append(table(["T-SQL construct (embedded SQL)", "Occurrences", "Level", "PostgreSQL approach"],
                                  [(kk, n, DBI.conversion(kk)["level"], DBI.conversion(kk)["pg"]) for kk, n in sorted(code_cons.items(), key=lambda x: -x[1])[:20]]))
+        rsq = inv.get("raw_sql") or {}
+        if rsq:
+            stm, spc = rsq.get("statements") or {}, rsq.get("stored_procedures") or {}
+            src = ", ".join(f"{k} {v}" for k, v in sorted((stm.get("by_source") or {}).items(), key=lambda x: -x[1]))
+            out.append(f"\n**Raw SQL and procedure calls found by name** (raw_sql.py: literals, + chains, StringBuilder, VB, markup, config): "
+                       f"{stm.get('statements', 0)} statements ({stm.get('parsed', 0)} parsed, {stm.get('dynamic', 0)} built at run time"
+                       + (f"; by source: {src}" if src else "") + f"), {rsq.get('fragments', 0)} fragments kept for review; "
+                       f"{spc.get('distinct', 0)} stored procedures from {spc.get('call_sites', 0)} call sites"
+                       + (f" ({spc.get('via_wrappers', 0)} through the repository's own wrappers: {', '.join(rsq.get('wrappers', [])[:5])})" if spc.get("via_wrappers") else "")
+                       + ".\n")
+        pcs = inv.get("procedure_calls") or []
+        if pcs:
+            out.append(table(["Stored procedure called from code", "Call sites", "API", "Needs attention", "First site"],
+                             [(p["name"], p["call_sites"], ", ".join(p["apis"][:2]), ", ".join(p["flags"]) or "-",
+                               f"`{p['sites'][0]['file']}:{p['sites'][0]['line']}`" if p["sites"] else "") for p in sorted(pcs, key=lambda x: -x["call_sites"])[:30]])
+                       + (f"\n_{len(pcs) - 30} more in assessment/scan/{d['repo']}.json (db_inventory.procedure_calls)._" if len(pcs) > 30 else ""))
         code["EDMX function imports"] = inv.get("edmx_function_imports", 0)
         names = {"stored_procedure_calls": "Stored-procedure calls in code", "inline_sql_strings": "SQL statements embedded in code (parsed)",
                  "tsql_in_strings": "Embedded statements needing a rewrite or redesign", "dynamic_sql_in_code": "Embedded statements built at run time",
@@ -879,6 +904,16 @@ def b_scenarios(c):
     comp = c.est.get("comparisons") or []
     if not comp:
         return "_Scenarios not computed (rerun estimate_effort.py)._"
+    if H.is_hours(c.est):  # lift-and-shift track: the selected option is the hours calculator; the other rows are the engineer-days model, kept to compare options
+        h = c.est["hours"]
+        out = [f"**The selected option, lift-and-shift, is estimated by the hours calculator: {H.total_text(h)}.** The other options below are estimated by the "
+               "engineer-days model (coding effort only, a different basis), so compare them as an order of magnitude, not hour for hour.\n"]
+        out.append(table(["Option", "Effort (AI-assisted)", "Basis", "Notes"],
+                         [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""),
+                           H.rng(h["total"]["low"], h["total"]["high"]) if x["selected"] else hd(x["total_days"], x["total_hours"]),
+                           "hours calculator (developer hours, buffer included)" if x["selected"] else "engineer-days model, P10–P90",
+                           "" if x["selected"] else " ".join(x.get("notes", []))[:300]) for x in comp if x["kind"] == "hosting"]))
+        return "\n".join(out)
     out = ["**Code-side options** (database scenario: " + (c.est.get("scenario", {}).get("database_label") or "") + "; coding effort only)\n"]
     out.append(table(["Option", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual likely", "Duration", "Notes"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), hd(x["total_days"], x["total_hours"]), f"{x['likely_hours']} h / {x['likely_days']} d",
@@ -919,6 +954,12 @@ def b_app_plans(c):
         out.append("\n**Why:** " + " ".join(a.get("rationale", [])))
         if a.get("options"):
             out.append("\n**Options considered:** " + " ".join(f"({i}) {o}" for i, o in enumerate(a["options"], 1)))
+        if a.get("why_not"):
+            out.append("\n**Why not the other Rs:** " + " ".join(a["why_not"]))
+        if a.get("then"):
+            out.append("\n**Then:** " + " ".join(f"({i}) {o}" for i, o in enumerate(a["then"], 1)))
+        if a.get("risks"):
+            out.append("\n**Risks:** " + "; ".join(a["risks"]) + ". **Signs off:** " + ", ".join(a.get("sign_off") or ["application owner"]) + ".")
         if fs:
             out.append("\n**Blocking / high findings:** " + "; ".join(f"{f['ref']} {f['title']}" for f in fs[:10]))
         if w.get("drivers"):
@@ -937,6 +978,8 @@ def b_hybrid(c):
 
 
 def b_estimate(c):
+    if H.is_hours(c.est):
+        return H.estimate_md(c.est["hours"])
     rows = []
     for w in sorted(c.est.get("work_packages", []), key=lambda w: -w["likely_days"]):
         rows.append((w["name"], w.get("r7") or w["kind"], hd(w["total_days"], w.get("total_hours")), f"{w.get('likely_hours', '-')} h / {w['likely_days']} d",
@@ -971,6 +1014,8 @@ def sprint_note(sp):
 def b_sprints(c):
     """Coding sprint plan from the day of codebase access (estimate.json "sprints")."""
     sp = c.est.get("sprints") or {}
+    if H.is_hours(c.est):
+        return "_No sprint plan: the hours calculator estimates effort, not a calendar._"
     if not sp.get("plan"):
         return "_No sprint plan (rerun estimate_effort.py)._"
     rows = []
@@ -1017,6 +1062,8 @@ def b_multipliers(c):
 
 def b_timeline(c):
     tl = c.est.get("timeline", [])
+    if H.is_hours(c.est):
+        return H.future_md(c.est["hours"])
     if not tl:
         return "_Not estimated._"
     today = datetime.date.today()
@@ -1188,10 +1235,11 @@ def b_intake(c):
         return "_The intake questionnaire was not recorded; the scope follows the assessment settings._"
     rows = []
     for q in data("intake.json")["questions"]:
-        if any(ans.get(k) != v for k, v in (q.get("when") or {}).items()):
+        if not INTAKE.asked(q, ans):
             continue
         v = ans.get(q["id"])
-        label = next((o["label"] for o in q.get("options", []) if o["value"] == v), v)
+        label = (", ".join(next((o["label"] for o in q.get("options", []) if o["value"] == x), x) for x in v) if isinstance(v, list) and v
+                 else next((o["label"] for o in q.get("options", []) if o["value"] == v), v))
         rows.append((q["ask"].replace(" (optional)", ""), label if v not in (None, "") else "not answered (open question)"))
     return (f"**Assessment type:** {ASSESSMENT_TYPES.get(c.cfg.get('assessment_type'), '-')}\n\n" + table(["Question", "Answer"], rows))
 
@@ -1209,7 +1257,9 @@ def b_landing_summary(c):
                      "; ".join(dict.fromkeys(f["title"] for f in fs if f["severity"] in ("Blocker", "High")))[:300] or "-",
                      f"{w.get('likely_hours', '-')} h" if w else "-"))
     repo_fs = [f for f in c.findings if not f.get("apps") and in_scope(f, keep)]
-    out = table(["Application", "Repository", "Type", "Framework", "Blocker", "High", "Medium", "Must change before cut-over", "Likely effort"], rows)
+    if H.is_hours(c.est):  # effort is estimated per solution (section 7), not per application
+        rows = [r[:-1] for r in rows]
+    out = table(["Application", "Repository", "Type", "Framework", "Blocker", "High", "Medium", "Must change before cut-over"] + ([] if H.is_hours(c.est) else ["Likely effort"]), rows)
     if repo_fs:
         s = Counter(f["severity"] for f in repo_fs)
         out += (f"\n\nRepository-wide items not tied to one application: {len(repo_fs)} (" + ", ".join(f"{k} {s[k]}" for k in SEVS if s[k]) + ").")
@@ -1414,6 +1464,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--template", help="report template (default: chosen by assessment_type: report-template-lift-and-shift.md or report-template.md)")
     ap.add_argument("--out")
+    ap.add_argument("--no-html", action="store_true", help="skip the HTML version (build_html_report.py), which is built by default")
     a = ap.parse_args()
     root, cfg = load_config()
     os.chdir(root)
@@ -1449,6 +1500,10 @@ def main():
     exports(c, rdir)
     mark_step(root, "report")
     print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv, scheduled-jobs.csv")
+    if not a.no_html:  # every Markdown report gets its HTML version
+        import subprocess
+        import sys
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_html_report.py")], check=False)
 
 
 if __name__ == "__main__":

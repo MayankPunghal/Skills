@@ -28,7 +28,7 @@ Open Claude Code in an empty folder outside the client's repositories, then say:
 
 Individual steps:
 - `discover-estate`, `map-code-graph`, `scan-repos`;
-- `review-findings`, `classify-applications`, `estimate-effort`;
+- `review-findings`, `classify-applications`, `estimate-effort` (lift-and-shift: the hours calculator), `build-check` (lift-and-shift);
 - `validate-linux-build`, `write-report`, `verify-report`;
 - `calibrate-report`, `resume`.
 
@@ -71,7 +71,9 @@ With access to only part of the estate, `extrapolate_estate.py` estimates the re
 | `postgresql` | PostgreSQL only: every table, view, procedure, function and trigger plus the data-access code. Uses the database inventory (sizes, T-SQL constructs, stored-procedure call sites, EF function imports) |
 | `none` | SQL Server stays; no database code change |
 
-Effort is **coding hours only** (no QA, DevOps, project management or contingency), with person-days, AI-assisted and the manual equivalent alongside. Hours are driven by lines of code, project type and a complexity factor (decision density, fan-in, large files); see [estimation-model.md](references/estimation-model.md). The factors are configurable in `scripts/data/estimation.json`. Optional modernizations (SMTP to SES/SNS, Kafka to SQS/SNS, files to S3 and more) are listed with their own hours and are never added to the total.
+**Lift-and-shift effort is different:** when the intake goal is lift-and-shift, `estimate_effort.py` runs the **hours calculator** (`solutions.py`, `third_party.py`, `estimate_hours.py`): developer working hours, AI-assisted, 8 h per day, a low-high range per unit counted solution by solution, plus a 20% buffer, with every line labelled calibrated to the sample or inferred (see "Hours calculator for lift-and-shift" below). The modernize path keeps the model described next.
+
+Effort (modernize path) is **coding hours only** (no QA, DevOps, project management or contingency), with person-days, AI-assisted and the manual equivalent alongside. Hours are driven by lines of code, project type and a complexity factor (decision density, fan-in, large files); see [estimation-model.md](references/estimation-model.md). The factors are configurable in `scripts/data/estimation.json`. Optional modernizations (SMTP to SES/SNS, Kafka to SQS/SNS, files to S3 and more) are listed with their own hours and are never added to the total.
 
 ## What it produces
 
@@ -108,9 +110,10 @@ migration-assessment/
 │                            style-guide, calibration, setup, sources
 ├── scripts/                 setup_assessment, discover_estate, map_graphs, scan_repo, review_queue, classify_apps,
 │   │                        estimate_effort, validate_linux_build, build_report, verify_report, context,
-│   │                        render_references, _common, _findings
-│   └── data/                rules.json (131 evidence rules), package_map.json, categories.json, estimation.json,
-│                            decision_rules.json   <- calibration lives here, not in code
+│   │                        render_references, _common, _findings,
+│   │                        solutions, third_party, estimate_hours, build_check, _hours_report (lift-and-shift hours calculator)
+│   └── data/                rules.json (186 evidence rules), package_map.json, categories.json, estimation.json,
+│                            decision_rules.json, hours.json, commercial_packages.json   <- calibration lives here, not in code
 ├── calibration/             drop sample reports in samples/ (never packaged); gap-analysis template
 ├── templates/narrative/     stubs for the seven narratives
 └── samples/eshop/           end-to-end sample on Microsoft's public eShopModernizing repo: report, exports, reviews, decisions, narratives
@@ -133,3 +136,29 @@ The skill never writes into client repositories, never copies secret values (the
 - The assessment is .NET only: repositories with no .NET project are out of scope; non-.NET projects inside a .NET repository are listed, never edited or moved, and flagged when the .NET build or run time needs them (Node.js, gulp, Vite, TypeScript).
 - `update_inventory_xlsx.py --xlsx <repository inventory>` writes scope, coupling, server dependencies, server coverage, hosting evidence and what the inventory missed back into the client's workbook.
 - Detail and limits: [references/infra-dependencies.md](references/infra-dependencies.md).
+
+## Hours calculator for lift-and-shift (2.13.0)
+
+Changelog: **2.13.0** adopts the effort calculator of the sibling skill `lift-and-shift-assessment` for the lift-and-shift track and keeps the modernize path unchanged.
+
+- **What changes for a lift-and-shift assessment.** `estimate_effort.py` routes the track (intake goal lift-and-shift) to `estimate_hours.py` and merges the result into `estimate.json` (`basis: "hours"`). The report, the HTML effort tab and `landing_report.py` show the total range, the split by work item, the split by solution, every line, and how much is calibrated to the manager's sample versus inferred. The engineer-days model is kept only in the scenario comparison. `--model days` or `--model hours` forces one model.
+- **New scripts.** `solutions.py` (solution-wise inventory), `third_party.py` (licensed components, integrations, server-to-server), `estimate_hours.py` (+ `data/hours.json`), `build_check.py` (static build readiness, optional real MSBuild of a copy with `--run --approve-downloads`), `_hours_report.py` (report text). Data: `data/hours.json`, `data/commercial_packages.json`.
+- **New intake questions** (lift-and-shift only): `scope_confirm`, `scope_exclusions`, `work_items`, `retarget_to`, `regression_tests`, `estimate_basis`, `environments`, `environments_differ`, `pipeline_scope`, `pipeline_solutions`; `intake.py --solution ID --environments "..."` and `--confirm-environments`. Nothing is assumed: unknown answers stay UNKNOWN and become open questions.
+- **Findings.** Three landing rules added to `rules.json`: `LS-CERT-THUMBPRINT`, `LS-LOCAL-DB-FILE`, `LS-ODBC-DSN` (already mapped in `data/landing.json`). The generated `references/windows-api-catalog.md` was re-rendered.
+- **Fixes found while wiring.** `_config.py` gained `detect_company_domains` / `ensure_company_domains`, which `config_template.py` already called; `map_infra.py` runs it for the lift-and-shift track so company DNS names are classified.
+- **Gate 9** of `verify_report.py` (lift-and-shift track): `estimate.json` equals `estimate_hours.json`, the total is the sum of the lines plus the buffer, and the report states the same total.
+- Details: [references/lift-and-shift.md](references/lift-and-shift.md#the-hours-calculator), [references/estimation-model.md](references/estimation-model.md#hours-calculator-lift-and-shift-track), [references/intake.md](references/intake.md).
+
+## AWS managed services for server-hosted services (2.14.0)
+
+`scripts/aws_native.py` finds the caches, search, mail, file-transfer, queue, MongoDB and hosted-logging services the code uses, tells whether the wrapper lives in the repository or in a shared library, and prices each AWS target option (config, client swap, rewrite, remove) from the wrapper files, call sites and settings. `estimate_effort.py` adds one row per service to the optional modernizations (in the total when intake `aws_native = now`). Details: [references/aws-native-services.md](references/aws-native-services.md). The tools landscape now describes the AWS DevTx Version Upgrade Toolkit.
+
+### Assessment + plan: the hand-off to execution (2.14.0)
+
+The skill now ends with a plan the **dotnet-modernization** skill executes. It assesses and plans; it does not change code.
+
+- **`plan_execution.py`** writes `assessment/report/execution-plan.md` (+ .html, .json): **one** porting engine per project (`--port-engine devtx|aws-transform|claude`, default DevTx; never two engines on one project), Claude's clean-up grouped by playbook, **one** database tool (`--db-tool janus|claude`: Janus, or Claude with the Janus skill set), AWS managed-service swaps. Work is shown as a few streams per package (prepare, engine, Linux, Claude, database, AWS native, outside), shared class libraries first and simplest first; repeated findings are collapsed with counts; data access shows raw SQL, procedure calls, result-set and multi-result procedures.
+- **Already-modern applications** (.NET 5+) get the Linux readiness check only, no engine run.
+- **Linux readiness** (`linux_readiness.py`, step 3.2): 240 checks in 19 areas, including letter case of file references checked against the files on disk, container-image checks (no `USER`, SDK in the final stage, no `.dockerignore`, ICU/tzdata), CRLF scripts and secrets in config (masked). The report's Linux readiness table gains a "Linux checks (block / warn)" column, and a modern app with an open blocking hit is no longer "Linux-ready". Same script and rules as the dotnet-modernization skill. Details: [references/linux-readiness.md](references/linux-readiness.md).
+- **7 Rs with justification:** every application carries why not the other Rs, what happens next ("Retire, then what?"), risks and who signs off (`data/decision_rules.json` `r7_guidance`), in the Markdown and HTML reports. A Web Forms project with a token UI (3 pages or fewer, markup under 5% of the code) is Replatform, not Refactor. [references/seven-rs.md](references/seven-rs.md) has the decision tree.
+- **Challenges** ([references/modernisation-challenges.md](references/modernisation-challenges.md)): tightly coupled Web Forms page by page, System.Web.HttpContext across shared libraries (pass the values, System.Web adapters, `IHttpContextAccessor`), libraries first, WCF/ASMX wire compatibility, WPF/WinForms, MongoDB/DocumentDB, features with no counterpart, what each engine covers.

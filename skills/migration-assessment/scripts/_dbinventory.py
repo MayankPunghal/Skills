@@ -19,7 +19,7 @@ import re
 import sys
 from collections import Counter
 
-from _common import SOURCE_DIR_SKIP, documenter_dir, read_text
+from _common import skip_dir, SOURCE_DIR_SKIP, documenter_dir, read_text
 
 def _pg_table():
     """SQL Server -> PostgreSQL conversion knowledge, shared with codebase-documenter (one copy: its scripts/data)."""
@@ -41,6 +41,18 @@ CODE = {
     "ef6_contexts": r":\s*(System\.Data\.Entity\.)?DbContext\b|:\s*ObjectContext\b",
 }
 CODE_RX = {k: re.compile(v, re.I) for k, v in CODE.items()}
+
+
+def raw_sql_inventory(root):
+    """raw_sql.py's inventory of one repository (procedure call sites by name, raw SQL in every form), or None."""
+    try:
+        import raw_sql
+        return raw_sql.inventory(root)
+    except (ImportError, SystemExit) as e:
+        print(f"WARN raw SQL inventory skipped: {e}")
+    except Exception as e:  # never let the extra inventory break the scan
+        print(f"WARN raw SQL inventory failed: {type(e).__name__}: {e}")
+    return None
 
 
 def sql_parser():
@@ -119,6 +131,7 @@ def inventory(root, skip_dirs=()):
         res["objects"] = kept
         code_sql, stats = sp.scan_code(root, skip)
         res["code_sql_stats"] = stats
+        rs = raw_sql_inventory(root)
         for s in code_sql:
             sc = s.get("script") or {}
             cons = dict(sc.get("constructs") or {})
@@ -134,6 +147,20 @@ def inventory(root, skip_dirs=()):
                                     "objects": [{"kind": o.get("kind"), "name": o.get("name")} for o in s.get("objects", [])],
                                     "constructs": cons, "context": s.get("context", []),
                                     "construct_lines": {k: s["line"] + v - 1 for k, v in clines.items()}})
+        if rs:  # raw_sql.py: statements scan_code misses (chains, StringBuilder, VB, markup, config) and every procedure call by name
+            seen = {(s["file"], s["line"]) for s in res["code_sql"]}
+            for st in rs["statements"]:
+                if (st["file"], st["line"]) in seen:
+                    continue
+                res["code_sql"].append({"file": st["file"], "line": st["line"], "reads": st.get("reads", []), "writes": st.get("writes", []),
+                                        "calls": st.get("calls", []), "functions": [], "dynamic": st.get("dynamic", False), "dynamic_sql": False,
+                                        "statements": st.get("statements", []), "objects": [], "constructs": dict(st.get("constructs") or {}),
+                                        "context": [], "construct_lines": {}, "source": st.get("source", ""), "found_by": "raw_sql"})
+            res["procedure_calls"] = [{"name": p["name"], "call_sites": len(p["sites"]), "apis": p.get("apis", []),
+                                       "flags": [f for f in ("output_params", "return_value", "tvp", "multi_result", "for_xml") if p.get(f)],
+                                       "sites": [{"file": x["file"], "line": x["line"]} for x in p["sites"][:5]]} for p in rs["procedures"]]
+            res["raw_sql"] = {"statements": rs["summary"]["raw_sql"], "stored_procedures": rs["summary"]["stored_procedures"],
+                              "fragments": len(rs.get("fragments", [])), "wrappers": [w["name"] for w in rs.get("wrappers", [])]}
     # object NAMES passed as whole C# string literals (CommandType.StoredProcedure, TVP type names, name constants)
     res["name_sites"] = []
     if eng and res["objects"]:
@@ -155,7 +182,7 @@ def inventory(root, skip_dirs=()):
     # data-access API usage in application code
     code, code_files = Counter(), Counter()
     for d, dirs, files in os.walk(root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         for fn in files:
             p = os.path.join(d, fn)
             low = fn.lower()
@@ -185,6 +212,8 @@ def inventory(root, skip_dirs=()):
                                                   "file": o["file"], "line": o.get("line", 0), "construct": k, "count": n, "pg": c["pg"]})
             o["conversion"] = dict(lv)
             (levels if where == "database" else levels_code).update(lv)
+    if res.get("raw_sql"):  # calls through the repository's own wrappers are not CommandType.StoredProcedure lines
+        code["stored_procedure_calls"] = max(code.get("stored_procedure_calls", 0), res["raw_sql"]["stored_procedures"].get("call_sites", 0))
     code["inline_sql_strings"] = len(res["code_sql"])
     code["tsql_in_strings"] = sum(1 for s in res["code_sql"] if s["conversion"].get("rewrite") or s["conversion"].get("redesign"))
     code["dynamic_sql_in_code"] = sum(1 for s in res["code_sql"] if s["dynamic"] or s["dynamic_sql"])

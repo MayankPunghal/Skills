@@ -99,6 +99,107 @@
    "free_text": true,
    "example": "3 engineers from 2026-11-02",
    "sets": "scenario.engineers, scenario.start_date"
+  },
+  {
+   "id": "scope_confirm",
+   "ask": "Discovery found the repositories and solutions listed by the agent. Are all of them in scope?",
+   "options": [
+    {"value": "all", "label": "All are in scope"},
+    {"value": "some_excluded", "label": "Some are out of scope", "help": "You name them next."}
+   ],
+   "when": {"goal": "lift-and-shift"},
+   "sets": "intake.scope_confirm (which solutions are inventoried, counted and priced by the hours calculator)"
+  },
+  {
+   "id": "scope_exclusions",
+   "ask": "Which repositories or solutions are out of scope?",
+   "free_text": true,
+   "example": "legacy-reports, Tools.sln",
+   "when": {"goal": "lift-and-shift", "scope_confirm": "some_excluded"},
+   "sets": "intake.scope_exclusions (solutions.py skips them)"
+  },
+  {
+   "id": "work_items",
+   "multi": true,
+   "ask": "Which work is the dev team doing in this migration? (each one adds its hours to the estimate)",
+   "options": [
+    {"value": "build_artifacts", "label": "Build check + deployable artifacts", "help": "Make sure every solution builds on a clean agent, then produce the artifacts DevOps deploys on IIS / as Windows services."},
+    {"value": "cicd_secrets", "label": "CI/CD pipeline + Secrets Manager", "help": "Pipeline per solution, secrets and connection values moved into AWS Secrets Manager, DNS names instead of IPs. Also generates the tokenised config files and CI variable list."},
+    {"value": "retarget", "label": "Framework retarget", "help": "For example .NET Framework 4.7.2 or 4.8 to 4.8.1: a project-file change, a rebuild and a regression pass, no C# change."},
+    {"value": "validation_cutover", "label": "Test-launch validation + cutover support", "help": "Check the application starts clean on the AWS instance, triage migration-side defects, support the cutover."}
+   ],
+   "when": {"goal": "lift-and-shift"},
+   "sets": "intake.work_items (which hours lines exist in the estimate)"
+  },
+  {
+   "id": "retarget_to",
+   "ask": "Which framework version do the projects move to?",
+   "options": [
+    {"value": "4.8.1", "label": ".NET Framework 4.8.1"},
+    {"value": "4.8", "label": ".NET Framework 4.8"},
+    {"value": "unknown", "label": "Not decided", "help": "Stays UNKNOWN in the report; the retarget hours are still counted."}
+   ],
+   "when": {"goal": "lift-and-shift", "work_items": "retarget"},
+   "sets": "intake.retarget_to (which projects need the retarget)"
+  },
+  {
+   "id": "regression_tests",
+   "ask": "Do automated regression tests exist for the applications that are retargeted?",
+   "options": [
+    {"value": "yes", "label": "Yes, they run in CI"},
+    {"value": "partial", "label": "Some"},
+    {"value": "no", "label": "No, manual testing only"},
+    {"value": "unknown", "label": "Not known"}
+   ],
+   "when": {"goal": "lift-and-shift", "work_items": "retarget"},
+   "sets": "intake.regression_tests (the regression statement of the retarget item)"
+  },
+  {
+   "id": "estimate_basis",
+   "ask": "The hours are developer working hours, AI-assisted, 8 hours per dev day, with a 20% buffer, calibrated to the sample estimate. Is that the basis to use?",
+   "options": [
+    {"value": "as_agreed", "label": "Yes, as agreed"},
+    {"value": "other", "label": "No, a different basis", "help": "The rates are not recalibrated; the report says so."}
+   ],
+   "when": {"goal": "lift-and-shift"},
+   "sets": "intake.estimate_basis (the basis statement of the effort section)"
+  },
+  {
+   "id": "environments",
+   "ask": "Which environments move (for example dev, staging, prod)? Say 'unknown' if you do not know yet.",
+   "free_text": true,
+   "example": "dev, staging, prod",
+   "when": {"goal": "lift-and-shift"},
+   "sets": "intake.environments (workloads = solutions x environments, one environment = one workload; unknown: 1 environment per solution is assumed and flagged UNKNOWN)"
+  },
+  {
+   "id": "environments_differ",
+   "ask": "Does every solution exist in every environment listed?",
+   "options": [
+    {"value": "all", "label": "Yes, all of them"},
+    {"value": "differ", "label": "No, they differ per solution", "help": "You give each solution's own list; the agent records it with intake.py --solution."},
+    {"value": "unknown", "label": "Not known"}
+   ],
+   "when": {"goal": "lift-and-shift"},
+   "sets": "intake.environments_differ (workload count per solution)"
+  },
+  {
+   "id": "pipeline_scope",
+   "ask": "Do all solutions get a pipeline?",
+   "options": [
+    {"value": "all", "label": "All solutions"},
+    {"value": "selected", "label": "Only some", "help": "You name them next; only those get the pipeline lines."}
+   ],
+   "when": {"goal": "lift-and-shift", "work_items": "cicd_secrets"},
+   "sets": "intake.pipeline_scope (pipeline lines are counted only for these solutions)"
+  },
+  {
+   "id": "pipeline_solutions",
+   "ask": "Which solutions get a pipeline?",
+   "free_text": true,
+   "example": "Hub, UpdateServices",
+   "when": {"goal": "lift-and-shift", "pipeline_scope": "selected"},
+   "sets": "intake.pipeline_solutions"
   }
  ]
 }

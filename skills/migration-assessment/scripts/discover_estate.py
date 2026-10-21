@@ -19,7 +19,7 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
+from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
                      slug, utf8_stdout, write_json)
 from _complexity import file_metrics, project_metrics
 import _scope
@@ -143,7 +143,7 @@ def parse_project(path, repo_root):
 
 def walk_files(root, skip):
     for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith("."))
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith("."))
         for f in files:
             yield os.path.join(d, f)
 
@@ -421,7 +421,7 @@ def find_repos(roots, cfg):
                 found.append(d)
                 dirs[:] = []
                 continue
-            dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         if not found:
             found = [r]
         for d in found:

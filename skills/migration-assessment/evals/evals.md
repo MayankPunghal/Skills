@@ -96,6 +96,16 @@ Prompt: "Update our repository inventory Excel with what the assessment found."
 Should trigger: yes
 Done looks like: `update_inventory_xlsx.py --xlsx <workbook>` keeps all existing sheets, makes the `.before-update.xlsx` copy once, and adds the Assessment scope, Non-.NET coupling, Server dependencies, Server coverage, Network access, Config map, Servers, Hosting evidence and Assessment additions sheets (dependencies and hosts the workbook lacked, cross-repo build outputs, corrected Node.js rows).
 
+### Lift-and-shift hours calculator
+Prompt: "The client wants a lift-and-shift of two .NET Framework solutions to EC2 on Windows. The manager's estimate is in developer hours. Assess it."
+Should trigger: yes
+Done looks like: the intake asks the goal and then the hours questions (work items, retarget version, environments, pipelines); `estimate_effort.py` prints `by the HOURS CALCULATOR` with a total range including the 20% buffer, per work item, per solution and the sample-calibrated versus inferred split; the report states the same range (gate 9 PASS); unknown environments stay UNKNOWN; nothing is called final until the user says so.
+
+### Modernize path unchanged
+Prompt: "Modernize these two repositories to .NET 10 on Linux and estimate the effort."
+Should trigger: yes
+Done looks like: `estimate_effort.py` prints the engineer-days estimate (P10-P90, P50, P80, sprint plan) exactly as before; no hours calculator output, no `solutions/` folder, no gate 9.
+
 ## Baseline log
 
 | Date | Model | With skill? | Result |
@@ -104,3 +114,4 @@ Done looks like: `update_inventory_xlsx.py --xlsx <workbook>` keeps all existing
 | 2026-10-06 | Opus 5.5 | yes | FulfillmentHub trust audit: narratives rewritten with tags, 10/10 gates PASS, 387 h likely; test-project coupling and MOD-ON-WINDOWS false positives removed |
 | 2026-10-06 | Opus 5.5 | yes | HTML report accessibility pass: keyboard access to rows / sort headers / tiles, AA contrast on labels, 44px touch targets, "On this page" links; impeccable detector 0 findings; 10/10 gates PASS |
 | 2026-10-08 | Sonnet 5.5 | yes | 2.12.0 on 10 client repositories (Windows, Linux container, Node-coupled): 24 server-dependency rows linked to a 254-server list, 7 non-.NET projects with coupling levels, 59 non-.NET repositories flagged out of scope in the workbook copy; lift-and-shift report builds with the new sections |
+| 2026-10-08 | Sonnet 5.5 | yes | 2.13.0 lift-and-shift track on the reference sample code (2 repositories, environments unknown, retarget to 4.8.1): hours calculator total 111.5-184.5 h incl. 20% buffer, 72.5-109.0 h calibrated to the sample, 39.0-76.0 h inferred; matches lift-and-shift-assessment 1.0.0. Modernize path compared against the committed 2.12.0 scripts |

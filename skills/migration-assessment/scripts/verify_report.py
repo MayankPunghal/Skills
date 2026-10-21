@@ -13,15 +13,18 @@ Gates
   7 structure       report sections 1-11 present; estimate, open questions and an up-to-date HTML report present
   8 dependencies    sections 4.5-4.8 present; every inventoried project in the interdependency table; workflows traced for every application
                     (lift-and-shift: section 4.5 with every project; workflow tracing not required)
+  9 hours estimate  (lift-and-shift track only) estimate.json carries the hours calculator's result, equals assessment/estimate_hours.json, its total
+                    is the sum of its lines plus the buffer, and the report states the same total range
 """
 import argparse
 import glob
+import math
 import os
 import re
 import sys
 import xml.etree.ElementTree as ET
 
-from _common import OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
+from _common import skip_dir, OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
 import _findings as F
 import build_report as BR
 
@@ -32,7 +35,7 @@ LITERAL = re.compile(r"(?i)\b\w*(password|passwd|pwd|secret|apikey|api_key|acces
 def secret_values(inv_root):
     vals = set()
     for d, dirs, files in os.walk(inv_root):
-        dirs[:] = [x for x in dirs if x.lower() not in {"bin", "obj", "packages", "node_modules", ".git", ".vs"}]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, {"bin", "obj", "packages", "node_modules", ".git", ".vs"})]
         for fn in files:
             low = fn.lower()
             p = os.path.join(d, fn)
@@ -172,6 +175,10 @@ def main():
             if v in t and re.search(pre + re.escape(v) + post, t):
                 leaks.append(os.path.basename(p))
                 break
+    url_cred = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:(?!\*\*\*)[^\s/@\"'<>]+@")  # scheme://user:password@host
+    for p in outputs:
+        if url_cred.search(open(p, encoding="utf-8-sig", errors="ignore").read()):
+            leaks.append(os.path.basename(p))
     results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))
     # 7 structure
     heads = [f"## {i}." for i in range(1, 12)]
@@ -179,7 +186,8 @@ def main():
     est = read_json(os.path.join(OUT, "estimate.json"), {})
     oq = os.path.join(OUT, "report", "open-questions.csv")
     stale = bool(htmls) and bool(reports) and os.path.getmtime(htmls[0]) < os.path.getmtime(reports[0]) - 1
-    ok7 = not absent and bool(est.get("totals", {}).get("likely_days")) and os.path.exists(oq) and bool(htmls) and not stale
+    hours = est.get("hours") if est.get("basis") == "hours" else None
+    ok7 = not absent and bool(est.get("totals", {}).get("likely_days") or hours) and os.path.exists(oq) and bool(htmls) and not stale
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
                     f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
     # 8 dependencies: project interdependencies and workflow tracing
@@ -199,6 +207,20 @@ def main():
     ok8 = not miss_sec and not miss_proj and not no_wf
     results.append(("dependencies mapped", ok8, f"missing sections: {', '.join(miss_sec) or 'none'}; projects not in 4.5: {len(miss_proj)}; applications without traced workflows: {', '.join(no_wf) or 'none'}"
                     + ("" if not no_wf else " (no entry points detected: describe the app's workflows manually in the dependencies narrative and mention the app by name)")))
+    if est.get("basis") == "hours":  # 9 hours estimate (lift-and-shift track)
+        h = est.get("hours") or {}
+        own = read_json(os.path.join(OUT, "estimate_hours.json"), {}) or {}
+        lines = [x for p in h.get("solutions", []) for x in p.get("lines", [])]
+        pct = h.get("contingency_pct", 0)
+        lo, hi = sum(x["low"] for x in lines), sum(x["high"] for x in lines)
+        half = lambda v: math.ceil(v * 2 - 1e-9) / 2
+        same = bool(h) and h == own
+        sums = bool(h) and abs(half(lo * (1 + pct / 100)) - h["total"]["low"]) < 0.01 and abs(half(hi * (1 + pct / 100)) - h["total"]["high"]) < 0.01
+        shown = f"{h['total']['low']:g}–{h['total']['high']:g}" if h else ""
+        in_report = bool(h) and shown in report
+        results.append(("hours estimate", same and sums and in_report,
+                        f"estimate.json = estimate_hours.json: {'yes' if same else 'NO (rerun estimate_effort.py)'}; total = sum of lines + {pct}% buffer: {'yes' if sums else 'NO'}; "
+                        f"report states {shown or '-'} h: {'yes' if in_report else 'NO (rebuild the report)'}"))
     w = max(len(n) for n, _, _ in results)
     for name, ok, detail in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name:<{w}}  {detail}")

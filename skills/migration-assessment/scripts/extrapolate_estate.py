@@ -134,13 +134,21 @@ def normal(row):
 def sample(root, est):
     """Assessed repositories: archetype, KLOC, P10/P50/P90 hours (applications + selected database work)."""
     per = {}
-    for w in est.get("work_packages", []):
+    hrs = est.get("hours") if est.get("basis") == "hours" else None
+    if hrs:  # lift-and-shift track: each assessed repository is its hours-calculator total incl. the buffer; "likely" is the midpoint of that range
+        for s in hrs["solutions"]:
+            r = per.setdefault(s["id"].split("/")[0], [0.0, 0.0, 0.0])
+            lo, hi = s["low"] * (1 + hrs["contingency_pct"] / 100), s["high"] * (1 + hrs["contingency_pct"] / 100)
+            r[0] += lo
+            r[1] += (lo + hi) / 2
+            r[2] += hi
+    for w in ([] if hrs else est.get("work_packages", [])):
         r = per.setdefault(w["repo"], [0.0, 0.0, 0.0])
         lo, hi = w.get("total_hours") or [0, 0]
         r[0] += lo
         r[1] += w.get("likely_hours", 0)
         r[2] += hi
-    for d in est.get("databases", []):
+    for d in ([] if hrs else est.get("databases", [])):
         if d.get("selected") and d["selected"] != "none" and d["options"].get(d["selected"]):
             o = d["options"][d["selected"]]
             r = per.setdefault(d["repo"], [0.0, 0.0, 0.0])
@@ -230,7 +238,8 @@ def main():
                       "estate_hours": [round(sm[k] + ex[k]) for k in range(3)], "assessed_repos": len(smp),
                       "extrapolated_repos": len([i for i in items if "count" not in i]) + unlisted},
            "method": "Sample-based: per-archetype hours (or hours per KLOC) of the assessed repositories applied to the rest; "
-                     "low = sum of lows, likely = sum of medians, high = sum of highs (extremes, not a forecast)."}
+                     "low = sum of lows, likely = sum of medians, high = sum of highs (extremes, not a forecast)."
+                     + (" Lift-and-shift track: each assessed repository is its hours-calculator total including the buffer, and 'likely' is the midpoint of that range." if est.get("basis") == "hours" else "")}
     write_json(os.path.join(OUT, "extrapolation.json"), res)
     os.makedirs(os.path.join(OUT, "report"), exist_ok=True)
     with open(os.path.join(OUT, "report", "estate-extrapolation.csv"), "w", newline="", encoding="utf-8-sig") as fh:

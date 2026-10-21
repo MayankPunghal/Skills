@@ -23,6 +23,7 @@ from _common import OUT, SKILL_DIR, data, load_config, mark_step, read_json, slu
 import _analysis as A
 import _findings as F
 import build_report as BR
+import _hours_report as H
 
 SEVS = ["Blocker", "High", "Medium", "Low", "Info"]
 # fixed English month names: strftime("%B") follows the machine's locale and would mix languages in the title block
@@ -172,6 +173,7 @@ def collect(c, cfg):
                      "h": w.get("total_hours", [0, 0]), "lh": w.get("likely_hours", 0), "d": w.get("total_days", [0, 0]), "ld": w.get("likely_days", 0),
                      "size": w.get("complexity", ""), "reviewed": "reviewed" if a.get("decision_source") == "review" else "draft",
                      "rationale": a.get("rationale", []), "options": a.get("options", []), "notes": a.get("notes", []),
+                     "why_not": a.get("why_not", []), "then": a.get("then", []), "risks": a.get("risks", []), "sign_off": a.get("sign_off", []),
                      "drivers": w.get("drivers", []), "blockers": blockers, "work": [x["item"] for x in w.get("conversion", [])]})
     packages = []
     for r in c.repos:
@@ -224,8 +226,12 @@ def collect(c, cfg):
     kpis = [("Applications", str(len(apps)), f"{len(c.repos)} repositories · {loc:,} lines"),
             ("Linux-ready now / after porting", f"{lvl['ready']} / {lvl['port']}", f"{lvl['blocked']} blocked · {lvl['windows']} desktop · {lvl['na']} retiring"),
             ("Findings", str(len(findings)), " · ".join(f"{k} {sev[k]}" for k in ("Blocker", "High") if sev[k]) or "no blockers"),
+            *([("Effort (developer hours)", f"{t['total_hours'][0]:g}–{t['total_hours'][1]:g} h",
+                f"≈ {td[0]:g}–{td[1]:g} developer days incl. {t.get('contingency_pct')}% buffer · {t['sample_basis_hours'][0]:g}–{t['sample_basis_hours'][1]:g} h calibrated to the sample, "
+                f"{t['inferred_hours'][0]:g}–{t['inferred_hours'][1]:g} h inferred"),
+               ("Effort basis", "Hours calculator", f"AI-assisted developer hours, {t.get('hours_per_day', 8):g} h per day, solution by solution")] if H.is_hours(c.est) else [
             ("Effort", f"{t.get('likely_hours', '-')} h", f"≈ {t.get('likely_days', '-')} person-days likely (P50) · P10–P90 {td[0]:g}–{td[1]:g} d · P80 {t.get('p80_hours', '-')} h"),
-            ("Duration", f"~{t.get('duration_weeks', '-')} weeks", f"P50 · ~{t.get('duration_weeks_p80', '-')} weeks at P80 · team of {c.est.get('engineers', '-')} engineers"),
+            ("Duration", f"~{t.get('duration_weeks', '-')} weeks", f"P50 · ~{t.get('duration_weeks_p80', '-')} weeks at P80 · team of {c.est.get('engineers', '-')} engineers")]),
             ("Target", BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")), "Linux on AWS · LTS to Nov 2028")]
     segs = [{"id": s["id"], "title": s["title"], **{k: sum(1 for f in findings if f["seg"] == s["id"] and f["severity"] == k) for k in SEVS}} for s in cats.get("segments", [])]
     catrows = [{"title": x["title"], "scanned": x["scanned"], **{s: sum(1 for f in findings if f["category"] == x["title"] and f["severity"] == s) for s in SEVS}} for x in c.cats]
@@ -250,7 +256,7 @@ def collect(c, cfg):
 
 
 # blocks that need a heading on their card (the Markdown report has its own section headings)
-BLOCK_TITLES = {"sprints": "Coding sprint plan", "multipliers": "How the hours are built", "assumptions": "Estimate assumptions",
+BLOCK_TITLES = {"estimate": "Effort (developer hours)", "sprints": "Coding sprint plan", "multipliers": "How the hours are built", "assumptions": "Estimate assumptions",
                 "methodology": "How the estimate was calculated",
                 "optional": "Optional modernizations", "estate-extrapolation": "Whole estate (estimated from the assessed sample)",
                 "aws-native": "Replacing servers with AWS managed services", "findings-future": "Linux and .NET modernization findings, for later",
@@ -305,7 +311,10 @@ def main():
         nav.append(f'<div class="grp">{html.escape(g["title"])}</div>')
         for t in g["tabs"]:
             nav.append(f'<a href="#{t["id"]}" data-tab="{t["id"]}"><span>{html.escape(t["title"])}</span><span class="badge"></span></a>')
-            inner = "\n".join(component(i, c) for i in t["items"])
+            items = t["items"]
+            if H.is_hours(c.est):  # lift-and-shift track: the hours tables replace the engineer-days cards (work packages, sprint plan, gantt)
+                items = ["block:estimate" if i == "effort-summary" else i for i in items if i not in ("workpackages-table", "gantt", "block:sprints")]
+            inner = "\n".join(component(i, c) for i in items)
             cover, h2cls = "", ""
             if t["id"] == "overview":  # the report title leads the first tab; its "Overview" heading stays for screen readers only
                 today = datetime.date.today()

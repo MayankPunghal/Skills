@@ -38,6 +38,21 @@ The questions live in `scripts/data/intake.json`; edit wording there, not in cod
 | `compliance` | Compliance rules or data-location limits (optional) | free text |
 | `team` | Engineers and start date (optional) | free text such as "3 engineers from 2026-11-02" |
 
+**Lift-and-shift only** (asked when `goal` is `lift-and-shift`; they feed the hours calculator, see [lift-and-shift.md](lift-and-shift.md#the-hours-calculator)):
+
+| Id | Question (short) | Answers |
+| --- | --- | --- |
+| `scope_confirm` | Are all discovered repositories and solutions in scope? | `all`, `some_excluded` |
+| `scope_exclusions` | Which are out of scope (only for `some_excluded`) | free text, repository or solution names |
+| `work_items` | Which work is the dev team doing (each adds its hours) | multi: `build_artifacts`, `cicd_secrets`, `retarget`, `validation_cutover` |
+| `retarget_to` | Framework the projects move to (only with `retarget`) | `4.8.1`, `4.8`, `unknown` |
+| `regression_tests` | Automated regression tests exist for the retargeted apps (only with `retarget`) | `yes`, `partial`, `no`, `unknown` |
+| `estimate_basis` | Is "developer hours, AI-assisted, 8 h/day, 20% buffer, calibrated to the sample" the basis to use | `as_agreed`, `other` |
+| `environments` | Which environments move | free text such as "dev, staging, prod", or `unknown` |
+| `environments_differ` | Does every solution exist in every environment (asked only when environments are listed) | `all`, `differ`, `unknown` |
+| `pipeline_scope` | Do all solutions get a pipeline (only with `cicd_secrets`) | `all`, `selected` |
+| `pipeline_solutions` | Which solutions get one (only for `selected`) | free text |
+
 ## What each answer changes
 
 | Answer | Sets in `assessment.json` | Effect |
@@ -46,16 +61,19 @@ The questions live in `scripts/data/intake.json`; edit wording there, not in cod
 | `db_engine` | `scenario.database` (`keep` and `later` become `none`) | Database code cost. The report always compares every database option |
 | `db_hosting` | `scenario.db_hosting` | Database narrative: on EC2, SQL Server features that RDS lacks keep working; on RDS they are flagged |
 | `platform` | `current_hosting` | Report header and the hypervisor section |
-| `aws_native` | `intake.aws_native` | `later`: section "Future options". `now`: the optional AWS-service hours are added to the estimate total |
+| `aws_native` | `intake.aws_native` | `later`: section "Future options". `now`: the optional AWS-service hours are added to the estimate total. Per-service target choices: `aws_native_choices` in `assessment.json` ([aws-native-services.md](aws-native-services.md)) |
 | `code_access` = `sample` | `intake.estate_total`, `intake.estate_list` | `context.py` asks for `extrapolate_estate.py` after the estimate |
 | `compliance` | `compliance` | Security findings and questions |
 | `team` | `scenario.engineers`, `scenario.start_date` | Timeline and sprint plan |
+| `work_items`, `retarget_to`, `environments`, `pipeline_scope`, ... | `intake.*` | Which lines and how many units the hours calculator counts (`estimate_hours.py`); unknown environments count one per deployable and stay flagged UNKNOWN |
+
+`intake.py --solution ID --environments "dev, prod"` records a solution's own environment list (when `environments_differ` is `differ`); `intake.py --confirm-environments` records that the user confirmed the lists. A changed list must be confirmed again. Rerunning `--answers` keeps these per-solution settings.
 
 ## Assessment types
 
 | Type | Who it is for | What the report focuses on | What is costed |
 | --- | --- | --- | --- |
-| `lift-and-shift` | The client moves the same servers to EC2 (Windows to Windows, Linux to Linux) without changing code | Landing on AWS: IP allow-lists, DNS, SMTP port 25, file shares, identity / domain, licences, broadcast and multicast, co-located services, network allow-list, scheduled jobs. Linux and .NET findings are summarised in "Future options" | Fixed repoint work per application, plus findings in the `lift-and-shift` scenario's `keep_categories` and `keep_rules` (`estimation.json`) |
+| `lift-and-shift` | The client moves the same servers to EC2 (Windows to Windows, Linux to Linux) without changing code | Landing on AWS: IP allow-lists, DNS, SMTP port 25, file shares, identity / domain, licences, broadcast and multicast, co-located services, network allow-list, scheduled jobs. Linux and .NET findings are summarised in "Future options" | **Developer hours from the hours calculator** (`estimate_hours.py`): the work items the intake selected, solution by solution, with a 20% buffer; sample-calibrated and inferred lines shown separately. The code-side scenario (`keep_categories`, `keep_rules`) is kept for the comparison only |
 | `modernize` | The client wants the code on Linux / modern .NET | Everything (the original report) | Per-application 7R decisions |
 | `compare` | Not decided | The modernization report, with lift-and-shift costed beside it in the scenario comparison | Modernization; lift-and-shift shown for comparison |
 

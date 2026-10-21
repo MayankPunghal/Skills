@@ -33,6 +33,7 @@ AppDomain creation, CodeDom compilation, ProtectedData, CNG/CSP key containers, 
 - Build and delivery
 - Automated tests
 - Front end
+- Landing on AWS (lift-and-shift)
 - Checks implemented in scanner code (not in rules.json)
 
 ## Windows-only APIs (Linux readiness)
@@ -318,6 +319,23 @@ AppDomain creation, CodeDom compilation, ProtectedData, CNG/CSP key containers, 
 | `FE-LEGACY-LIBS` | Outdated client libraries | Medium / Confirmed | Old jQuery (< 3.5) and AngularJS (EOL) carry known vulnerabilities and complicate the UI port. | Upgrade or replace during the UI work; serve from a bundler or CDN. **Alt:** jQuery 3.7+ / modern framework | S3 |
 | `FE-BUNDLING` | System.Web.Optimization bundling | Low / Confirmed | Runtime bundling is not available in ASP.NET Core. | Bundle at build time (Vite/esbuild) or use WebOptimizer. **Alt:** Vite / esbuild / LigerShark.WebOptimizer _(baseline)_ | S9 |
 | `FE-VIEWSTATE` | ViewState / postback page model | Medium / Confirmed | ViewState/postback state management has no equivalent outside Web Forms. | Redesign page state in the target UI. **Alt:** Component state (Blazor) / client state _(baseline)_ | S9 |
+
+## Landing on AWS (lift-and-shift)
+
+| Rule | Detects | Severity | Why it matters | Fix / alternative | Sources |
+| --- | --- | --- | --- | --- | --- |
+| `LS-SMTP-PORT25` | SMTP sent on port 25 | High / Confirmed | Amazon EC2 restricts outbound traffic on port 25 by default, so mail sent straight to a relay on port 25 stops after the move. | Ask AWS to lift the port 25 restriction for the account (request form), or send through the relay on port 587/465, or through Amazon SES. **Alt:** Amazon SES SMTP interface on 587 | S10 |
+| `LS-BROADCAST-MULTICAST` | UDP broadcast or multicast | Blocker / Likely | An Amazon VPC does not carry broadcast traffic, and multicast only works through a Transit Gateway multicast domain. Discovery or messaging built on them stops working on EC2. | Replace with unicast and a configured address list or service discovery (AWS Cloud Map), or set up Transit Gateway multicast for the subnets involved. **Alt:** AWS Cloud Map; Transit Gateway multicast | S10 |
+| `LS-IP-ALLOWLIST` | IP allow-list (ours or a partner's) | High / Needs verification | When the servers move, their public and private IP addresses change. Partners that allow-list our outbound IP (payment gateways, suppliers, SFTP hosts), and our own IP checks, reject the new addresses. | List every allow-listed address; give the EC2 servers fixed egress IPs (Elastic IPs or a NAT gateway) and get partners to add them before cut-over; update our own allow-lists. **Alt:** Elastic IPs / NAT gateway with fixed EIPs | S10 |
+| `LS-CLIENT-IP-LOGIC` | Logic based on the caller's IP address | Medium / Needs verification | Behind a load balancer, NAT or proxy on AWS the caller's address arrives in X-Forwarded-For, so IP checks, rate limits, geo lookups and audit logs see the wrong address. | Read the client IP from X-Forwarded-For (ASP.NET Core ForwardedHeaders middleware, or the proxy's header in IIS) and trust only the load balancer's addresses. **Alt:** ForwardedHeaders middleware | S10 |
+| `LS-STATIC-BIND` | Listener bound to a fixed on-prem IP address | High / Confirmed | The server's IP address changes on EC2; a listener bound to the old address fails to start. | Bind to all interfaces (0.0.0.0 / *) or read the address from configuration set per environment. | S10 |
+| `LS-HOSTS-FILE` | Relies on the server's hosts file | Medium / Likely | Name overrides in a server's hosts file do not move with the code; on EC2 the names resolve differently or not at all. | Move the entries into DNS (Route 53 private hosted zone) or into configuration. **Alt:** Route 53 private hosted zone | S10 |
+| `LS-LOCALHOST-SERVICE` | Calls another service on the same machine (localhost) | Low / Needs verification | Services that share one server today only keep working if they move together onto the same EC2 instance; otherwise the localhost address must point at the other server. | Keep these services in the same move group and on the same instance, or put the address in configuration per environment. | S10 |
+| `LS-NETWORK-MOUNT` | Network file system mount (NFS / SMB / CIFS) | Medium / Likely | File shares mounted from on-prem storage are not reachable from EC2 unless they move too or a network path is kept. | Move the share to Amazon FSx (Windows File Server / NetApp ONTAP) or Amazon EFS, or keep it on-prem over VPN/Direct Connect during the transition. **Alt:** Amazon FSx; Amazon EFS | S10 |
+| `LS-LICENSE-SERVER` | Licence server or node-locked licence | Medium / Needs verification | Licences tied to a machine, MAC address or an on-prem licence server can stop validating on new EC2 hardware. | Ask the vendor to re-issue licences for the new instances, or move the licence server with the application. | S10 |
+| `LS-ODBC-DSN` | Machine-level ODBC data source (DSN) | Medium / Likely | A DSN is defined on the server (ODBC administrator), not in the code. A new EC2 host does not have it until someone creates it. | List each DSN (driver, server, database) so DevOps can create it on the EC2 host, or replace it with a DSN-less connection string held in a CI variable. **Alt:** DSN-less connection string | S10 |
+| `LS-CERT-THUMBPRINT` | Certificate selected by thumbprint | Medium / Likely | The certificate must be present in the same store on the new server with its private key, and the thumbprint changes if the certificate is reissued. | Install the certificate on the EC2 host (export PFX with private key from the old server), and keep the thumbprint in a CI variable. **Alt:** AWS Certificate Manager at a load balancer | S10 |
+| `LS-LOCAL-DB-FILE` | Database file kept on the server disk | Medium / Likely | Data in a file on the server disk moves only if the file is copied with the application, and is lost if the instance is replaced. | Copy the file to an EBS volume and back it up, or move the data to the database server. **Alt:** Move the data to SQL Server on EC2 | S10 |
 
 ## Checks implemented in scanner code (not in rules.json)
 

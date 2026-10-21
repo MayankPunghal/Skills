@@ -125,7 +125,7 @@ Inventory detail (types, frameworks, size) is in Appendix A2.
 
 ## 7. Effort estimate and timeline
 
-### 7.1 Coding and configuration effort by work package
+### 7.1 Effort by work item and by solution
 
 {{block:estimate}}
 

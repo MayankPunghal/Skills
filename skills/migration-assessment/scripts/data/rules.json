@@ -170,7 +170,7 @@
     "vb"
    ],
    "pat": [
-    "\\[(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
+    "\\[(?:[A-Za-z_]\\w*\\.)*(DllImport|LibraryImport)\\(\\s*\"(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds)(\\.dll)?)\"",
     "Declare\\s+(Auto\\s+|Ansi\\s+|Unicode\\s+)?(Function|Sub)\\s+\\w+\\s+Lib\\s+\"(?i:(user32|kernel32|advapi32|gdi32|shell32|netapi32|mpr|winspool))"
    ],
    "why": "Calls into Win32 system libraries cannot run on Linux.",
@@ -192,7 +192,7 @@
     "vb"
    ],
    "pat": [
-    "\\[(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
+    "\\[(?:[A-Za-z_]\\w*\\.)*(DllImport|LibraryImport)\\(\\s*\"(?!(?i:(user32|kernel32|advapi32|gdi32|shell32|ole32|oleaut32|winmm|netapi32|mpr|crypt32|secur32|wininet|winspool\\.drv|iphlpapi|psapi|dbghelp|ntdll|rpcrt4|setupapi|version|comdlg32|uxtheme|dwmapi|wtsapi32|userenv|winhttp|credui|activeds|libc|libdl|libSystem)(\\.dll|\\.so)?\"))"
    ],
    "why": "A native library must exist as a Linux .so build for the same API.",
    "fix": "Confirm a Linux build of the native library exists (and its licence); otherwise replace.",
@@ -2792,7 +2792,7 @@
     "\\bFAXCOMEXLib\\b",
     "\\bFAXCOMLib\\b",
     "\\bFaxServer\\b",
-    "\\bFaxDocument\\b"
+    "\\bnew\\s+FaxDocument(Class)?\\s*\\("
    ],
    "why": "Windows Fax Service (COM) is not available on Linux/AWS.",
    "fix": "Use a cloud fax API.",
@@ -4639,6 +4639,84 @@
     "S10"
    ],
    "question": "Which third-party components are licensed per machine or through a licence server?"
+  },
+  {
+   "id": "LS-ODBC-DSN",
+   "cat": "aws-landing",
+   "title": "Machine-level ODBC data source (DSN)",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "(?i)\\b(DSN|FILEDSN)\\s*=\\s*[A-Za-z_][\\w .-]*\\s*[;\"']"
+   ],
+   "why": "A DSN is defined on the server (ODBC administrator), not in the code. A new EC2 host does not have it until someone creates it.",
+   "fix": "List each DSN (driver, server, database) so DevOps can create it on the EC2 host, or replace it with a DSN-less connection string held in a CI variable.",
+   "alt": "DSN-less connection string",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which ODBC data sources (32 / 64-bit) exist on the servers, and which drivers do they use?",
+   "in_strings": true
+  },
+  {
+   "id": "LS-CERT-THUMBPRINT",
+   "cat": "aws-landing",
+   "title": "Certificate selected by thumbprint",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config"
+   ],
+   "pat": [
+    "(?i)\\bFindByThumbprint\\b",
+    "(?i)\\bthumbprint\\b[\"']?\\s*[=:]\\s*[\"'][0-9A-Fa-f ]{20,}",
+    "(?i)\\bfindValue=\"[0-9A-Fa-f ]{20,}\\\""
+   ],
+   "why": "The certificate must be present in the same store on the new server with its private key, and the thumbprint changes if the certificate is reissued.",
+   "fix": "Install the certificate on the EC2 host (export PFX with private key from the old server), and keep the thumbprint in a CI variable.",
+   "alt": "AWS Certificate Manager at a load balancer",
+   "effort": "trivial",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which certificates do the servers use (TLS, signing, client authentication), who issued them, and when do they expire?"
+  },
+  {
+   "id": "LS-LOCAL-DB-FILE",
+   "cat": "aws-landing",
+   "title": "Database file kept on the server disk",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "script"
+   ],
+   "pat": [
+    "(?i)\\bAttachDbFilename\\b",
+    "(?i)\\(localdb\\)",
+    "(?i)\\bSQL\\s*Server\\s*Compact\\b",
+    "(?i)Data Source\\s*=\\s*[^;\"']*\\.(sdf|mdf|sqlite3?|db)\\b"
+   ],
+   "why": "Data in a file on the server disk moves only if the file is copied with the application, and is lost if the instance is replaced.",
+   "fix": "Copy the file to an EBS volume and back it up, or move the data to the database server.",
+   "alt": "Move the data to SQL Server on EC2",
+   "effort": "small-change",
+   "refs": [
+    "S10"
+   ],
+   "question": "Which database files (SQL Compact, SQLite, .mdf) are kept on the application servers, and how are they backed up?",
+   "in_strings": true
   }
  ],
  "_doc_parsed": "parsed: for rules on SQL, the T-SQL parser facts that raise the finding instead of the regular expressions (construct labels from sqlscan, or called procedure names by prefix). When a parser is available the rule's patterns are not run on .sql files; the parser also applies the rule to SQL embedded in C#."

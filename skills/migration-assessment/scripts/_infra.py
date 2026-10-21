@@ -12,7 +12,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _common import SOURCE_DIR_SKIP, data, mask, read_text, rel
+from _common import skip_dir, SOURCE_DIR_SKIP, data, mask, read_text, rel
 
 CONFIG_EXT = {".config", ".json", ".xml", ".yml", ".yaml", ".ini", ".env", ".properties", ".settings", ".toml", ".conf"}
 CODE_EXT = {".cs", ".vb"}
@@ -26,7 +26,7 @@ NOT_HOST = {"true", "false", "null", "none", "server", "host", "hostname", "loca
             "version", "encrypt", "pooling", "false", "enabled", "yes", "no", "add", "key", "type", "remove", "clear", "settings", "section", "default", "development",
             "production", "staging", "info", "warning", "error", "debug", "trace", "level", "enable", "disable", "relay", "smtp", "ftp", "sftp", "redis", "kafka", "elastic",
             "elasticsearch", "memcached", "aerospike", "rabbitmq", "ldap", "proxy", "cache", "queue", "topic", "group", "client", "consumer", "producer", "nodes", "servers",
-            "hosts", "uri", "url", "address", "endpoint", "bootstrapservers", "bootstrap", "sasl", "plaintext", "mechanism", "protocol", "username", "credentials", "application"}
+            "hosts", "uri", "url", "address", "endpoint", "bootstrapservers", "bootstrap", "sasl", "plaintext", "mechanism", "protocol", "username", "credentials", "application", "trusted_connection", "multipleactiveresultsets", "application_name", "applicationintent", "persist", "mongo"}
 FILE_LIKE = re.compile(r"(?i)\.(cs|vb|json|xml|config|dll|exe|js|css|html?|aspx?|cshtml|png|jpe?g|gif|svg|txt|log|csv|xlsx?|sql|bak|zip|pdf|ico|woff2?|ttf|xslt?|yml|yaml)$")
 SECTION_NAME = re.compile(r"^(system|microsoft|newtonsoft|nuget|windows|xmlns|schemas)\b", re.I)
 DOCKER_FILE = re.compile(r"(?i)^(dockerfile.*|docker-compose.*\.ya?ml|compose.*\.ya?ml)$")
@@ -65,7 +65,8 @@ TLD_OK = {"local", "lan", "corp", "internal", "intra", "intranet", "home", "loca
 def plausible_host(h, port):
     """True for an IP, a dotted name that ends like a domain, or a short bare server name; false for namespaces, keys and tokens."""
     if re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h):
-        return not (h.startswith(("0.", "127.", "255.")) or all(int(x) < 10 for x in h.split(".")))
+        o = [int(x) for x in h.split(".")]
+        return not (h.startswith(("0.", "127.", "255.")) or all(x < 10 for x in o) or (o[0] < 10 and o[1] < 10))  # 2.1.13.0 is a version, not an address
     if len(h) > 45 or re.fullmatch(r"[0-9a-fA-F]{12,}", h):
         return False
     labels = h.split(".")
@@ -76,14 +77,14 @@ def plausible_host(h, port):
         return False
     if port:
         return not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)  # a bare name with a port; random-looking mixes are keys
-    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (letters, optional separators, optional number); never camel-case mixes with digits
-    return bool(re.fullmatch(r"[A-Za-z][A-Za-z]*[-_]?\d{1,3}", h) or re.fullmatch(r"[A-Za-z0-9]+([-_][A-Za-z0-9]+)+", h)) and not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)
+    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (an underscore name needs a trailing number: sig_cruise_itineraries is a key, not a host); never camel-case mixes with digits
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z]*[-_]?\d{1,3}", h) or re.fullmatch(r"[A-Za-z0-9]+(-[A-Za-z0-9]+)+", h) or re.fullmatch(r"[A-Za-z0-9]+(_[A-Za-z0-9]+)*_\d{1,3}", h)) and not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)
 
 
 def host_tokens(text, ports):
     """Host names / IPs (with optional port) in a value. No credentials: user-info and key=value pairs are not hosts."""
     out = []
-    text = re.sub(r"(?i)(user id|uid|user|username|password|pwd|pass|secret|token|apikey|accesskey|key|salt|hash)\s*[=:]\s*[^;,\s\"']*", " ", text)
+    text = re.sub(r"(?i)\b(user id|uid|user|username|password|pwd|pass|secret|token|apikey|accesskey|key|salt|hash)\s*[=:]\s*[^;,\s\"']*", " ", text)
     for m in HOST_RX.finditer(text):
         h, port = m.group(1), m.group(2)
         low = h.lower()
@@ -128,7 +129,7 @@ def detect_dependencies(repo_root, inv, facts, cfg):
         return next((pp for d, pp in pdirs if n.startswith(d + os.sep)), None)
 
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
         for fn in files:
             path = os.path.join(d, fn)
             ext = os.path.splitext(fn)[1].lower()
@@ -191,6 +192,8 @@ def detect_dependencies(repo_root, inv, facts, cfg):
                         hits[t["id"]].add("config", rp, i, f"config key: {k}" if matched_key else f"setting pattern: {t['label']}", proj)
                         if t["id"] in ("sql-server", "mysql", "postgresql", "oracle", "mongodb") and not re.search(r"(?i)\b(Data Source|Server|Host|mongodb://)", line):
                             continue
+                        if t["id"] in ("sql-server", "mysql", "postgresql", "oracle") and re.search(r"(?i)mongo", line):
+                            continue  # a MongoDB connection string also says server=...: it is not a relational database host
                         for ht in host_tokens(_value_part(line), t["ports"]):
                             hits[t["id"]].host(ht["host"], ht["port"], rp, i)
     # connection strings parsed by scan_repo (provider, host): the most reliable host source for databases
@@ -198,7 +201,7 @@ def detect_dependencies(repo_root, inv, facts, cfg):
         prov = (c.get("provider") or "").lower()
         if re.search(r"sqlite|sqlserverce|sqlce|oledb|odbc|firebird|db2|informix|sybase|jet", prov):
             continue  # a file database or another engine: not a SQL Server dependency
-        tid = "mysql" if "mysql" in prov else "postgresql" if re.search(r"npgsql|postgres", prov) else "oracle" if "oracle" in prov else "sql-server"
+        tid = "mysql" if "mysql" in prov else "postgresql" if re.search(r"npgsql|postgres", prov) else "oracle" if "oracle" in prov else "mongodb" if "mongo" in prov else "sql-server"
         h = c.get("host")
         if h and not c.get("template"):
             hits[tid].add("connection-string", c["file"], c["line"], f"connection string: {c.get('name')}", owner(os.path.join(repo_root, c["file"])))
@@ -255,7 +258,7 @@ def hosting_evidence(repo_root, inv, cfg):
             add("windows" if p.get("type") != "netcore-worker" else "neutral", f"service project ({p.get('type')})", "indicative", p["path"], 1,
                 f"{p['name']} is a service/worker: installed as a Windows service or systemd unit (check the install scripts)")
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         depth = os.path.relpath(d, repo_root).count(os.sep)
         if depth > 6:
             dirs[:] = []

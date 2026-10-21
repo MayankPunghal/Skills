@@ -836,7 +836,7 @@
    {
     "file": "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Web.config",
     "line": 20,
-    "text": "<add name=\"CatalogDBContext\" connectionString=\"…password=***\" />"
+    "text": "<add name=\"CatalogDBContext\" connectionString=\"…password=<masked>\" />"
    }
   ],
   "why": "Plain-text database credentials in config files are a compliance finding and block credential rotation.",

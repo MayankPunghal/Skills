@@ -79,7 +79,12 @@ def main():
     apps = len(cls["applications"]) if cls else 0
     print(f"APPLICATIONS: {apps} classified · reviewed decisions: {len(dec)}")
     est = read_json(os.path.join(OUT, "estimate.json"))
-    if est:
+    if est and est.get("basis") == "hours":  # lift-and-shift track: hours calculator
+        t = est["totals"]
+        print(f"ESTIMATE (hours calculator): {t['total_hours'][0]:g}-{t['total_hours'][1]:g} developer hours incl. {t['contingency_pct']}% buffer "
+              f"({t['total_days'][0]:g}-{t['total_days'][1]:g} dev days); {t['sample_basis_hours'][0]:g}-{t['sample_basis_hours'][1]:g} h calibrated to the sample, "
+              f"{t['inferred_hours'][0]:g}-{t['inferred_hours'][1]:g} h inferred" + ("; environments UNKNOWN" if t.get("environments_assumed") else ""))
+    elif est:
         t = est["totals"]
         print(f"ESTIMATE: {t['total_days'][0]}-{t['total_days'][1]} person-days (likely {t['likely_days']}), ~{t['duration_weeks']} weeks")
     todo = [os.path.basename(p)[:-3] for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^(?:PENDING|TODO):", open(p, encoding="utf-8").read())]
@@ -109,8 +114,11 @@ def main():
         nxt = "classify_apps.py"
     elif len(dec) < apps:
         nxt = f"review 7R decisions ({apps - len(dec)} pending): write assessment/decisions.json, then classify_apps.py"
+    elif cfg.get("assessment_type") == "lift-and-shift" and (cfg.get("intake") or {}).get("work_items") is None:
+        nxt = "intake: the hours calculator questions (work_items, retarget_to, estimate_basis, environments, ...) are unanswered: intake.py --questions, ask, intake.py --answers"
     elif not est or (os.path.getmtime(os.path.join(OUT, "estimate.json")) < os.path.getmtime(os.path.join(OUT, "classification.json"))):
-        nxt = "estimate_effort.py"
+        nxt = ("estimate_effort.py   (lift-and-shift track: runs solutions.py, third_party.py and the hours calculator itself; build_check.py shows whether each solution builds on a clean agent)"
+               if cfg.get("assessment_type") == "lift-and-shift" else "estimate_effort.py")
     elif sample and (not os.path.exists(os.path.join(OUT, "extrapolation.json"))
                      or os.path.getmtime(os.path.join(OUT, "extrapolation.json")) < os.path.getmtime(os.path.join(OUT, "estimate.json"))):
         nxt = "extrapolate_estate.py (only a sample of the estate is assessed: estimate the rest from it)"

@@ -17,7 +17,7 @@ What exists, what is deprecated, and how this skill relates to each tool. Re-che
 | **AWS DMS / DMS Schema Conversion / AWS SCT** | GA | Data migration; schema conversion to PostgreSQL | Named in database plans |
 | **AWS Application Migration Service (MGN)** | GA | Agent-based VM replication from any hypervisor (VMware, Hyper-V, Proxmox, physical) | Rehost path for retained apps |
 | **AWS Optimization and Licensing Assessment (OLA)** / Migration Evaluator | Free programme | Utilisation-based right-sizing and licence modelling | Cost section: numbers come from here, not from code |
-| **AWS DevTx** | Not a product: AWS's Developer Transformation specialist team | Engagement support around AWS Transform and AI-driven development | Mention under engagement support, not as a tool |
+| **AWS DevTx** | AWS's Developer Transformation specialist team; ships the **Version Upgrade Toolkit on AWS** (CDK-deployed web app) | Runs Microsoft Upgrade Assistant, then the Kiro CLI agent driven by a .NET migration knowledge base (project files, System.Web, Web Forms to Razor / Blazor, WCF to CoreWCF, remoting, crypto, config, logging, data access, Linux containers), in iterations with a build gate; AWS Transform custom (`atx`) recipes for Java | An execution option for the port, next to AWS Transform; its knowledge base does not cover AWS managed-service swaps (SES, ElastiCache, S3, OpenSearch) |
 | **Microsoft.AspNetCore.SystemWebAdapters + YARP** | Supported | Incremental (strangler-fig) ASP.NET → ASP.NET Core migration; shared auth/session | Hybrid and incremental plans |
 | **CoreWCF** | Supported (open source, .NET Foundation) | WCF server on .NET (BasicHttp, NetTcp, WSHttp, partial WS-*) | WCF plans |
 

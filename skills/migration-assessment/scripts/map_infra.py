@@ -142,6 +142,8 @@ def main():
         s = sv["summary"]
         print(f"servers: {s['servers']} from {sv['source']} [{sv['sheet']}] · OS {s['os_family']} · environments {s['environments']}\n"
               f"roles from names/software: {s['roles']} · without a role: {len(s['without_role'])}")
+    if cfg.get("assessment_type") == "lift-and-shift":  # the client's own web domains classify addresses as company DNS names (lift-and-shift track only)
+        _config.ensure_company_domains(root, cfg)
     sv, index = load_index()
     if not sv:
         print("NOTE: no infrastructure list imported (map_infra.py --servers <file>): dependencies are reported without server links.")

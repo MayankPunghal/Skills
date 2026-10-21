@@ -2,6 +2,16 @@
 
 Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a recommendation from evidence. **The reviewer must confirm or override every application** in `assessment/decisions.json`; the report labels drafts as "pending review".
 
+## Contents
+- Definitions, as used in these reports
+- Draft rules (in order)
+- The hybrid pattern
+- Incremental vs in-place (large web apps)
+- Targets (text used in the report: `data/decision_rules.json`)
+- Client scenarios (code side)
+- Decision tree (AWS strategies applied to one .NET application)
+- Justifying each R in the report
+
 ## Definitions, as used in these reports
 
 | R | AWS definition | In a .NET Framework estate this usually means |
@@ -20,6 +30,7 @@ Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a 
 2. **Desktop (WinForms/WPF)** → **Retain** on Windows (upgrade to .NET 10 Windows Desktop when the back end moves). Option: Refactor to web.
 3. **Already modern** → **Replatform** to Linux containers. "Modern" means .NET 5+, not `-windows`, no Windows-bound rule and no High linux-readiness finding. Retarget to .NET 10 if out of support.
 4. **Windows-bound blockers** → **Rehost** on Windows now; Refactor the blocking component later. This applies when 3 or more of these are present, or a blocker package plus another: COM, Win32 P/Invoke, Office interop, Crystal, fax, EnterpriseServices, WF, Remoting, MSMQ, unsupported WCF bindings, blocker packages.
+5a. **Web Forms project with a token UI** (≤ 3 pages and markup under 5% of its hand-written lines: a gateway or service with a status page) → **Replatform**; the page or two are rewritten inside the port (`webforms_token_ui` in `data/decision_rules.json`).
 5. **Web Forms UI** → **Refactor** when small; **Retain + hybrid** when the app has ≥ 25 KLOC or ≥ 60 pages (thresholds in `data/decision_rules.json`).
 6. **WCF service** → **Replatform** with CoreWCF, which keeps the contract. Option: Refactor to REST/gRPC.
 7. **Windows service** → **Replatform** to a Worker Service on Linux (ECS service or scheduled task).
@@ -73,3 +84,52 @@ Microsoft recommends **incremental migration** (strangler fig with YARP and Syst
 | `windows-rehost` | Every server app moves as-is from on-premises Windows to Windows EC2. Only connectivity, configuration, secrets, identity and integration findings are costed | Fastest exit from the data centre; no code port |
 
 Hosting of the database and operations work are out of scope; the estimate counts coding hours only. The report's scenario table shows both, so the client sees the trade-off between code effort and modernization.
+
+## Decision tree (AWS strategies applied to one .NET application)
+
+```
+Is the application still needed (usage, owners, consumers)?
+  no  -> RETIRE: name the replacement, archive data, decommission, sign-off
+  yes -> Commodity function with a SaaS fit (integrations and data export acceptable)?
+    yes -> REPURCHASE
+    no  -> Hard blocker to moving now (compliance, vendor, hardware, unfunded rewrite, dependency first)?
+      yes -> RETAIN (review date + exit criteria; hybrid shared libraries)
+      no  -> Must leave the data centre fast with no code change, or Windows-bound components?
+        yes -> REHOST on EC2 Windows (whole VMware estate: RELOCATE); plan the follow-up
+        no  -> Is the platform the only blocker (Windows, IIS, .NET Framework, SQL Server licence)?
+          yes -> REPLATFORM: port to .NET 10, Linux containers, managed services
+          no  -> REFACTOR / re-architect the slice that cannot move (incremental, strangler)
+
+Overlay: a UI framework with no .NET 10 counterpart (Web Forms) makes that UI slice a Refactor,
+whatever the application-level answer (a token UI is rewritten inside the port).
+```
+
+AWS advises rehost, relocate or replatform first in large migrations and refactoring after cutover
+([migration strategies](https://docs.aws.amazon.com/prescriptive-guidance/latest/large-migration-guide/migration-strategies.html));
+its replatform examples include porting .NET Framework to .NET to run on Linux.
+
+## Justifying each R in the report
+
+Every application plan shows, besides **Why** and **Options considered**:
+
+- **Why not the other Rs**: the default reasoning for the chosen R, which the reviewer edits per application;
+- **Then**: what happens next for that R (for Retire: what replaces the capability, hidden-consumer check, data export,
+  decommission steps; for Refactor: what is rewritten and how, incrementally);
+- **Risks** and **Signs off**.
+
+They come from `r7_guidance` in `data/decision_rules.json` (per R, with sources); a reviewer's decision in
+`decisions.json` can override any of the four lists.
+
+**Retire, then what?** Retire never means "delete and hope". Name what takes over each capability (another application,
+which screens or calls move there and who builds them; a SaaS; a read-only archive; nothing), prove there are no
+hidden consumers (IIS logs by path, service callers, scheduled jobs, reports on its database), export the data under
+the retention rule, then decommission and keep a final backup. The work of moving screens into another application is
+estimated with that application.
+
+**Rewrite: why and how.** Rewrite only the slice that has no .NET 10 counterpart or cannot meet demand; keep porting
+the rest. Rewrite when the UI framework is gone (Web Forms), when the code cannot be tested or understood well enough
+to port safely, or when the business wants new behaviour anyway. Do it incrementally: YARP in front, one route or page
+at a time, System.Web adapters for shared code and session, characterisation tests and parity before each move.
+Conversion is not automatically cheaper than a rewrite (QSM data: conversions with under 5% new function show a worse
+productivity index than new builds), so price both when the choice is close. Challenges and methods:
+[modernisation-challenges.md](modernisation-challenges.md).
