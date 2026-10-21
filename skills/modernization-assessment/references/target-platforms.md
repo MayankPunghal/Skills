@@ -4,8 +4,10 @@ Use this page when writing fixes, alternatives and application targets. Service 
 
 | On-prem / Windows concern | AWS / .NET 10 target | Notes |
 | --- | --- | --- |
-| IIS web app / API | ASP.NET Core on Kestrel in Linux containers: **ECS on Fargate** behind an **ALB**; EKS for Kubernetes shops; **ECS Express Mode** for simple services | App Runner is closed to new customers (30 Apr 2026). Elastic Beanstalk (.NET on Linux platform) for simple single apps |
-| Windows-retained app | **EC2 Windows** (IIS) via AWS Application Migration Service, or **ECS Windows containers** | Windows licence-included on EC2; consider Dedicated Hosts only for BYOL |
+| IIS web app / API | ASP.NET Core on Kestrel in Linux containers: **ECS on Fargate** behind an **ALB**; EKS for Kubernetes shops; **ECS Express Mode** for simple services | App Runner is closed to new customers (30 Apr 2026). Elastic Beanstalk (.NET on Linux platform) for simple single apps; its .NET on Windows platform has no worker environments. Linux containers on EC2 are also an option. AWS's conditions for refactoring to Linux containers: every .NET Framework dependency can be resolved, the app is long-running, and there is time to refactor |
+| Windows-retained app | **EC2 Windows** (IIS) via AWS Application Migration Service, or **ECS Windows containers** | Windows licence-included on EC2; consider Dedicated Hosts only for BYOL. AWS's example: m5.xlarge, us-east-1, on-demand, about $274.48 a month on Windows vs $140.16 on Linux (49% less); real numbers come from OLA ([sources.md](sources.md), S31) |
+| Desktop apps (WinForms, WPF) that stay on Windows | **Amazon WorkSpaces Applications** or **WorkSpaces** | Microsoft RDS CALs are needed, with Software Assurance or licence mobility for BYOL: a licence question for the client |
+| Serverless functions | **AWS Lambda** with the `dotnet10` runtime (supported to 14 Nov 2028) | `dotnet8` is deprecated 10 Nov 2026 (create blocked 29 Jul 2027, update 31 Aug 2027); `dotnet9` is container-image only and also deprecated 10 Nov 2026 |
 | Windows service / timers | .NET Worker Service: ECS service; **EventBridge Scheduler** → ECS task / Lambda for timed jobs | Use a distributed lock if several instances run |
 | Task Scheduler / SQL Agent jobs | EventBridge Scheduler (PostgreSQL has no SQL Agent) | |
 | MSMQ / Service Broker | **Amazon SQS** (+ SNS fan-out), Amazon MQ for broker semantics | MassTransit / NServiceBus have SQS transports |

@@ -313,6 +313,141 @@
    ],
    "aws": "ElastiCache or DynamoDB (later)",
    "lift_and_shift": "A shared session store (StateServer or SQL) must be on the same network as every web server."
+  },
+  {
+   "id": "appfabric-cache",
+   "label": "AppFabric Caching",
+   "kind": "cache",
+   "ports": [
+    22233,
+    22234
+   ],
+   "packages": "^(ServerAppFabric\\.Client|Microsoft\\.ApplicationServer\\.Caching\\w*)$",
+   "code": "\\b(DataCacheFactory|DataCache)\\b",
+   "config_keys": "(?i)dataCacheClient|appfabric",
+   "config_values": "",
+   "compose_image": "",
+   "server_roles": [],
+   "aws": "Amazon ElastiCache (rewrite)",
+   "lift_and_shift": "AppFabric cache hosts move as Windows servers; AppFabric is out of support, so plan its replacement."
+  },
+  {
+   "id": "ncache",
+   "label": "NCache",
+   "kind": "cache",
+   "ports": [
+    9800
+   ],
+   "packages": "^(Alachisoft\\.NCache\\.\\w+|NCache\\w*)$",
+   "code": "\\bNCache\\b|Alachisoft\\.NCache",
+   "config_keys": "(?i)ncache",
+   "config_values": "",
+   "compose_image": "(?i)alachisoft/ncache",
+   "server_roles": [],
+   "aws": "Amazon ElastiCache or NCache on EC2",
+   "lift_and_shift": "NCache servers move as they are, with their licences."
+  },
+  {
+   "id": "solr",
+   "label": "Apache Solr",
+   "kind": "search",
+   "ports": [
+    8983
+   ],
+   "packages": "^(SolrNet\\w*|SolrNet\\.\\w+)$",
+   "code": "\\b(ISolrOperations|SolrNet)\\b",
+   "config_keys": "(?i)solr",
+   "config_values": "",
+   "compose_image": "(?i)\\bsolr\\b",
+   "server_roles": [],
+   "aws": "Amazon OpenSearch Service or Solr on EC2",
+   "lift_and_shift": "Solr nodes move as they are: carry cores, config sets and ZooKeeper if used."
+  },
+  {
+   "id": "inbound-mail",
+   "label": "Inbound mail server (POP3 / IMAP)",
+   "kind": "mail",
+   "ports": [
+    110,
+    143,
+    993,
+    995
+   ],
+   "packages": "^(OpenPop\\.NET|S22\\.Imap|ImapX|Limilabs\\.Mail)$",
+   "code": "\\b(Pop3Client|ImapClient)\\b",
+   "config_keys": "(?i)pop3|imap|incomingmail",
+   "config_values": "",
+   "compose_image": "",
+   "server_roles": [],
+   "aws": "Amazon SES email receiving, or keep the mailbox host",
+   "lift_and_shift": "The mailbox host must stay reachable from AWS (firewall rules, credentials)."
+  },
+  {
+   "id": "cassandra",
+   "label": "Apache Cassandra",
+   "kind": "database",
+   "ports": [
+    9042
+   ],
+   "packages": "^(CassandraCSharpDriver|DataStax\\.\\w+)$",
+   "code": "\\bCluster\\.Builder\\b|using\\s+Cassandra",
+   "config_keys": "(?i)cassandra|contactpoints",
+   "config_values": "",
+   "compose_image": "(?i)cassandra",
+   "server_roles": [],
+   "aws": "Amazon Keyspaces or Cassandra on EC2",
+   "lift_and_shift": "Cassandra nodes move as they are."
+  },
+  {
+   "id": "ravendb",
+   "label": "RavenDB",
+   "kind": "database",
+   "ports": [
+    8080,
+    38888
+   ],
+   "packages": "^(RavenDB\\.Client\\w*)$",
+   "code": "\\bDocumentStore\\b.*Raven|using\\s+Raven\\.Client",
+   "config_keys": "(?i)raven",
+   "config_values": "",
+   "compose_image": "(?i)ravendb",
+   "server_roles": [],
+   "aws": "RavenDB on EC2 or RavenDB Cloud",
+   "lift_and_shift": "RavenDB nodes move as they are, with their certificates."
+  },
+  {
+   "id": "couchbase",
+   "label": "Couchbase",
+   "kind": "database",
+   "ports": [
+    8091,
+    11210
+   ],
+   "packages": "^(CouchbaseNetClient|Couchbase\\.\\w+|Linq2Couchbase)$",
+   "code": "using\\s+Couchbase|\\bICluster\\b",
+   "config_keys": "(?i)couchbase",
+   "config_values": "",
+   "compose_image": "(?i)couchbase",
+   "server_roles": [],
+   "aws": "Couchbase on EC2 or Couchbase Capella",
+   "lift_and_shift": "Couchbase nodes move as they are."
+  },
+  {
+   "id": "neo4j",
+   "label": "Neo4j",
+   "kind": "database",
+   "ports": [
+    7687,
+    7474
+   ],
+   "packages": "^(Neo4j\\.Driver\\w*|Neo4jClient)$",
+   "code": "\\bGraphDatabase\\.Driver\\b|using\\s+Neo4j",
+   "config_keys": "(?i)neo4j",
+   "config_values": "",
+   "compose_image": "(?i)neo4j",
+   "server_roles": [],
+   "aws": "Amazon Neptune (openCypher) or Neo4j on EC2",
+   "lift_and_shift": "Neo4j servers move as they are."
   }
  ]
 }

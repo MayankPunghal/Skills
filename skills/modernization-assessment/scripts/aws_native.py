@@ -14,13 +14,17 @@ RabbitMQ, Kafka, MSMQ, hosted logging, session state) it finds:
   - configuration entries (key names only, never values) and external config files named after the service;
   - hosts from facts.json whose role is the service.
 Hours per AWS target option = fixed + provider files + consumer sites + config entries, manual-equivalent, then the
-AI factor (code or redesign) as for all other coding work. Writes <out>/aws-native.json and aws-native.md.
+AI factor (code or redesign) as for all other coding work. Writes <out>/aws-native.json, aws-native.md and aws-native.html.
 Read-only: nothing under --root or --library-source is changed.
 """
 import argparse
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _mdhtml import write_pair  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CATALOGUE = next((p for p in (os.path.join(HERE, "aws_native.json"), os.path.join(HERE, "data", "aws_native.json")) if os.path.exists(p)),
@@ -356,7 +360,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     json.dump(res, open(os.path.join(a.out, "aws-native.json"), "w", encoding="utf-8"), indent=1)
     name = a.name or os.path.basename(os.path.normpath(a.root))
-    open(os.path.join(a.out, "aws-native.md"), "w", encoding="utf-8").write(render(res, name))
+    write_pair(os.path.join(a.out, "aws-native.md"), render(res, name))
     for s in res["services"]:
         o = next(x for x in s["options"] if x["chosen"])
         print(f"{s['id']:22} {s['client_code'][:40]:40} sites {s['consumer_sites']:4} cfg {s['config_entries']:3} -> {o['id']:22} {o['hours']}")

@@ -18,6 +18,39 @@
 - Request limits moved from web.config (`maxRequestLength`, `maxAllowedContentLength`, `executionTimeout`) → Kestrel `Limits` and `FormOptions`; the ALB idle timeout (60 s default) bounds long requests.
 - IIS URL Rewrite rules → `UseRewriter` or the ALB listener rules; custom error pages → `UseStatusCodePagesWithReExecute`.
 
+## IIS settings in web.config
+
+Kestrel reads none of the `system.web` / `system.webServer` sections. Go through the old web.config section by section; each line below is one Linux readiness check (`LNX-HOST-IIS-*`, `LNX-WEB-*`, `LNX-CFG-SYSTEM-NET-SECTION`, `LNX-CUL-WEBCONFIG-GLOBALIZATION`).
+
+| web.config | Re-create as |
+|---|---|
+| `<authorization>` deny rules, `<location path>` | Authorization policies (`[Authorize]`, `RequireAuthorization()`, a fallback policy); test anonymous access to every path the rules protected |
+| `<httpProtocol><customHeaders>`, `removeServerHeader` | Header middleware or CloudFront response headers; `AddServerHeader = false` |
+| `<ipSecurity>` | Security groups, ALB listener rules or AWS WAF IP sets |
+| `<requestFiltering>` (verbs, extensions, hidden segments) | Routing constraints or AWS WAF rules |
+| `maxAllowedContentLength`, `maxRequestLength`, `maxQueryString` | `KestrelServerOptions.Limits`, `[RequestSizeLimit]`, `FormOptions.MultipartBodyLengthLimit` |
+| `executionTimeout`, `requestTimeout` | A queue and worker for long work; ALB idle timeout; `RequestTimeouts` middleware |
+| `<staticContent>` (`<mimeMap>`, `<clientCache>`), `<defaultDocument>` | `FileExtensionContentTypeProvider`, `OnPrepareResponse`, `UseDefaultFiles`; or S3 behind CloudFront |
+| `<urlCompression>`, `<httpCompression>` | CloudFront compression or `UseResponseCompression` (the ALB does not compress) |
+| `<httpErrors>`, `<customErrors>` | `UseExceptionHandler`, `UseStatusCodePagesWithReExecute` |
+| `<modules>`, `<handlers>`, `<httpModules>`, `<httpHandlers>` | Middleware and endpoints ([http-handlers-and-modules.md](http-handlers-and-modules.md)) |
+| `<sessionState>` with mode `StateServer` or `SQLServer` | `AddSession` over `IDistributedCache` (ElastiCache or DynamoDB); old session data does not carry over |
+| `<globalization culture=...>` | `UseRequestLocalization` with an explicit default culture |
+| `<system.net>` (`mailSettings`, `defaultProxy`, `connectionManagement`) | Values from configuration set in code (SmtpClient, `HTTP(S)_PROXY`, `MaxConnectionsPerServer`), or Amazon SES for mail |
+| `applicationInitialization`, app pool recycling | Warm-up in start-up with an ECS health check grace period; memory watched per task |
+| Sub-application path (`/app`) | `UsePathBase` from configuration and an ALB path rule |
+
+ASP.NET Core has no request validation: pages that relied on it (or switched it off with `ValidateRequest="false"`) need output encoding checked and, where HTML is allowed, a sanitiser.
+
+## Static assets and bundles
+
+The ASP.NET bundler (`System.Web.Optimization`, `BundleConfig`, `Scripts.Render`) has no port. Replace it with a build step:
+
+1. **Pick one bundler and record the choice.** esbuild is the usual pick for plain JavaScript and CSS. Use webpack, Vite or Rollup when the front end already uses them. The old `dotnet bundle` tool is not maintained.
+2. **Build the bundles into `wwwroot/dist/`** as part of the build or the publish. Commit the source, not generated bundles, unless the pipeline needs them.
+3. **Reference the bundles** with `asp-append-version="true"`. On .NET 10, `MapStaticAssets` replaces `UseStaticFiles` for these files and gives fingerprinted paths to reference.
+4. **Cache by type.** Fingerprinted files can be cached for a long time, and `MapStaticAssets` sets that caching and pre-compresses the files (gzip and brotli). Files that keep a fixed name need a short `Cache-Control` set in `StaticFileOptions.OnPrepareResponse`, or users run old scripts after a deploy.
+
 ## State
 
 - **In-process session** does not survive several tasks or a restart: `AddStackExchangeRedisCache` (ElastiCache) behind `AddSession`, or remove the dependency. Session stores strings and bytes only.

@@ -1,5 +1,5 @@
 {
- "_doc": "Linux readiness checks for .NET applications moving from Windows to Linux containers on AWS. Generated from the research catalogue (reference/linux-readiness.md). level: block / warn / info. patterns: regex + file globs; automated = every pattern has file types (linux_readiness.py scans it), else it is a checklist item for review. coverage: COVERED / PARTIAL / GAP against the modernization-assessment rules.json and the residue rules at generation time. Items whose source is K are engineering knowledge, not a cited page.",
+ "_doc": "Linux readiness checks for .NET applications moving from Windows to Linux containers on AWS. Generated from the research catalogue (reference/linux-readiness.md). level: block / warn / info. patterns: regex + file globs; automated = every pattern has file types (linux_readiness.py scans it), else it is a checklist item for review. coverage: COVERED / PARTIAL / GAP against the modernization-assessment rules.json and the residue rules at generation time. Items whose source is K are engineering knowledge, not a cited page. Exhaustive-list pass 2026-10-21: checks added from AWS Transform docs and Microsoft Learn porting, breaking-change and container pages (sources S34-S74); items read only once and not re-verified keep source K with a [K: ...] note. IIS and Windows-only pass 2026-10-21: IIS configuration Kestrel does not read, kinds from a lift-and-shift Windows-only inventory, and Windows-only behaviour from Microsoft Learn.",
  "sources": {
   "S1": "Platform compatibility analyzer: https://learn.microsoft.com/en-us/dotnet/standard/analyzers/platform-compat-analyzer",
   "S2": "CA1416 rule: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1416 (linked from S1; not fetched)",
@@ -32,7 +32,90 @@
   "S30": "Case sensitivity write-up: https://www.benlocke.co.uk/case-sensitivity/",
   "S31": "URL case sensitivity and assembly loading: https://blogs.msdn.microsoft.com/junfeng/2005/03/20/url-case-sensitivity-and-assembly-loading/",
   "S32": "Umbraco thread on case-sensitive file names: https://discord-chats.umbraco.com/t/22323315/handling-case-sensitivity-of-filenames-when-transferring-to-?t=v2",
-  "S33": "DevTx KB 19 and modernization-assessment rules (see section 22 and the rule catalogues named in section 23)."
+  "S33": "DevTx KB 19 and modernization-assessment rules (see section 22 and the rule catalogues named in section 23).",
+  "S34": "AWS Transform, resolve package dependencies: https://docs.aws.amazon.com/transform/latest/userguide/dotnet-web-resolve-dependencies.html",
+  "S35": "Strong-name signing APIs throw (.NET 6): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/6.0/strong-name-signing-exceptions",
+  "S36": "Native library search in single-file apps (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/interop/10.0/native-library-search",
+  "S37": "netcoredeps no longer probed on Linux (.NET 8): https://learn.microsoft.com/en-us/dotnet/core/compatibility/interop/8.0/linux-netcoredeps",
+  "S38": "GetFolderPath on Unix uses XDG (.NET 8): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/getfolderpath-unix",
+  "S39": "DriveInfo.DriveFormat on Linux returns kernel names (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/10.0/driveinfo-driveformat-linux",
+  "S40": "File.Replace exceptions on Unix (.NET 6): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/6.0/file-replace-exceptions-on-unix",
+  "S41": "UNC path recognition on Unix (.NET 5): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/5.0/unc-path-recognition-unix",
+  "S42": "Empty environment variable values (.NET 9): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/9.0/empty-env-variable",
+  "S43": "DOTNET_ environment variables take precedence (.NET 9): https://learn.microsoft.com/en-us/dotnet/core/compatibility/deployment/9.0/envvar-precedence",
+  "S44": "ICU version override variable renamed (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/globalization/10.0/version-override",
+  "S45": "ICU globalization APIs differ from NLS (.NET 5): https://learn.microsoft.com/en-us/dotnet/core/compatibility/globalization/5.0/icu-globalization-api",
+  "S46": "Culture creation in invariant mode throws (.NET 6): https://learn.microsoft.com/en-us/dotnet/core/compatibility/globalization/6.0/culture-creation-invariant-mode",
+  "S47": "ListSeparator values match NLS on all OSes (.NET 5.0.1): https://learn.microsoft.com/en-us/dotnet/core/compatibility/globalization/5.0/listseparator-value-change",
+  "S48": "ZipArchiveEntry name and comment encoding (.NET 9): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/9.0/ziparchiveentry-encoding",
+  "S49": "OpenSSL version override variable renamed (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/cryptography/10.0/version-override",
+  "S50": "OpenSSL 1.1.1 or later required on Linux (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/cryptography/10.0/openssl-version-requirement",
+  "S51": "RSA.EncryptValue / DecryptValue obsolete and throw (.NET 8): https://learn.microsoft.com/en-us/dotnet/core/compatibility/cryptography/8.0/rsa-encrypt-decrypt-value-obsolete",
+  "S52": "No default SIGTERM handler on Unix (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/10.0/sigterm-signal-handler",
+  "S53": "P/Invoke A/W suffix not probed on non-Windows (.NET 5): https://learn.microsoft.com/en-us/dotnet/core/compatibility/interop/5.0/function-suffix-pinvoke",
+  "S54": "zlib not installed in .NET 9 images: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/9.0/no-zlib",
+  "S55": "Ping with a payload throws on Linux for non-root (.NET 7): https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/7.0/ping-custom-payload-linux",
+  "S56": "SPN without the port for non-default ports (.NET 6): https://learn.microsoft.com/en-us/dotnet/core/compatibility/networking/6.0/httpclient-port-lookup",
+  "S57": "Kerberos libraries removed from .NET 8 images: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/krb5-libs-package",
+  "S58": "ca-certificates and libintl removed from .NET 8 Alpine images: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/ca-certificates-package ; https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/libintl-package",
+  "S59": ".NET 10 default images use Ubuntu: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/10.0/default-images-use-ubuntu",
+  "S60": "Non-root `app` user in .NET 8 Linux images: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/app-user",
+  "S61": "Forwarded headers behind proxies and load balancers: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer",
+  "S62": "System.Drawing.Common EnableUnixSupport removed (.NET 7): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/7.0/system-drawing",
+  "S63": ".NET Framework to .NET porting overview: https://learn.microsoft.com/en-us/dotnet/core/porting/framework-overview",
+  "S64": ".NET 5 breaking changes (WinHttpHandler removed from the runtime): https://learn.microsoft.com/en-us/dotnet/core/compatibility/5.0",
+  "S65": "Data Protection default settings (key storage): https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/default-settings",
+  "S66": "Container publish configuration (ContainerUser, RIDs, base image): https://learn.microsoft.com/en-us/dotnet/core/containers/publish-configuration",
+  "S67": ".NET container images (variants, chiseled, -extra): https://learn.microsoft.com/en-us/dotnet/core/docker/container-images ; https://github.com/dotnet/dotnet-docker/blob/main/documentation/ubuntu-chiseled.md",
+  "S68": "Containerize a .NET app (read-only containers): https://learn.microsoft.com/en-us/dotnet/core/docker/build-container",
+  "S69": "Publish .NET apps as containers with the SDK: https://learn.microsoft.com/en-us/dotnet/core/containers/sdk-publish",
+  "S70": ".NET containers overview (DOTNET_CONTAINER_* variables): https://learn.microsoft.com/en-us/dotnet/core/containers/overview",
+  "S71": "Hosting ASP.NET Core images with Docker over HTTPS: https://learn.microsoft.com/en-us/aspnet/core/security/docker-https",
+  "S72": "JSON console logging no longer duplicates Message (.NET 10): https://learn.microsoft.com/en-us/dotnet/core/compatibility/extensions/10.0/console-json-logging-duplicate-messages",
+  "S73": "Backslash no longer converted in file paths on Unix (.NET 8): https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/file-path-backslash",
+  "S74": "Health checks in ASP.NET Core (curl not in .NET Linux images): https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks",
+  "S75": "Native library loading (probing names and suffixes): https://learn.microsoft.com/en-us/dotnet/standard/native-interop/native-library-loading",
+  "S76": "Kestrel endpoints (URLs, Listen, localhost binding): https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints",
+  "S77": "HttpClient guidelines (PooledConnectionLifetime, DNS changes): https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines",
+  "S78": "EC2 instance metadata, hop limit for containers: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-IMDS-existing-instances.html",
+  "S79": "ECS task definition linuxParameters.initProcessEnabled: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html",
+  "S80": "EnumerationOptions.MatchCasing (case-sensitive matching on Linux): https://learn.microsoft.com/en-us/dotnet/api/system.io.enumerationoptions.matchcasing",
+  "S81": "System.DirectoryServices.Protocols on Linux (native LDAP library): https://learn.microsoft.com/en-us/dotnet/api/system.directoryservices.protocols",
+  "S82": "Microsoft.Data.SqlClient 4.0 breaking change, Encrypt defaults to true: https://github.com/dotnet/SqlClient/blob/main/release-notes/4.0/4.0.0.md",
+  "S83": "Logging and tracing in .NET (Trace and Debug need a listener): https://learn.microsoft.com/en-us/dotnet/core/diagnostics/logging-tracing",
+  "S84": "Kestrel options and limits (MaxRequestBodySize, request line and header limits, AddServerHeader): https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/options",
+  "S85": "Application Load Balancer connection idle timeout (60 seconds by default): https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-load-balancer-attributes.html#connection-idle-timeout",
+  "S86": "IIS URL authorization (<authorization> allow/deny rules): https://learn.microsoft.com/en-us/iis/configuration/system.webserver/security/authorization/",
+  "S87": "IIS custom headers (<httpProtocol><customHeaders>): https://learn.microsoft.com/en-us/iis/configuration/system.webserver/httpprotocol/customheaders/",
+  "S88": "IIS IP and domain restrictions (<ipSecurity>): https://learn.microsoft.com/en-us/iis/configuration/system.webserver/security/ipsecurity/",
+  "S89": "IIS request filtering (<requestFiltering>, maxAllowedContentLength 30,000,000 bytes by default): https://learn.microsoft.com/en-us/iis/configuration/system.webserver/security/requestfiltering/",
+  "S90": "Static files in ASP.NET Core (unknown file types, default documents, cache headers): https://learn.microsoft.com/en-us/aspnet/core/fundamentals/static-files",
+  "S91": "Response compression in ASP.NET Core: https://learn.microsoft.com/en-us/aspnet/core/performance/response-compression",
+  "S92": "Migrate HTTP handlers and modules to ASP.NET Core middleware: https://learn.microsoft.com/en-us/aspnet/core/migration/http-modules",
+  "S93": "IServerVariablesFeature (server variables come from IIS): https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.http.features.iservervariablesfeature",
+  "S94": "Configure ASP.NET Core behind proxies and load balancers (path base, forwarded headers): https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer",
+  "S95": "Session and state management in ASP.NET Core (distributed cache session): https://learn.microsoft.com/en-us/aspnet/core/fundamentals/app-state",
+  "S96": "CoreWCF (WCF services on ASP.NET Core): https://github.com/CoreWCF/CoreWCF",
+  "S97": "Considerations for server-side automation of Office: https://support.microsoft.com/en-us/topic/considerations-for-server-side-automation-of-office-48bcfe93-8a89-47f1-0bce-017433ad79e2",
+  "S98": "Integrating Reporting Services using the ReportViewer controls: https://learn.microsoft.com/en-us/sql/reporting-services/application-integration/integrating-reporting-services-using-reportviewer-controls-get-started",
+  "S99": "Microsoft ODBC Driver for SQL Server on Linux (installs unixODBC): https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server",
+  "S100": "Application Insights for ASP.NET Core applications: https://learn.microsoft.com/en-us/azure/azure-monitor/app/asp-net-core",
+  "S101": "AWS Distro for OpenTelemetry, .NET: https://aws-otel.github.io/docs/getting-started/dotnet-sdk",
+  "S102": "Migrate applications to MSAL (ADAL is retired): https://learn.microsoft.com/en-us/entra/identity-platform/msal-migration",
+  "S103": "Prevent cross-site scripting in ASP.NET Core (encoding, no request validation): https://learn.microsoft.com/en-us/aspnet/core/security/cross-site-scripting",
+  "S104": "Environment.NewLine (\\n on Unix): https://learn.microsoft.com/en-us/dotnet/api/system.environment.newline",
+  "S105": "Directory.GetFiles (the order of the returned names is not guaranteed): https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.getfiles",
+  "S106": "File.Encrypt (NTFS EFS only; PlatformNotSupportedException elsewhere): https://learn.microsoft.com/en-us/dotnet/api/system.io.file.encrypt",
+  "S107": "FileSystemInfo.CreationTime (Unix fallback when there is no birth time): https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.creationtime",
+  "S108": ".NET 10 supported operating systems and architectures: https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md",
+  "S109": "IPv4InterfaceProperties.IsDhcpEnabled (Windows only): https://learn.microsoft.com/en-us/dotnet/api/system.net.networkinformation.ipv4interfaceproperties.isdhcpenabled",
+  "S110": "RijndaelManaged.BlockSize (128 bits only on .NET Core and later): https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.rijndaelmanaged.blocksize",
+  "S111": "Interaction.CreateObject (COM, Windows only): https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualbasic.interaction.createobject",
+  "S112": "SmtpClient (configuration file, not recommended for new work): https://learn.microsoft.com/en-us/dotnet/api/system.net.mail.smtpclient",
+  "S113": "Path.VolumeSeparatorChar ('/' on Unix): https://learn.microsoft.com/en-us/dotnet/api/system.io.path.volumeseparatorchar",
+  "S114": "IIS static content (<staticContent>, <mimeMap>, <clientCache>): https://learn.microsoft.com/en-us/iis/configuration/system.webserver/staticcontent/",
+  "S115": "IIS application initialization: https://learn.microsoft.com/en-us/iis/configuration/system.webserver/applicationinitialization/",
+  "S116": "Environment.UserName (getpwuid_r on Unix): https://learn.microsoft.com/en-us/dotnet/api/system.environment.username"
  },
  "rules": [
   {
@@ -40,7 +123,7 @@
    "area": "Build, project and packaging",
    "level": "block",
    "severity_note": "block",
-   "what": "Windows-only API called from cross-platform code: CA1416 warns at build, call throws PlatformNotSupportedException at runtime",
+   "what": "Windows-only API called from cross-platform code: CA1416 warns at build, call throws PlatformNotSupportedException at runtime; only APIs annotated [SupportedOSPlatform]/[UnsupportedOSPlatform] are flagged, so unannotated Windows-only calls still need this scan",
    "detect": "build log on Linux: `warning CA1416`; cs",
    "fix": "Replace, remove, or guard with `OperatingSystem.IsWindows()`",
    "sources": [
@@ -99,7 +182,8 @@
    "detect": "proj: `<UseWindowsForms>true|<UseWPF>true|Microsoft\\.NET\\.Sdk\\.WindowsDesktop`",
    "fix": "Move logic to a class library; UI stays on Windows",
    "sources": [
-    "S5"
+    "S5",
+    "S63"
    ],
    "already_in": "PARTIAL: DESK-WINFORMS (cs/vb), DESK-WPF (proj)",
    "coverage": "PARTIAL",
@@ -667,7 +751,7 @@
     "S30",
     "S32"
    ],
-   "already_in": "GAP: FILE-CASE-MISMATCH is documented in modernization-assessment/references/linux-pitfalls.md but is not in rules.json or any script",
+   "already_in": "PARTIAL: modernization-assessment scan_repo.py FILE-CASE-MISMATCH (synthetic check)",
    "coverage": "GAP",
    "patterns": [
     {
@@ -738,7 +822,7 @@
    "sources": [
     "S30"
    ],
-   "already_in": "GAP (FILE-CASE-MISMATCH not implemented)",
+   "already_in": "PARTIAL: modernization-assessment scan_repo.py FILE-CASE-MISMATCH (synthetic check)",
    "coverage": "GAP",
    "patterns": [
     {
@@ -1363,7 +1447,8 @@
       ".sh",
       "entrypoint*",
       "Dockerfile*",
-      "*.dockerfile"
+      "*.dockerfile",
+      "*entrypoint*"
      ],
      "kinds": [
       "sh",
@@ -1442,9 +1527,9 @@
   {
    "id": "LNX-TZ-IANA-ID-IN-CODE",
    "area": "Time zones",
-   "level": "warn",
-   "severity_note": "warn",
-   "what": "IANA IDs (`America/New_York`) work on Windows only on .NET 6+ with ICU; old Windows or NLS mode fail",
+   "level": "info",
+   "severity_note": "info",
+   "what": "IANA IDs (`America/New_York`) are the right choice on Linux, but work on Windows only on .NET 6+ with ICU; old Windows or NLS mode fail (verify only if the code also runs on Windows)",
    "detect": "cs/vb/cfg: `\"(America|Europe|Asia|Australia|Africa|Pacific)/[A-Za-z_]+\"`",
    "fix": "Keep one canonical id per deployment; test on Windows and Linux",
    "sources": [
@@ -1470,7 +1555,8 @@
      ]
     }
    ],
-   "automated": true
+   "automated": true,
+   "tuned": true
   },
   {
    "id": "LNX-TZ-LOCAL-NOW",
@@ -1795,11 +1881,12 @@
    "area": "Globalization and culture (ICU vs NLS)",
    "level": "warn",
    "severity_note": "warn (block if culture-sensitive app)",
-   "what": "InvariantGlobalization removes culture data: CultureInfo(\"de-DE\") behaves as invariant",
-   "detect": "proj: `<InvariantGlobalization>true`; df/yml: `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`; cfg: `System.Globalization.Invariant\": true`",
-   "fix": "Enable only when culture-free; verify formatting",
+   "what": "Invariant globalization mode restricts culture creation: from .NET 6 (PredefinedCulturesOnly defaults to true), `new CultureInfo(\"de-DE\")` throws CultureNotFoundException; before .NET 6 it silently behaved as invariant. Formatting, sorting and casing use invariant rules everywhere",
+   "detect": "proj: `<InvariantGlobalization>true`; df/yml/task json: `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` or `true`; cfg: `System.Globalization.Invariant\": true`",
+   "fix": "Enable only when culture-free; verify formatting; in invariant mode every hit of LNX-CUL-HARDCODED-CULTURE throws CultureNotFoundException (.NET 6+)",
    "sources": [
-    "S10"
+    "S10",
+    "S46"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -1818,9 +1905,11 @@
      ]
     },
     {
-     "regex": "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1",
+     "regex": "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT\"?\\s*[=:,]?\\s*(\"value\"\\s*:\\s*)?\"?(1|true)\\b",
      "files": [
       "*.dockerfile",
+      "*task*.json",
+      "*taskdef*.json",
       ".yaml",
       ".yml",
       "Dockerfile*",
@@ -1830,7 +1919,8 @@
      ],
      "kinds": [
       "df",
-      "yml"
+      "yml",
+      "task json"
      ]
     },
     {
@@ -1857,8 +1947,8 @@
    "detect": "df: `FROM .*(alpine|chiseled|distroless)` without invariant flag or ICU install",
    "fix": "Use Debian/Ubuntu base or `icu-libs` / invariant mode",
    "sources": [
-    "S9",
-    "S28"
+    "S28",
+    "S9"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -1947,11 +2037,12 @@
    "area": "Globalization and culture (ICU vs NLS)",
    "level": "warn",
    "severity_note": "warn",
-   "what": "Parsing input or CSV with the current culture list separator or decimal separator",
+   "what": "Parsing input or CSV with the current culture list separator or decimal separator (TextInfo.ListSeparator matches NLS on all OSes since .NET 5.0.1; decimal separators and other culture data still differ)",
    "detect": "cs/vb: `ListSeparator|NumberDecimalSeparator` used in parsers",
    "fix": "Explicit separators for file formats",
    "sources": [
-    "K"
+    "K",
+    "S47"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -2514,11 +2605,12 @@
    "area": "Processes, shell, console and signals",
    "level": "warn",
    "severity_note": "warn",
-   "what": "App ignores SIGTERM: ECS sends SIGTERM then SIGKILL after stopTimeout (30 s default); loops without cancellation keep running",
+   "what": "App ignores SIGTERM: ECS sends SIGTERM then SIGKILL after stopTimeout (30 s default); loops without cancellation keep running; on .NET 10 the runtime installs no SIGTERM handler, so an app without a host is killed at once and ProcessExit does not run",
    "detect": "cs: `static .* Main\\(` in Program.cs with `while\\s*\\(\\s*true\\s*\\)` or `Thread\\.Sleep\\(Timeout\\.Infinite\\)` and no `IHost`/`BackgroundService`/`WebApplication`",
    "fix": "Generic host / BackgroundService with cancellation tokens",
    "sources": [
-    "S18"
+    "S18",
+    "S52"
    ],
    "already_in": "PARTIAL: HOST-WINDOWS-SERVICE-LIFETIME",
    "coverage": "PARTIAL",
@@ -2693,7 +2785,7 @@
    "level": "warn",
    "severity_note": "warn",
    "what": "Code writes to /root or assumes ~ for the non-root app user (UID 1654 in .NET 8+ images)",
-   "detect": "cs/vb/cfg/df: `\"/root/|~/|/home/`",
+   "detect": "cs/vb/cfg/df: `\"/root/`, `\"/home/<user>/` (lower case, so MVC routes like \"/Home/Error\" do not hit), `\"~/.`, `SpecialFolder.UserProfile`",
    "fix": "Config path; test with non-root user",
    "sources": [
     "S27"
@@ -2702,7 +2794,7 @@
    "coverage": "GAP",
    "patterns": [
     {
-     "regex": "\\\"(/root/|/home/\\w+)|\\\"~/\\.|SpecialFolder\\.(UserProfile|Personal|MyDocuments|Desktop)\\b",
+     "regex": "\\\"(?-i:/root/|/home/[a-z_][\\w-]*/)|\\\"~/\\.|SpecialFolder\\.(UserProfile|Personal|MyDocuments|Desktop)\\b",
      "files": [
       ".cs",
       ".vb",
@@ -2826,11 +2918,12 @@
    "area": "Cryptography and certificates",
    "level": "block",
    "severity_note": "block (multi-task)",
-   "what": "ASP.NET Core Data Protection keys default to a per-container folder; cookies/antiforgery break across tasks",
+   "what": "ASP.NET Core Data Protection keys default to the user profile inside the container (unprotected at rest off Windows) and are lost when the task stops; cookies and antiforgery break across tasks and deployments",
    "detect": "cs: `AddDataProtection\\(\\)` without `PersistKeysTo|ProtectKeysWith`",
    "fix": "Persist keys to shared store (S3/SSM/Secrets Manager)",
    "sources": [
-    "K"
+    "K",
+    "S65"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -4088,6 +4181,83 @@
    "automated": true
   },
   {
+   "id": "LNX-DATA-SQLCLIENT-ENCRYPT",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Microsoft.Data.SqlClient 4.0+ defaults to Encrypt=true: a SQL Server or RDS endpoint without a certificate the Linux container trusts fails with a certificate chain error; `TrustServerCertificate=true` hides it but turns off validation",
+   "detect": "cfg/cs/vb: connection strings with `TrustServerCertificate=true` or `Encrypt=false`",
+   "fix": "Keep Encrypt=true and add the RDS CA bundle to the image trust store; do not ship TrustServerCertificate=true or Encrypt=false to production",
+   "sources": [
+    "S82"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "TrustServerCertificate\\s*=\\s*(true|yes)|\\bEncrypt\\s*=\\s*(false|no)\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-DATA-ODBC-UNIXODBC",
+   "area": "Databases (SQL Server, ODBC, OLE DB, Oracle)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "System.Data.Odbc on Linux loads the unixODBC driver manager (libodbc.so.2): the image needs unixODBC and a Linux ODBC driver for the database, and DSNs set up in the Windows ODBC administrator (registry) do not exist",
+   "detect": "cs/vb/proj: `System.Data.Odbc`, `OdbcConnection`; cs/vb/cfg: `DSN=` in connection strings",
+   "fix": "Install unixODBC and the vendor's Linux driver in the image and define DSNs in odbc.ini (or use DSN-less connection strings); prefer the database's managed ADO.NET provider where one exists",
+   "sources": [
+    "S99",
+    "K"
+   ],
+   "already_in": "PARTIAL: modernization-assessment DATA-ODBC",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\bSystem\\.Data\\.Odbc\\b|\\bOdbc(Connection|Command|DataAdapter)\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    },
+    {
+     "regex": "(?i)\\bDSN\\s*=",
+     "files": [
+      ".cs",
+      ".vb",
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
    "id": "LNX-NET-UDP-BROADCAST",
    "area": "Networking",
    "level": "block",
@@ -4222,7 +4392,7 @@
    "detect": "cs/vb/proj: `WinHttpHandler|WebRequestHandler`",
    "fix": "SocketsHttpHandler (default on .NET 5+)",
    "sources": [
-    "K"
+    "S64"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -4741,7 +4911,8 @@
    "detect": "cs/vb: `Microsoft\\.Win32\\.Registry|Registry\\.(LocalMachine|CurrentUser|ClassesRoot|Users)|RegistryKey`",
    "fix": "Configuration + SSM Parameter Store",
    "sources": [
-    "S5"
+    "S5",
+    "S63"
    ],
    "already_in": "COVERED: API-REGISTRY; WIN-REGISTRY",
    "coverage": "COVERED",
@@ -4886,6 +5057,7 @@
    "detect": "cs/vb/proj: `System\\.Drawing\\.(Bitmap|Graphics|Image|Font|Imaging)|System\\.Drawing\\.Common`",
    "fix": "SkiaSharp or ImageSharp",
    "sources": [
+    "S62",
     "S7"
    ],
    "already_in": "COVERED: API-DRAWING; WIN-DRAWING",
@@ -5143,7 +5315,8 @@
    "detect": "cs/vb: `DllImport\\(\"(kernel32|user32|advapi32|ole32|oleaut32|shell32|gdi32|netapi32|ws2_32|crypt32|wininet|winspool|msvcrt)\\.dll\"`",
    "fix": "Replace with managed API or Linux native lib",
    "sources": [
-    "S5"
+    "S5",
+    "S63"
    ],
    "already_in": "COVERED: WIN-PINVOKE-WIN32; API-PINVOKE",
    "coverage": "COVERED",
@@ -5171,6 +5344,7 @@
    "detect": "cs/vb: `DllImport\\(\"[^\"]+\\.dll\"\\)`",
    "fix": "Name without suffix; per-RID `.so` files",
    "sources": [
+    "S75",
     "K"
    ],
    "already_in": "PARTIAL: WIN-PINVOKE-NATIVE",
@@ -5442,7 +5616,8 @@
    "detect": "cs/vb/proj: `System\\.Windows\\.Forms|System\\.Windows\\.(Controls|Media)`",
    "fix": "Split UI from server",
    "sources": [
-    "S5"
+    "S5",
+    "S63"
    ],
    "already_in": "COVERED: DESK-WINFORMS; DESK-WPF",
    "coverage": "COVERED",
@@ -6022,16 +6197,16 @@
    "level": "warn",
    "severity_note": "warn",
    "what": "Behind ALB: scheme/host/client IP lost; http redirects, cookie Secure flag and links wrong",
-   "detect": "cs: absence of `UseForwardedHeaders|ForwardedHeadersOptions`",
-   "fix": "UseForwardedHeaders with trusted proxies",
+   "detect": "cs: a web host (`WebApplication.CreateBuilder(` or `Configure(IApplicationBuilder`) in a file with no `UseForwardedHeaders` / `ForwardedHeadersOptions`",
+   "fix": "`app.UseForwardedHeaders()` with `ForwardedHeadersOptions` (XForwardedFor | XForwardedProto, KnownNetworks for the VPC) or `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` in the task definition (then waive)",
    "sources": [
-    "K"
+    "S61"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
    "patterns": [
     {
-     "regex": "UseForwardedHeaders|ForwardedHeadersOptions",
+     "regex": "WebApplication\\.CreateBuilder\\(|void\\s+Configure\\(\\s*IApplicationBuilder\\b",
      "files": [
       ".cs"
      ],
@@ -6040,7 +6215,9 @@
      ]
     }
    ],
-   "automated": true
+   "automated": true,
+   "unless_in_file": "UseForwardedHeaders|ForwardedHeadersOptions|ASPNETCORE_FORWARDEDHEADERS_ENABLED",
+   "tuned": true
   },
   {
    "id": "LNX-HOST-PORT-80",
@@ -6049,7 +6226,7 @@
    "severity_note": "block",
    "what": ".NET 8+ container default port is 8080; port 80 mapping fails unless ASPNETCORE_HTTP_PORTS=80",
    "detect": "df/yml/task json: `EXPOSE\\s+80\\b`; `ASPNETCORE_URLS=http://\\+?\\*?:80\\b`; `-p\\s+\\d+:80\\b`; ALB target port 80 with app on 8080",
-   "fix": "Set ASPNETCORE_HTTP_PORTS=8080 and matching target group port",
+   "fix": "Set ASPNETCORE_HTTP_PORTS=8080 and matching target group port (or `ASPNETCORE_URLS=http://+:8080`; WebHost.CreateDefaultBuilder apps honour only ASPNETCORE_URLS)",
    "sources": [
     "S8"
    ],
@@ -6060,6 +6237,8 @@
      "regex": "EXPOSE\\s+80\\b",
      "files": [
       "*.dockerfile",
+      "*task*.json",
+      "*taskdef*.json",
       ".yaml",
       ".yml",
       "Dockerfile*",
@@ -6074,28 +6253,61 @@
      ]
     },
     {
-     "regex": "ASPNETCORE_URLS=http://\\+?\\*?:80\\b",
-     "files": null,
-     "kinds": []
+     "regex": "ASPNETCORE_URLS\"?\\s*[=:,]?\\s*(\"value\"\\s*:\\s*)?\"?https?://(\\+|\\*|0\\.0\\.0\\.0|\\[::\\])?:80\\b",
+     "files": [
+      "*.dockerfile",
+      "*task*.json",
+      "*taskdef*.json",
+      ".config",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "appsettings*.json",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json",
+      "cfg"
+     ]
     },
     {
      "regex": "-p\\s+\\d+:80\\b",
-     "files": null,
-     "kinds": []
+     "files": [
+      "*.dockerfile",
+      ".ps1",
+      ".sh",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "sh",
+      "ps1"
+     ]
     }
    ],
-   "automated": false
+   "automated": true
   },
   {
    "id": "LNX-HOST-HEALTHCHECK-CURL",
    "area": "Web platform and IIS hosting",
    "level": "warn",
    "severity_note": "warn",
-   "what": "Dockerfile HEALTHCHECK calls curl; .NET images do not ship curl by default [K: verify on image]",
+   "what": "Dockerfile HEALTHCHECK calls curl; .NET images do not ship curl by default (Alpine has wget; chiseled has no shell)",
    "detect": "df: `HEALTHCHECK\\s+CMD\\s+curl`",
    "fix": "Use ECS health check on /health with a tool present, or built-in probe",
    "sources": [
-    "S33"
+    "S33",
+    "S74"
    ],
    "already_in": "GAP (DevTx KB uses it)",
    "coverage": "GAP",
@@ -6122,7 +6334,8 @@
    "detect": "df: `COPY .*\\.pfx|Kestrel__Certificates__Default__Password=`",
    "fix": "TLS at ALB; secret from Secrets Manager",
    "sources": [
-    "S33"
+    "S33",
+    "S71"
    ],
    "already_in": "COVERED: CFG-HARDCODED-SECRET (cfg only); GAP for df",
    "coverage": "COVERED",
@@ -6204,10 +6417,11 @@
    "area": "Containers and images",
    "level": "block",
    "severity_note": "block",
-   "what": "System.Drawing on Linux needs libgdiplus; EnableUnixSupport switch existed only in .NET 6",
+   "what": "System.Drawing.Common throws on Linux from .NET 7: installing libgdiplus or setting System.Drawing.EnableUnixSupport is not a fix (the switch worked only on .NET 6 and was removed in .NET 7)",
    "detect": "df: `libgdiplus`; proj/cfg: `System\\.Drawing\\.EnableUnixSupport`; df: missing libgdiplus with System.Drawing",
-   "fix": "Replace library (SkiaSharp/ImageSharp)",
+   "fix": "Replace System.Drawing with SkiaSharp or ImageSharp (check ImageSharp's licence), then remove libgdiplus from the image",
    "sources": [
+    "S62",
     "S7"
    ],
    "already_in": "GAP",
@@ -6333,7 +6547,9 @@
    "detect": "df: `^USER\\s+(?!\\d|\\$APP_UID)`",
    "fix": "`USER $APP_UID` (1654 in .NET 8+)",
    "sources": [
-    "S27"
+    "S27",
+    "S60",
+    "S66"
    ],
    "already_in": "GAP",
    "coverage": "GAP",
@@ -6442,7 +6658,7 @@
    "level": "warn",
    "severity_note": "warn",
    "what": "No .dockerignore: bin/obj, .vs, *.user and appsettings with secrets are copied",
-   "detect": "file: `.dockerignore` absent",
+   "detect": "file: no `.dockerignore` (or `<Dockerfile>.dockerignore`) anywhere in the repository",
    "fix": "Add .dockerignore",
    "sources": [
     "K"
@@ -6453,7 +6669,7 @@
    "automated": true,
    "check": "absent",
    "when_path": "(^|/)Dockerfile[^/]*$",
-   "absent_path": "(^|/)\\.dockerignore$",
+   "absent_path": "(^|/)([^/]*\\.)?dockerignore$",
    "tuned": true
   },
   {
@@ -6670,6 +6886,59 @@
       ".config",
       "appsettings*.json",
       "launchSettings.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-SYSTEM-NET-SECTION",
+   "area": "Configuration and secrets",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`<system.net>` settings in web.config / app.config (`<mailSettings>`, `<defaultProxy>`, `<connectionManagement maxconnection>`) are not applied on .NET: SmtpClient gets no host or credentials, the proxy is not used, and connection limits fall back to the defaults",
+   "detect": "cfg: `<mailSettings`, `<defaultProxy`, `<connectionManagement`",
+   "fix": "Read the values from configuration and set them in code (SmtpClient host, port and credentials; `HTTP(S)_PROXY` or `HttpClientHandler.Proxy`; `SocketsHttpHandler.MaxConnectionsPerServer`); for mail prefer Amazon SES or MailKit",
+   "sources": [
+    "S112",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<(mailSettings|defaultProxy|connectionManagement)\\b",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CFG-CONFIGSOURCE-PATH",
+   "area": "Configuration and secrets",
+   "level": "info",
+   "severity_note": "info",
+   "what": "`configSource=` / `<appSettings file=>` paths with `\\` in .config files: .NET reads these sections only through System.Configuration.ConfigurationManager, and the backslash path does not resolve on Linux",
+   "detect": "cfg: `configSource=\"...\\...\"`, `file=\"...\\...\"`",
+   "fix": "Use forward slashes; better, move the settings to appsettings.json, environment variables or Secrets Manager",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\b(configSource|file)\\s*=\\s*\"[^\"]*\\\\",
+     "files": [
+      ".config"
      ],
      "kinds": [
       "cfg"
@@ -7356,7 +7625,7 @@
    "level": "warn",
    "severity_note": "warn",
    "what": "Tests assume Windows paths, case-insensitive file or URL matching, or LocalDB",
-   "detect": "test cs/vb: `\"[A-Za-z]:\\\\\\\\|StringComparison\\.OrdinalIgnoreCase` in asserts",
+   "detect": "test cs/vb (path has `test`): `\"C:\\\\`, `(localdb)`, path or file name compared with `OrdinalIgnoreCase`",
    "fix": "Platform-neutral test fixtures",
    "sources": [
     "K"
@@ -7365,13 +7634,2975 @@
    "coverage": "PARTIAL",
    "patterns": [
     {
-     "regex": "\"[A-Za-z]:\\\\\\\\|StringComparison\\.OrdinalIgnoreCase",
+     "regex": "\\\"[A-Za-z]:\\\\\\\\|\\(localdb\\)|(?i:path|file|dir)\\w*\\W[^;]{0,60}StringComparison\\.OrdinalIgnoreCase",
      "files": [
       ".cs",
       ".vb"
      ],
      "kinds": [
       "test cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "only_path": "(^|/)[^/]*tests?[^/]*/|tests?\\.(cs|vb)$",
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-WEBSITE-PROJECT",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Web Site project (no project file, listed in the .sln by folder): not built by `dotnet` and not transformed by AWS Transform",
+   "detect": "sln: `Project(\"{E24C65DC-7377-472B-9ABA-BC803B73C61A}\")` (Web Site project type GUID; GUID is engineering knowledge)",
+   "fix": "Convert to a Web Application project, then to SDK style",
+   "sources": [
+    "S24",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Project\\(\\\"\\{E24C65DC-7377-472B-9ABA-BC803B73C61A\\}\\\"\\)",
+     "files": [
+      ".sln"
+     ],
+     "kinds": [
+      "sln"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-PRIVATE-FEED",
+   "area": "Build, project and packaging",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Private NuGet feed: the Linux build (container build, CodeBuild) needs network access and credentials, and the feed must carry net8.0+ builds",
+   "detect": "nuget.config: `<add key=... value=\"http(s)://` other than api.nuget.org",
+   "fix": "Mirror to AWS CodeArtifact or pass feed credentials as build secrets; confirm each private package has a modern .NET target",
+   "sources": [
+    "S34"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<add\\s+key=\\\"[^\\\"]*\\\"\\s+value=\\\"https?://(?!api\\.nuget\\.org/)",
+     "files": [
+      "NuGet.Config",
+      "nuget.config"
+     ],
+     "kinds": [
+      "nuget.config"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-STRONGNAME-KEYPAIR",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": "StrongNameKeyPair / AssemblyName.KeyPair throw PlatformNotSupportedException on .NET 6+ (all OSes)",
+   "detect": "cs/vb: `StrongNameKeyPair`, `.KeyPair =`",
+   "fix": "Remove runtime strong-name signing; sign at build time if still needed",
+   "sources": [
+    "S35"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bStrongNameKeyPair\\b|\\.KeyPair\\s*=",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-SINGLEFILE-NATIVE",
+   "area": "Build, project and packaging",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Single-file publish no longer probes the app folder for native libraries (.NET 10) unless DllImportSearchPath.AssemblyDirectory is set",
+   "detect": "proj: `<PublishSingleFile>true` (verify native P/Invoke or LibraryImport in the app)",
+   "fix": "Set `DllImportSearchPath.AssemblyDirectory` or a `NativeLibrary` resolver; test the published file on Linux",
+   "sources": [
+    "S36"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<PublishSingleFile>\\s*true",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      ".pubxml"
+     ],
+     "kinds": [
+      "proj",
+      "pubxml"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-NETCOREDEPS",
+   "area": "Build, project and packaging",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Native libraries in a `netcoredeps` folder are no longer found on Linux (.NET 8+)",
+   "detect": "proj/df/sh/cs: `netcoredeps`",
+   "fix": "`NativeLibrary.SetDllImportResolver`, `AssemblyLoadContext.ResolvingUnmanagedDll` or an RPATH",
+   "sources": [
+    "S37"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "netcoredeps",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "Dockerfile*",
+      "*.dockerfile",
+      ".sh",
+      ".cs"
+     ],
+     "kinds": [
+      "proj",
+      "df",
+      "sh",
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-BLD-PLATFORM-X86",
+   "area": "Build, project and packaging",
+   "level": "block",
+   "severity_note": "block",
+   "what": ".NET on Linux has no 32-bit x86 runtime (x64, Arm64 and Arm32 only). A project forced to `PlatformTarget x86` usually depends on a 32-bit native or COM component (Jet/ACE, old drivers) that has to be replaced first",
+   "detect": "proj/props/pubxml: `<PlatformTarget>x86</PlatformTarget>`",
+   "fix": "Find why the project is 32-bit, replace that dependency with a 64-bit Linux equivalent, then build AnyCPU or x64",
+   "sources": [
+    "S108"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<PlatformTarget>\\s*x86\\s*</PlatformTarget>",
+     "files": [
+      ".csproj",
+      ".vbproj",
+      ".props",
+      ".pubxml"
+     ],
+     "kinds": [
+      "proj",
+      "props",
+      "pubxml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-MYDOCUMENTS-XDG",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SpecialFolder.MyDocuments / Personal resolve to `$XDG_DOCUMENTS_DIR` or `~/Documents` on Linux (.NET 8+), which may not exist for the container user",
+   "detect": "cs/vb: `SpecialFolder.(MyDocuments|Personal)`",
+   "fix": "Use a configured path on a mounted volume",
+   "sources": [
+    "S38"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SpecialFolder\\.(MyDocuments|Personal)\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-DRIVEFORMAT",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "DriveInfo.DriveFormat returns kernel file-system names on Linux (ext4, xfs, overlay; .NET 10); checks for NTFS/FAT never match",
+   "detect": "cs/vb: `DriveFormat ==`, `\"NTFS\"`",
+   "fix": "Drop the check, or compare with Linux names",
+   "sources": [
+    "S39"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "DriveFormat\\s*(==|!=|\\.Equals)|\\\"(NTFS|FAT32|exFAT|ReFS)\\\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-FILE-REPLACE",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "File.Replace throws UnauthorizedAccessException / IOException on Unix in cases that differ from Windows (.NET 6+)",
+   "detect": "cs/vb: `File.Replace(`",
+   "fix": "Catch both exception types; test the call on Linux",
+   "sources": [
+    "S40"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bFile\\.Replace\\s*\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-SYMLINK-TIMESTAMP",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Setting file times on a symbolic link changes the link, not the target (.NET 7+); Linux deployments use symlinks (mounted secrets, config maps)",
+   "detect": "cs/vb: `Set(Creation|LastWrite|LastAccess)Time` near symlink code",
+   "fix": "Resolve the target first (`ResolveLinkTarget(true)`)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.Set(Creation|LastWrite|LastAccess)Time(Utc)?\\s*\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "CreateSymbolicLink|LinkTarget|ResolveLinkTarget|ReparsePoint",
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-URI-DOUBLE-SLASH",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "On Unix a string starting with `//` becomes a UNC Uri (.NET 5+), not an absolute file path",
+   "detect": "cs/vb: `new Uri(\"//`",
+   "fix": "Build file paths with Path APIs; use `file://` explicitly",
+   "sources": [
+    "S41"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "new\\s+Uri\\s*\\(\\s*@?\\\"//",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENV-EMPTY-VALUE",
+   "area": "Environment, identity and user",
+   "level": "info",
+   "severity_note": "info",
+   "what": "SetEnvironmentVariable(name, \"\") sets an empty value on .NET 9+ instead of deleting the variable",
+   "detect": "cs/vb: `SetEnvironmentVariable(x, \"\")`",
+   "fix": "Pass null to delete",
+   "sources": [
+    "S42"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "SetEnvironmentVariable\\s*\\([^,()]+,\\s*(\\\"\\\"|[Ss]tring\\.Empty)\\s*[,)]",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENV-DOTNET-VAR-PRECEDENCE",
+   "area": "Environment, identity and user",
+   "level": "info",
+   "severity_note": "info",
+   "what": "DOTNET_ runtime variables in the image or task definition override runtimeconfig.json and project settings (.NET 9+); a stale one silently wins",
+   "detect": "df/yml/task json: `DOTNET_gc*`, `DOTNET_TieredCompilation`, `DOTNET_System_*` set",
+   "fix": "Keep runtime settings in one place; remove stale variables",
+   "sources": [
+    "S43"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bDOTNET_(gc\\w*|GC\\w+|Tiered\\w+|TC_\\w+|ReadyToRun|System_\\w+|Thread_\\w+)\\b\\s*[:=\\\"]",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENV-USER-DOMAIN",
+   "area": "Environment, identity and user",
+   "level": "info",
+   "severity_note": "info",
+   "what": "`Environment.UserDomainName` has no Windows domain to return on Linux (expect the host name, which changes per task; verify) and `Environment.UserName` is the container user (`app`, or root): audit fields, `DOMAIN\\user` keys and per-user folders built from them change",
+   "detect": "cs/vb: `Environment.UserDomainName`",
+   "fix": "Take the user from the authenticated principal, and the service identity from configuration",
+   "sources": [
+    "S116",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bEnvironment\\.UserDomainName\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CUL-ICU-OVERRIDE-RENAMED",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "CLR_ICU_VERSION_OVERRIDE is ignored on .NET 10 (renamed DOTNET_ICU_VERSION_OVERRIDE)",
+   "detect": "any config/df/yml/cs: `CLR_ICU_VERSION_OVERRIDE`",
+   "fix": "Rename to `DOTNET_ICU_VERSION_OVERRIDE`",
+   "sources": [
+    "S44"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "CLR_ICU_VERSION_OVERRIDE",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json",
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      ".cs",
+      ".sh"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "cfg",
+      "cs",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CUL-IDN-ICU",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "IdnMapping and some culture formats differ under ICU (always on Linux): GetAscii lowercases labels; `de` currency symbol differs",
+   "detect": "cs/vb: `IdnMapping`",
+   "fix": "Compare outputs on Linux; use invariant culture or explicit formats",
+   "sources": [
+    "S45"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bIdnMapping\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CUL-WEBCONFIG-GLOBALIZATION",
+   "area": "Globalization and culture (ICU vs NLS)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`<globalization culture= uiCulture= requestEncoding=>` in web.config set the culture and encodings under System.Web; .NET ignores it. In a container the culture comes from the image environment (no LANG gives the invariant culture), so dates, numbers and currency format differently",
+   "detect": "cfg: `<globalization` with `culture`, `uiCulture`, `requestEncoding`, `responseEncoding` or `fileEncoding`",
+   "fix": "Add `UseRequestLocalization` with an explicit default and supported cultures, or set `CultureInfo.DefaultThreadCurrentCulture` at start-up; setting LANG in the image is only a backstop",
+   "sources": [
+    "S10",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<globalization\\b[^>]*(culture|uiCulture|requestEncoding|responseEncoding|fileEncoding)\\s*=",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-ENC-GETENCODING-ZERO",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Encoding.GetEncoding(0) is the ANSI code page on Windows but UTF-8 on Linux",
+   "detect": "cs/vb: `GetEncoding(0)`",
+   "fix": "Pass the explicit code page the data uses",
+   "sources": [
+    "S16"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetEncoding\\s*\\(\\s*0\\s*\\)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENC-ZIP-ENTRY-NAMES",
+   "area": "Encodings, line endings and text",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Zip entry names without the UTF-8 flag decode with the default code page (UTF-8 on Linux): names from Windows tools (OEM code page) come out garbled",
+   "detect": "cs/vb: `ZipFile.Open/ExtractToDirectory`, `new ZipArchive(` without an encoding",
+   "fix": "Pass `entryNameEncoding` for archives from Windows tools",
+   "sources": [
+    "S48"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ZipFile\\.(Open|OpenRead|ExtractToDirectory)\\s*\\(|new\\s+ZipArchive\\s*\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "[Ee]ncoding",
+   "tuned": true
+  },
+  {
+   "id": "LNX-ENC-ENVIRONMENT-NEWLINE",
+   "area": "Encodings, line endings and text",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`Environment.NewLine` is `\\n` on Linux. Text from browsers (textarea input is sent with CRLF), uploads and partner files split on it keeps a `\\r` at each line end; text built with it for Windows consumers (CSV for Excel, fixed-width files) loses its CR",
+   "detect": "cs/vb: `Split(Environment.NewLine`, `Split(new[] { Environment.NewLine }`, `Split(text, Environment.NewLine)`, `Replace(Environment.NewLine`, `IndexOf(Environment.NewLine`",
+   "fix": "Split on any line break (`ReplaceLineEndings()` on .NET 6+, `StringReader.ReadLine`, or `new[] {\"\\r\\n\", \"\\n\"}`), and write an explicit `\\r\\n` where the consumer needs CRLF",
+   "sources": [
+    "S104"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Split\\(\\s*(new\\s*(string)?\\s*\\[\\]\\s*\\{\\s*)?Environment\\.NewLine|Split\\(\\s*\\w+\\s*,\\s*Environment\\.NewLine|\\.Replace\\(\\s*Environment\\.NewLine|IndexOf\\(\\s*Environment\\.NewLine",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CRY-OPENSSL-OVERRIDE-RENAMED",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "CLR_OPENSSL_VERSION_OVERRIDE is ignored on .NET 10 (renamed DOTNET_OPENSSL_VERSION_OVERRIDE)",
+   "detect": "any config/df/yml: `CLR_OPENSSL_VERSION_OVERRIDE`",
+   "fix": "Rename to `DOTNET_OPENSSL_VERSION_OVERRIDE`",
+   "sources": [
+    "S49"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "CLR_OPENSSL_VERSION_OVERRIDE",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json",
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json",
+      ".cs",
+      ".sh"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "cfg",
+      "cs",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-OPENSSL-111",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": ".NET 10 fails to start on Linux with OpenSSL older than 1.1.1 (custom or old base images)",
+   "detect": "df: `FROM` an old base (centos:7, amazonlinux:2, debian:9, ubuntu:16.04); for any other custom base run `openssl version` in the image",
+   "fix": "Base on a current .NET image or a distro with OpenSSL 1.1.1+ (3.x preferred)",
+   "sources": [
+    "S50"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+(--\\S+\\s+)*(?!mcr\\.microsoft\\.com/dotnet/)\\S*(centos:[67]\\b|amazonlinux:(1|2)\\b|debian:(8|9|jessie|stretch)\\b|ubuntu:(14|16)\\.04)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-RSA-ENCRYPTVALUE",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "RSA.EncryptValue / DecryptValue always throw NotSupportedException (.NET 8+)",
+   "detect": "cs/vb: `.EncryptValue(` / `.DecryptValue(`",
+   "fix": "`Encrypt` / `Decrypt` with explicit padding",
+   "sources": [
+    "S51"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(EncryptValue|DecryptValue)\\s*\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-TRUSTED-CERT-PEM",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "PEM files with `BEGIN TRUSTED CERTIFICATE` are not read on Linux; only `BEGIN CERTIFICATE` [K: per cross-platform cryptography page, not re-read]",
+   "detect": "pem/crt/cer: `BEGIN TRUSTED CERTIFICATE`",
+   "fix": "Convert to plain `BEGIN CERTIFICATE` PEM",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "BEGIN TRUSTED CERTIFICATE",
+     "files": [
+      ".pem",
+      ".crt",
+      ".cer"
+     ],
+     "kinds": [
+      "pem"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-PROC-SIGTERM-PROCESSEXIT",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "No default SIGTERM handler on Unix (.NET 10): ProcessExit / Unloading cleanup does not run when ECS stops the task, unless a host or PosixSignalRegistration handles it",
+   "detect": "cs/vb: `ProcessExit +=` / `.Unloading +=` in a file without a host or `PosixSignalRegistration`",
+   "fix": "Use the generic host (`UseConsoleLifetime`) or `PosixSignalRegistration.Create(PosixSignal.SIGTERM, ...)`",
+   "sources": [
+    "S52"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ProcessExit\\s*\\+=|\\.Unloading\\s*\\+=",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "PosixSignalRegistration|UseConsoleLifetime|IHostApplicationLifetime|Host\\.Create|WebApplication\\.Create",
+   "tuned": true
+  },
+  {
+   "id": "LNX-PROC-UNSUPPORTED-MEMBERS",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Process members tied to Windows windows or logon fail on Linux: MainWindowHandle/Title, CloseMainWindow, Start with SecureString [K: per unsupported-APIs page, not re-read]",
+   "detect": "cs/vb: `.MainWindowHandle`, `.MainWindowTitle`, `CloseMainWindow(`, `Process.Start(...SecureString`",
+   "fix": "Remove, or guard with `OperatingSystem.IsWindows()`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.MainWindow(Handle|Title)\\b|\\.CloseMainWindow\\s*\\(|Process\\.Start\\s*\\([^)]*SecureString",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CON-UNSUPPORTED-MEMBERS",
+   "area": "Processes, shell, console and signals",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Console members throw PlatformNotSupportedException on Linux: Beep with arguments, CapsLock, NumberLock, MoveBufferArea, SetWindowPosition/Size, Title/CursorVisible/Buffer*/Window* setters [K: per unsupported-APIs page, not re-read]",
+   "detect": "cs/vb: `Console.CapsLock`, `Console.Title =`, `Console.SetWindowSize(`",
+   "fix": "Remove from container services or guard with `OperatingSystem.IsWindows()`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bConsole\\.(Beep\\s*\\(\\s*\\d|CapsLock|NumberLock|MoveBufferArea|SetWindowPosition|SetWindowSize|SetBufferSize)|\\bConsole\\.(Title|CursorVisible|CursorSize|BufferWidth|BufferHeight|WindowLeft|WindowTop|WindowWidth|WindowHeight)\\s*=(?!=)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-PROC-EXIT-CODE-RANGE",
+   "area": "Processes, shell, console and signals",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Linux keeps only the low 8 bits of a process exit code: -1 becomes 255 and 256 becomes 0 (success), so schedulers, scripts and ECS see a different result than on Windows",
+   "detect": "cs/vb: `Environment.Exit(` or `Environment.ExitCode =` with a negative value or one above 255",
+   "fix": "Use exit codes 0-255 (0 success, small positive numbers for each failure) and update the callers that test them",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Environment\\.Exit\\(\\s*(-\\d+|25[6-9]|2[6-9]\\d|[3-9]\\d\\d|\\d{4,})\\s*\\)|Environment\\.ExitCode\\s*=\\s*(-\\d+|25[6-9]|2[6-9]\\d|[3-9]\\d\\d|\\d{4,})\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-IPC-PIPE-UNSUPPORTED-MEMBERS",
+   "area": "Interprocess communication and named kernel objects",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Named pipe members that throw on Linux: GetImpersonationUserName, WaitForPipeDrain, NumberOfServerInstances, message transmission mode [K: per unsupported-APIs page, not re-read]",
+   "detect": "cs/vb: `GetImpersonationUserName`, `WaitForPipeDrain`, `NumberOfServerInstances`, `PipeTransmissionMode.Message`",
+   "fix": "Byte-mode pipes or Unix domain sockets / HTTP; no impersonation",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "GetImpersonationUserName|WaitForPipeDrain|NumberOfServerInstances|PipeTransmissionMode\\.Message",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-API-PINVOKE-AW-SUFFIX",
+   "area": "Windows-only APIs (inventory)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "On non-Windows the runtime does not try `A`/`W` suffixes when resolving P/Invoke names (.NET 5+): an extern relying on it is not found",
+   "detect": "cs: `[DllImport]` without `EntryPoint` on a function whose export ends in A/W",
+   "fix": "Set `EntryPoint` to the exact export name of the Linux library",
+   "sources": [
+    "S53"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "DllImport\\s*\\((?![^)]*EntryPoint)",
+     "files": null,
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": false,
+   "tuned": true
+  },
+  {
+   "id": "LNX-API-ZLIB-PINVOKE",
+   "area": "Windows-only APIs (inventory)",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Direct P/Invoke to zlib breaks on .NET 9+ images (zlib no longer installed; the runtime embeds zlib-ng)",
+   "detect": "cs/vb: `DllImport(\"libz` / `LibraryImport(\"zlib`",
+   "fix": "Use System.IO.Compression, or install zlib in the image",
+   "sources": [
+    "S54"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(DllImport|LibraryImport)\\s*\\(\\s*\\\"(libz|zlib)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-API-DRAWING-USING",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Bare `using System.Drawing;` / `Imports System.Drawing`: the types used unqualified may be GDI+ types (Bitmap, Graphics, Font), which are Windows-only from .NET 6",
+   "detect": "cs/vb: `^\\s*(using|Imports)\\s+System\\.Drawing\\s*;?\\s*$`",
+   "fix": "Check the types the file uses: Color, Point, Size and Rectangle are cross-platform (System.Drawing.Primitives); Bitmap, Graphics, Image, Font, Brush and Pen need SkiaSharp or ImageSharp",
+   "sources": [
+    "S7",
+    "S62"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*(using|Imports)\\s+System\\.Drawing\\s*;?\\s*$",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "\\b(Bitmap|Graphics|Image|Font|Brush|Pen|Icon|Metafile)\\b"
+  },
+  {
+   "id": "LNX-API-OFFICE-INTEROP",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Office interop (`Microsoft.Office.Interop.Excel/Word/Outlook`) automates installed Office through COM: it needs Windows and Office on the server (which Microsoft does not support for server-side use even on Windows)",
+   "detect": "cs/vb/proj/cfg: `Microsoft.Office.Interop.`, `Microsoft.Office.Core`",
+   "fix": "Use the Open XML SDK, ClosedXML, NPOI or a document-rendering service; for Outlook, use SMTP / Amazon SES or the mail server's API",
+   "sources": [
+    "S97"
+   ],
+   "already_in": "COVERED: modernization-assessment INT-OFFICE-INTEROP",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Office\\.Interop\\.|\\bMicrosoft\\.Office\\.Core\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-REPORTING-WINDOWS",
+   "area": "Windows-only APIs (inventory)",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Report viewers that need .NET Framework or Windows: the ReportViewer WebForms/WinForms controls (RDLC, SSRS) and Crystal Reports (`CrystalDecisions.*`) have no Linux runtime",
+   "detect": "cs/vb/proj/markup/cfg: `Microsoft.Reporting.WebForms|WinForms`, `Microsoft.ReportViewer.`, `ReportingServices.ReportViewerControl`, `CrystalDecisions.`",
+   "fix": "RDLC: a community .NET port of the report engine (test fonts and each export format in the Linux image) or render on the report server through its API; Crystal Reports: rebuild the reports with a .NET library or a reporting service",
+   "sources": [
+    "S98",
+    "K"
+   ],
+   "already_in": "PARTIAL: modernization-assessment WEB-REPORTVIEWER",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Reporting\\.(WebForms|WinForms)|Microsoft\\.ReportViewer\\.|ReportingServices\\.ReportViewerControl|CrystalDecisions\\.",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".cshtml",
+      ".vbhtml",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "markup",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-VB-WINDOWS-INTERACTION",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Visual Basic helpers that are Windows-only: `CreateObject` / `GetObject` (COM), `Interaction.Shell` / `AppActivate`, `My.Computer.Registry`, `My.Computer.Clipboard`, `My.Computer.Audio`, `My.Computer.Keyboard/Mouse/Screen`",
+   "detect": "vb/cs: `CreateObject(\"`, `GetObject(\"`, `Interaction.Shell|AppActivate|CreateObject|GetObject`, `My.Computer.(Registry|Audio|Clipboard|Keyboard|Mouse|Screen)`",
+   "fix": "Replace COM objects with managed libraries, `Shell` with `Process.Start` of a Linux command, `My.Computer.Registry` with configuration; desktop members have no server equivalent",
+   "sources": [
+    "S111",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\b(CreateObject|GetObject)\\s*\\(\\s*\"|\\bInteraction\\.(Shell|AppActivate|CreateObject|GetObject)\\b|\\bMy\\.Computer\\.(Registry|Audio|Clipboard|Keyboard|Mouse|Screen)\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-API-BUNDLED-WINDOWS-TOOL",
+   "area": "Windows-only APIs (inventory)",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Libraries that drive a Windows executable or DLL shipped with the app: Rotativa / wkhtmltopdf.exe, DinkToPdf with libwkhtmltox.dll, Ghostscript (gsdll64.dll, gswin64c.exe), PdfiumViewer (pdfium.dll). They build, then fail when the PDF or image is made",
+   "detect": "cs/vb/proj/cfg/json: `wkhtmltopdf.exe`, `libwkhtmltox.dll`, `gsdll32|64.dll`, `gswin32|64c.exe`, `Rotativa`, `PdfiumViewer`, `pdfium.dll`",
+   "fix": "Install the Linux build of the tool in the image (package name per distro, plus fonts) or move to a managed library or headless Chromium (wkhtmltopdf is no longer maintained); test the output in the container",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(?i)wkhtmlto(pdf|image)\\.exe|libwkhtmltox\\.dll|gsdll(32|64)\\.dll|gswin(32|64)c?\\.exe|\\bRotativa\\b|PdfiumViewer|pdfium\\.dll",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".config",
+      ".json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg",
+      "json"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-PING-PAYLOAD",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Ping with a custom payload throws PlatformNotSupportedException on Linux for non-root processes (.NET 7+); containers run as non-root",
+   "detect": "cs: `.Send/SendPingAsync(host, timeout, buffer...)` near `Ping`",
+   "fix": "Use the overload without a buffer",
+   "sources": [
+    "S55"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(Send|SendAsync|SendPingAsync)\\s*\\([^()]*,[^()]*,[^()]*\\)",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "\\bnew\\s+Ping\\s*\\(|\\bPing\\s+\\w+\\s*=",
+   "tuned": true
+  },
+  {
+   "id": "LNX-NET-HTTPCLIENT-NO-POOLED-LIFETIME",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Long-lived HttpClient (static or singleton) without PooledConnectionLifetime keeps connections open forever and never sees DNS changes (RDS failover, ALB and service-discovery IP changes)",
+   "detect": "cs/vb: `static readonly HttpClient` / `new HttpClient(` in a file with no `PooledConnectionLifetime` and no `IHttpClientFactory`/`AddHttpClient`",
+   "fix": "Use IHttpClientFactory (AddHttpClient), or a SocketsHttpHandler with PooledConnectionLifetime (for example 2-5 minutes)",
+   "sources": [
+    "S77"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "static\\s+(readonly\\s+)?HttpClient\\b|Shared\\s+(ReadOnly\\s+)?\\w+\\s+As\\s+(New\\s+)?HttpClient\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "PooledConnectionLifetime|IHttpClientFactory|AddHttpClient"
+  },
+  {
+   "id": "LNX-NET-ECS-BRIDGE-IMDS",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ECS task in bridge network mode on EC2: the container reaches instance metadata (IMDSv2) through an extra hop, so SDK credential lookups time out unless the hop limit is 2; awsvpc mode avoids it and gives the task its own role and security group",
+   "detect": "task json/yml: `\"networkMode\": \"bridge\"` or `network_mode: bridge`",
+   "fix": "Use awsvpc (required on Fargate) with a task role; on EC2 bridge mode set the IMDS hop limit to 2 and still use a task role, never the instance role",
+   "sources": [
+    "S78",
+    "S79"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\"networkMode\"\\s*:\\s*\"bridge\"|network_?mode:\\s*\"?bridge",
+     "files": [
+      "*task*.json",
+      "*taskdef*.json",
+      ".yaml",
+      ".yml"
+     ],
+     "kinds": [
+      "task json",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-WCF-SERVICE-HOST",
+   "area": "Networking",
+   "level": "block",
+   "severity_note": "block",
+   "what": "WCF services hosted by IIS/WAS (`.svc` files, `<serviceActivations>`, `<service name=...>`, `ServiceHost`, `ServiceHostFactory`): .NET has no WCF server. CoreWCF runs services on ASP.NET Core (Kestrel), but has no `.svc` or WAS activation, so each service, address, binding and behaviour is registered in code again",
+   "detect": "svc: `<%@ ServiceHost`; cs/vb/cfg: `new ServiceHost(`, `ServiceHostFactory`, `<serviceActivations`, `<service name=`",
+   "fix": "Port to CoreWCF when callers need the SOAP contract (replay recorded requests to prove it), otherwise re-expose the operations as REST or gRPC; NetTcp and named-pipe bindings are a separate check",
+   "sources": [
+    "S96"
+   ],
+   "already_in": "COVERED: modernization-assessment WCF-SERVICE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<%@\\s*ServiceHost\\b",
+     "files": [
+      ".svc"
+     ],
+     "kinds": [
+      "svc"
+     ]
+    },
+    {
+     "regex": "\\bnew\\s+ServiceHost\\(|:\\s*ServiceHostFactory\\b|<serviceActivations\\b|<service\\s+(name|behaviorConfiguration)\\s*=",
+     "files": [
+      ".cs",
+      ".vb",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-NET-NETWORKINFO-UNSUPPORTED",
+   "area": "Networking",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Some network interface properties throw PlatformNotSupportedException on Linux (`IsDhcpEnabled`, `IsAutomaticPrivateAddressingActive`, `IsAutomaticPrivateAddressingEnabled`); in a container the interfaces are the task's, not the host's",
+   "detect": "cs/vb: `.IsDhcpEnabled`, `.IsAutomaticPrivateAddressingActive`, `.IsAutomaticPrivateAddressingEnabled`",
+   "fix": "Remove the calls or guard them with `OperatingSystem.IsWindows()`; get network facts from configuration or the ECS task metadata endpoint",
+   "sources": [
+    "S109"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\.(IsDhcpEnabled|IsAutomaticPrivateAddressingActive|IsAutomaticPrivateAddressingEnabled)\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-SPN-PORT",
+   "area": "Authentication and identity",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Negotiate/Kerberos SPNs omit non-default ports (.NET 6+): an SPN registered with a port fails from the Linux client",
+   "detect": "cs/cfg: `HTTP/host:port` SPN strings",
+   "fix": "Register the SPN without the port, or set `System.Net.Http.UsePortInSpn`",
+   "sources": [
+    "S56"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\\"HTTP/[^\\\"\\s]+:\\d+",
+     "files": [
+      ".cs",
+      ".vb",
+      "*.runtimeconfig.json",
+      ".config",
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-AUTH-LDAP-NATIVE-LIB",
+   "area": "Authentication and identity",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "System.DirectoryServices.Protocols on Linux calls the native OpenLDAP library: the image needs libldap installed, or LdapConnection fails at run time with a DllNotFoundException (verify the exact package name per distro)",
+   "detect": "cs/vb/proj: `System\\.DirectoryServices\\.Protocols|LdapConnection`",
+   "fix": "Install the OpenLDAP client library in the image (Debian/Ubuntu: `libldap` package; Alpine: `libldap`), then test a bind from the container; verify the package name for the base image",
+   "sources": [
+    "S81",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "System\\.DirectoryServices\\.Protocols|\\bLdapConnection\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-AUTH-OWIN-ADAL",
+   "area": "Authentication and identity",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Sign-in built on OWIN/Katana middleware (`Microsoft.Owin.Security.*`, `UseOpenIdConnectAuthentication`, `UseCookieAuthentication`) runs on the System.Web host, and ADAL (`Microsoft.IdentityModel.Clients.ActiveDirectory`) is retired: neither carries over, so sign-in breaks until it is rebuilt",
+   "detect": "cs/vb/proj/cfg: `Microsoft.Owin.Security.`, `Microsoft.IdentityModel.Clients.ActiveDirectory`, `UseOpenIdConnectAuthentication`, `UseWindowsAzureActiveDirectoryBearerAuthentication`, `UseCookieAuthentication(`",
+   "fix": "Use ASP.NET Core OpenID Connect / JWT bearer authentication (or Microsoft.Identity.Web) and MSAL.NET for tokens; register the new redirect URIs (the ALB or CloudFront host name, https through forwarded headers)",
+   "sources": [
+    "S102",
+    "K"
+   ],
+   "already_in": "COVERED: modernization-assessment AUTH-EXTERNAL-IDP, WEB-OWIN",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Owin\\.Security\\.|Microsoft\\.IdentityModel\\.Clients\\.ActiveDirectory|UseOpenIdConnectAuthentication|UseWindowsAzureActiveDirectoryBearerAuthentication|UseCookieAuthentication\\(",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-CTR-ALPINE-MISSING-LIBS",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": ".NET 8+ Alpine images no longer ship ca-certificates (bundle only), libintl or Kerberos libraries; Debian/Ubuntu images dropped krb5 too",
+   "detect": "df: `FROM ...alpine` with no `apk add`",
+   "fix": "`apk add` (or `apt-get install`) the packages the app needs: krb5-libs, icu-libs, tzdata, ca-certificates",
+   "sources": [
+    "S57",
+    "S58"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+\\S*alpine",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "apk\\s+add",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-FLOATING-OS-TAG",
+   "area": "Containers and images",
+   "level": "info",
+   "severity_note": "info",
+   "what": "A .NET image tag with no OS suffix floats across distros (10.0 = Ubuntu 24.04; no Debian images for .NET 10): native packages and paths can change on rebuild",
+   "detect": "df: `FROM mcr.microsoft.com/dotnet/<image>:<version>` with no `-noble`/`-alpine`/... suffix",
+   "fix": "Pin an OS-specific tag (`10.0-noble`) or a digest",
+   "sources": [
+    "S59"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+(--platform=\\S+\\s+)?(mcr\\.microsoft\\.com/)?dotnet/(sdk|aspnet|runtime|runtime-deps)(:\\d+(\\.\\d+)*)?(\\s|$)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-APP-USER-EXISTS",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": ".NET 8+ Linux images already have a non-root user `app` (UID 1654): creating another `app` user fails the build",
+   "detect": "df: `useradd/adduser/groupadd ... app`",
+   "fix": "Drop the step and use `USER $APP_UID`",
+   "sources": [
+    "S60",
+    "S27"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\b(adduser|useradd|addgroup|groupadd)\\b[^\\n]*\\bapp\\b",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-HOST-FORWARDEDHEADERS-TRUSTALL",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASPNETCORE_FORWARDEDHEADERS_ENABLED=true trusts forwarded headers from any caller (KnownProxies/KnownNetworks cleared): safe only when the task is reachable through the ALB alone",
+   "detect": "df/yml/task json/appsettings: `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`",
+   "fix": "Prefer `ForwardedHeadersOptions` with `KnownNetworks` set to the VPC; otherwise keep the task in private subnets behind the ALB and waive",
+   "sources": [
+    "S61"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ASPNETCORE_FORWARDEDHEADERS_ENABLED\\W{1,4}true",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json",
+      "appsettings*.json",
+      "launchSettings.json"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-DEBIAN-TAG-NET10",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": ".NET 10 ships no Debian images: a `10.0-bookworm` / `-trixie` tag cannot be pulled",
+   "detect": "df: `FROM mcr.microsoft.com/dotnet/...:10.0-bookworm|trixie|debian`",
+   "fix": "Use `10.0` or `10.0-noble` (Ubuntu 24.04), or maintain a custom image",
+   "sources": [
+    "S59"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*FROM\\s+(--\\S+\\s+)*\\S*mcr\\.microsoft\\.com/dotnet/\\S+:10\\.0\\S*-(bookworm|trixie|debian)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-CHISELED-PKG-INSTALL",
+   "area": "Containers and images",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Chiseled and distroless images have no shell or package manager: `RUN apt-get install` / `apk add` after such a `FROM` fails (.NET 10 adds packages only through chisel slices)",
+   "detect": "df: `RUN apt-get install|apk add` within 15 lines of a `chiseled` / `distroless` FROM",
+   "fix": "Install in the build stage and copy, use an `-extra` image, or a full base image",
+   "sources": [
+    "S67"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*RUN\\s+.*\\b(apt(-get)?\\s+install|apk\\s+add)\\b",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "(?im)^\\s*FROM\\s+\\S*(chiseled|distroless)",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-HEALTHCHECK-NO-SHELL",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "A Dockerfile HEALTHCHECK in a chiseled or distroless image cannot run: no shell and no curl",
+   "detect": "df: `HEALTHCHECK` near a `chiseled` / `distroless` FROM",
+   "fix": "Health check from the ALB target group / ECS, or an exec-form check built into the app",
+   "sources": [
+    "S67",
+    "S74"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "^\\s*HEALTHCHECK\\s+(?!NONE)",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile"
+     ],
+     "kinds": [
+      "df"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "(?im)^\\s*FROM\\s+\\S*(chiseled|distroless)",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-LIBINTL-PINVOKE",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "libintl was removed from .NET 8+ Alpine images: a P/Invoke to it fails with `Error loading shared library libintl.so.8`",
+   "detect": "cs: `DllImport(\"libintl`",
+   "fix": "`RUN apk add --no-cache libintl` in the Dockerfile",
+   "sources": [
+    "S58"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(DllImport|LibraryImport)\\s*\\(\\s*\\\"libintl",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-CONTAINERUSER-ROOT",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SDK container publish forced to run as root (`ContainerUser` root/0); a named user is not checked against the image",
+   "detect": "proj/yml/sh: `<ContainerUser>root</ContainerUser>` or `ContainerUser=root`",
+   "fix": "Remove the override (default `app`, UID 1654)",
+   "sources": [
+    "S66"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<ContainerUser>\\s*(root|0)\\s*</ContainerUser>|ContainerUser\\s*=\\s*(root|0)\\b",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      ".sh",
+      ".ps1"
+     ],
+     "kinds": [
+      "proj",
+      "yml",
+      "sh",
+      "ps1"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-MUSL-RID",
+   "area": "Containers and images",
+   "level": "info",
+   "severity_note": "info",
+   "what": "A `linux-musl-*` RID makes the SDK pick Alpine base images, which lack ICU and tzdata unless an `-extra` variant is used",
+   "detect": "proj/yml/sh/df: `linux-musl-x64|arm64`",
+   "fix": "Confirm the base variant and the globalization mode",
+   "sources": [
+    "S66",
+    "S67"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "linux-musl-(x64|arm64)",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      "Dockerfile*",
+      "*.dockerfile",
+      ".sh",
+      ".ps1"
+     ],
+     "kinds": [
+      "proj",
+      "yml",
+      "df",
+      "sh"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-READONLY-ROOTFS",
+   "area": "Containers and images",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Read-only root file system: the runtime and app need a writable /tmp (before .NET 8 startup could fail with HRESULT 0x8007000E)",
+   "detect": "task json / k8s yaml: `readonlyRootFilesystem: true`",
+   "fix": "Mount a writable /tmp volume; older runtimes also `DOTNET_EnableDiagnostics=0`",
+   "sources": [
+    "S68"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\\"?read[Oo]nlyRootFilesystem\\\"?\\s*:\\s*true",
+     "files": [
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "yml",
+      "task json"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CTR-INIT-PROCESS",
+   "area": "Containers and images",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Task definition without `initProcessEnabled`: dotnet runs as PID 1, which does not reap zombie child processes and gets no default signal handling; child processes started by the app (Process.Start, shell scripts) can pile up",
+   "detect": "task json: file with `containerDefinitions` and no `initProcessEnabled`",
+   "fix": "Set `linuxParameters.initProcessEnabled: true` in the task definition (works on Fargate), or use `docker run --init` / tini; needed most when the app starts child processes",
+   "sources": [
+    "S79"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "initProcessEnabled",
+     "files": [
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "task json"
+     ]
+    }
+   ],
+   "automated": true,
+   "check": "file_lacks",
+   "unless_in_file": "\\A(?![\\s\\S]*containerDefinitions)"
+  },
+  {
+   "id": "LNX-CI-PUBLISHCONTAINER-NEEDS-DAEMON",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`dotnet publish /t:PublishContainer` without a registry or archive output pushes to a local Docker daemon; CI runners without one fail",
+   "detect": "ci/sh: `PublishContainer` in a file with no `ContainerRegistry` / `ContainerArchiveOutputPath`",
+   "fix": "Set `ContainerRegistry` (ECR) or `ContainerArchiveOutputPath`",
+   "sources": [
+    "S69"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "PublishContainer",
+     "files": [
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      ".sh",
+      ".ps1"
+     ],
+     "kinds": [
+      "yml",
+      "sh",
+      "ps1"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "ContainerRegistry|ContainerArchiveOutputPath|LocalRegistry",
+   "tuned": true
+  },
+  {
+   "id": "LNX-CI-SDK-CONTAINER-ENV-RENAMED",
+   "area": "CI/CD and tests",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "SDK container variables are `DOTNET_CONTAINER_*` since SDK 8.0.400; old `SDK_CONTAINER_*` names may be ignored",
+   "detect": "ci/sh/df: `SDK_CONTAINER_REGISTRY_UNAME|PWORD|INSECURE_REGISTRIES`",
+   "fix": "Rename to `DOTNET_CONTAINER_*`",
+   "sources": [
+    "S70"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bSDK_CONTAINER_(REGISTRY_UNAME|REGISTRY_PWORD|INSECURE_REGISTRIES)\\b",
+     "files": [
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      "Dockerfile*",
+      "*.dockerfile",
+      ".sh",
+      ".ps1"
+     ],
+     "kinds": [
+      "yml",
+      "df",
+      "sh",
+      "ps1"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-DEVCERTS-IN-IMAGE",
+   "area": "Cryptography and certificates",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "`dotnet dev-certs https` in an image or pipeline: a localhost development certificate that must not be used in ECS/EKS",
+   "detect": "df/ci/sh: `dotnet dev-certs https`",
+   "fix": "Terminate TLS at the ALB, or mount a real certificate at run time",
+   "sources": [
+    "S71"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "dotnet\\s+dev-certs\\s+https",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml",
+      ".sh",
+      ".ps1"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "sh",
+      "ps1"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-CRY-RIJNDAEL-BLOCKSIZE",
+   "area": "Cryptography and certificates",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Rijndael / RijndaelManaged with a 192- or 256-bit block throws on .NET (only the 128-bit block, which is AES): data encrypted with Rijndael-256 on .NET Framework cannot be decrypted",
+   "detect": "cs/vb: `BlockSize = 192|256` near `Rijndael`",
+   "fix": "Use `Aes` for new data; for existing Rijndael-256 data, decrypt once with a library that implements it and re-encrypt with AES-GCM",
+   "sources": [
+    "S110"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bBlockSize\\s*=\\s*(192|256)\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "Rijndael"
+  },
+  {
+   "id": "LNX-HOST-WEBHOST-OLD-PORTS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "WebHost.CreateDefaultBuilder apps ignore ASPNETCORE_HTTP_PORTS: without ASPNETCORE_URLS they listen on localhost:5000, unreachable from outside the container",
+   "detect": "cs: `WebHost.CreateDefaultBuilder(` (check the image or task sets `ASPNETCORE_URLS=http://+:8080`)",
+   "fix": "Set `ASPNETCORE_URLS=http://+:8080`, or move to `WebApplication.CreateBuilder`",
+   "sources": [
+    "S8"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bWebHost\\.CreateDefaultBuilder\\s*\\(",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "UseUrls\\(|ASPNETCORE_URLS",
+   "tuned": true
+  },
+  {
+   "id": "LNX-HOST-URLS-AND-HTTP-PORTS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASPNETCORE_URLS overrides ASPNETCORE_HTTP_PORTS / HTTPS_PORTS: setting both gives a port other than the one intended",
+   "detect": "df/yml/task json: `ASPNETCORE_URLS` and `ASPNETCORE_HTTP_PORTS` in the same file",
+   "fix": "Keep one of them",
+   "sources": [
+    "S27",
+    "S8"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ASPNETCORE_URLS",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "ASPNETCORE_HTTPS?_PORTS",
+   "tuned": true
+  },
+  {
+   "id": "LNX-HOST-KESTREL-LOOPBACK",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Kestrel bound to localhost / 127.0.0.1 / [::1]: inside a container only the container itself can reach it, so the load balancer health check and all traffic fail",
+   "detect": "df/yml/task json/cfg: `ASPNETCORE_URLS` or Kestrel `Url`/`urls` on localhost; cs/vb: `UseUrls(\"http://localhost`, `ListenLocalhost(`, `Listen(IPAddress.Loopback`",
+   "fix": "Bind to all interfaces (`http://+:8080`, `ListenAnyIP(8080)`) or set ASPNETCORE_HTTP_PORTS; keep localhost only for local debug profiles",
+   "sources": [
+    "S76",
+    "S8"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "ASPNETCORE_URLS\"?\\s*[=:,]?\\s*(\"value\"\\s*:\\s*)?\"?https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])",
+     "files": [
+      "*.dockerfile",
+      "*task*.json",
+      "*taskdef*.json",
+      ".yaml",
+      ".yml",
+      "Dockerfile*",
+      "Jenkinsfile",
+      "azure-pipelines*.yml",
+      "buildspec*.yml"
+     ],
+     "kinds": [
+      "df",
+      "yml",
+      "task json"
+     ]
+    },
+    {
+     "regex": "\"(Url|urls)\"\\s*:\\s*\"https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])",
+     "files": [
+      "appsettings*.json"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "UseUrls\\(\\s*\"https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])|ListenLocalhost\\(|Listen\\(\\s*IPAddress\\.(Loopback|IPv6Loopback)",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "Development|IsDevelopment",
+   "only_path": "^(?!.*appsettings\\.development\\.json$)"
+  },
+  {
+   "id": "LNX-HOST-IIS-URL-AUTHORIZATION",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "web.config `<authorization>` allow/deny rules (users, roles, `<location path>`) are enforced by IIS and System.Web only: under Kestrel the protected pages and folders are reachable without the check",
+   "detect": "cfg: `<deny users=` / `<deny roles=` in web.config (placeholder lines with `[...]` skipped)",
+   "fix": "Re-create each rule as an authorization policy ([Authorize], `RequireAuthorization()` on endpoints, or a fallback policy) and test anonymous access to every path the old rules protected",
+   "sources": [
+    "S86",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<deny\\s+(users|roles|verbs)\\s*=\\s*\"[^\"\\[]",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-CUSTOM-HEADERS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Response headers set by IIS (`<customHeaders>`: HSTS, X-Frame-Options, Content-Security-Policy, X-Content-Type-Options) and the removal of `Server` / `X-Powered-By` are lost: Kestrel sends none of them and adds `Server: Kestrel`",
+   "detect": "cfg: `<customHeaders>`, `removeServerHeader=`, `<remove name=\"X-Powered-By\"`",
+   "fix": "Add the headers in middleware (or as CloudFront response headers), set `KestrelServerOptions.AddServerHeader = false`, and use `UseHsts()` for HTTPS sites",
+   "sources": [
+    "S87",
+    "S84"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<customHeaders\\b|removeServerHeader\\s*=|<remove\\s+name=\"X-Powered-By\"",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-IP-SECURITY",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS IP and domain restrictions (`<ipSecurity>`, `<dynamicIpSecurity>`) are not applied by Kestrel: admin pages or APIs limited to office or partner addresses become open",
+   "detect": "cfg: `<ipSecurity` / `<dynamicIpSecurity`",
+   "fix": "Move the allow-list to security groups, an ALB listener rule or AWS WAF IP sets; if it must stay in the app, check the client IP after the forwarded headers middleware",
+   "sources": [
+    "S88",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<(ipSecurity|dynamicIpSecurity)\\b",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-REQUEST-FILTERING",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS request filtering (`<hiddenSegments>`, `<fileExtensions>`, `<verbs>`, `<denyUrlSequences>`, `allowDoubleEscaping`) is not applied: requests IIS rejected now reach the app",
+   "detect": "cfg: `<hiddenSegments`, `<fileExtensions`, `<verbs`, `<denyUrlSequences`, `allowDoubleEscaping=`",
+   "fix": "Kestrel serves only wwwroot and mapped endpoints, so some filters no longer matter; re-create the verb and extension denies in routing or AWS WAF rules and test them",
+   "sources": [
+    "S89",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<(hiddenSegments|fileExtensions|denyUrlSequences|verbs)\\b|allowDoubleEscaping\\s*=",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-REQUEST-LIMITS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Upload and URL limits set for IIS (`maxAllowedContentLength`, `maxRequestLength`, `maxQueryString`, `maxUrl`) are not read by Kestrel. Its own defaults apply: about 28.6 MB request body, 128 MB multipart form, 8 KB request line and 32 KB of headers. Larger uploads fail with 413 and long URLs with 414",
+   "detect": "cfg: `maxAllowedContentLength=`, `maxRequestLength=`, `maxQueryString=`, `maxUrl=`",
+   "fix": "Set `KestrelServerOptions.Limits` (`MaxRequestBodySize`, `MaxRequestLineSize`, `MaxRequestHeadersTotalSize`) or `[RequestSizeLimit]` per endpoint, and `FormOptions.MultipartBodyLengthLimit`; test the largest real upload through the ALB",
+   "sources": [
+    "S84",
+    "S89"
+   ],
+   "already_in": "PARTIAL: modernization-assessment IIS-HTTPRUNTIME",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "maxAllowedContentLength\\s*=|maxRequestLength\\s*=|maxQueryString(Length)?\\s*=|maxUrl(Length)?\\s*=",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-EXECUTION-TIMEOUT",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Request timeouts from `httpRuntime executionTimeout` or the ASP.NET Core Module `requestTimeout` no longer apply. Behind an ALB the idle timeout (60 seconds by default) cuts long requests, and Kestrel has no per-request timeout unless the app adds one",
+   "detect": "cfg: `executionTimeout=`, `requestTimeout=`",
+   "fix": "Move long work to a queue and worker (SQS + a worker service); otherwise raise the ALB idle timeout deliberately and cap requests with the `RequestTimeouts` middleware (.NET 8+)",
+   "sources": [
+    "S85",
+    "K"
+   ],
+   "already_in": "PARTIAL: modernization-assessment IIS-HTTPRUNTIME",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "executionTimeout\\s*=|requestTimeout\\s*=\\s*\"\\d",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-STATIC-CONTENT",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Static file behaviour set in IIS (`<mimeMap>` types, `<defaultDocument>`, `<clientCache>` cache headers) is not applied. The static files middleware returns 404 for extensions it does not know, serves no default document without `UseDefaultFiles`, and sends no long cache headers unless told to",
+   "detect": "cfg: `<mimeMap`, `<defaultDocument`, `<clientCache`",
+   "fix": "Add the extra types with `FileExtensionContentTypeProvider`, call `UseDefaultFiles()` before `UseStaticFiles()`, set cache headers in `OnPrepareResponse`; or serve static content from S3 behind CloudFront",
+   "sources": [
+    "S90",
+    "S114"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<(mimeMap|defaultDocument|clientCache)\\b",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-COMPRESSION",
+   "area": "Web platform and IIS hosting",
+   "level": "info",
+   "severity_note": "info",
+   "what": "IIS static and dynamic compression (`<urlCompression>`, `<httpCompression>`) is gone, and an ALB does not compress responses: pages and JSON get larger and slower",
+   "detect": "cfg: `<urlCompression`, `<httpCompression`",
+   "fix": "Turn on compression in CloudFront, or add `UseResponseCompression()` (mind BREACH for HTTPS responses that mix secrets and user input)",
+   "sources": [
+    "S91",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<(urlCompression|httpCompression)\\b",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-HTTP-ERRORS",
+   "area": "Web platform and IIS hosting",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Custom error pages from `<httpErrors>` / `<customErrors mode=\"On\">` are not applied: users see empty error responses (or the developer page if the environment is Development)",
+   "detect": "cfg: `<httpErrors`, `<customErrors mode=\"On|RemoteOnly\"`",
+   "fix": "Use `UseExceptionHandler` and `UseStatusCodePagesWithReExecute` with the same pages",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<httpErrors\\b|<customErrors\\s[^>]*mode\\s*=\\s*\"(On|RemoteOnly)\"",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-MODULES-HANDLERS",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "HTTP modules and handlers (IHttpModule, IHttpHandler, `.ashx`, `<modules>` / `<handlers>` / `<httpModules>` / `<httpHandlers>` in web.config) run only in the IIS and System.Web pipeline: nothing calls them under Kestrel",
+   "detect": "cfg: `<httpModules>`, `<httpHandlers>`; cs/vb/ashx: `IHttpModule`, `IHttpHandler`, `IHttpAsyncHandler`, `<%@ WebHandler`",
+   "fix": "Re-write each module as middleware and each handler as an endpoint, keeping their order in the pipeline; registrations under `<system.webServer>` are the separate check LNX-HOST-IIS-WEBSERVER-REGISTRATIONS",
+   "sources": [
+    "S92"
+   ],
+   "already_in": "COVERED: modernization-assessment IIS-MODULES-HANDLERS, WEB-MODULE-HANDLER",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<(httpModules|httpHandlers)>",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "[:,]\\s*I(HttpModule|HttpHandler|HttpAsyncHandler)\\b|\\bImplements\\s+I(HttpModule|HttpHandler|HttpAsyncHandler)\\b|<%@\\s*WebHandler\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".ashx"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "ashx"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "AspNetCoreModule"
+  },
+  {
+   "id": "LNX-HOST-IIS-WEBSERVER-REGISTRATIONS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Custom modules and handlers registered for IIS under `<system.webServer><modules>` / `<handlers>` (types outside System.* and Microsoft.*): IIS loads them, Kestrel does not, so what they did (auth, rewriting, logging, file serving) stops",
+   "detect": "cfg: `<add name=... type=\"...\">` with a non-framework type within 15 lines of `<modules>` or `<handlers>`",
+   "fix": "Find each registered type and re-write it as middleware or an endpoint; web.config files of apps already on ASP.NET Core (AspNetCoreModule) are skipped",
+   "sources": [
+    "S92"
+   ],
+   "already_in": "COVERED: modernization-assessment IIS-MODULES-HANDLERS",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<add\\s+name=\"[^\"]*\"[^>]*\\btype=\"(?!System\\.|Microsoft\\.)[^\"]+\"",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "context": "<(modules|handlers)\\b",
+   "unless_in_file": "AspNetCoreModule"
+  },
+  {
+   "id": "LNX-HOST-IIS-SERVER-VARIABLES",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS server variables (`Request.ServerVariables[...]`: LOGON_USER, AUTH_USER, REMOTE_ADDR, HTTPS, APPL_PHYSICAL_PATH, HTTP_X_FORWARDED_FOR), `Request.LogonUserIdentity` and `Request.IsLocal` come from IIS; Kestrel has none of them",
+   "detect": "cs/vb/markup: `ServerVariables[`, `.LogonUserIdentity`, `Request.IsLocal`",
+   "fix": "Map each one: REMOTE_ADDR to `Connection.RemoteIpAddress` after the forwarded headers middleware, HTTPS to `Request.IsHttps`, LOGON_USER/AUTH_USER to `User.Identity.Name`, APPL_PHYSICAL_PATH to `ContentRootPath`, HTTP_* to `Request.Headers`; behind an ALB no request is local",
+   "sources": [
+    "S93",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bServerVariables\\s*[\\[(]|\\.LogonUserIdentity\\b|\\bRequest\\.IsLocal\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".cshtml",
+      ".vbhtml"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-VIRTUAL-DIR",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "App hosted as an IIS sub-application or virtual directory (`/app`): code reads `Request.ApplicationPath` / `AppDomainAppVirtualPath` or builds URLs with `VirtualPathUtility` / `ResolveUrl`. In a container the app is served at `/` unless a path base is set, so links, redirects and cookie paths break",
+   "detect": "cs/vb/markup: `Request.ApplicationPath`, `AppDomainAppVirtualPath`, `VirtualPathUtility.`, `ResolveUrl(\"~` / `ResolveClientUrl(\"~`; pubxml: `DeployIisAppPath` with a sub-path",
+   "fix": "Set `UsePathBase` from configuration, route the prefix with an ALB listener rule, and test links, redirects, static files and cookie `Path`",
+   "sources": [
+    "S94",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bRequest\\.ApplicationPath\\b|\\bAppDomainAppVirtualPath\\b|\\bVirtualPathUtility\\.|\\bResolve(Client)?Url\\(\\s*\"~",
+     "files": [
+      ".cs",
+      ".vb",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".cshtml",
+      ".vbhtml"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup"
+     ]
+    },
+    {
+     "regex": "<DeployIisAppPath>[^<]*/",
+     "files": [
+      ".pubxml"
+     ],
+     "kinds": [
+      "pubxml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-APP-POOL-RECYCLE",
+   "area": "Web platform and IIS hosting",
+   "level": "info",
+   "severity_note": "info",
+   "what": "The app relies on IIS app pool behaviour: Application Initialization / preload warm-up, or restarts that hide memory leaks (`HttpRuntime.UnloadAppDomain`, `HostingEnvironment.InitiateShutdown`). Containers are not recycled; a leak runs until ECS kills the task at its memory limit",
+   "detect": "cfg/cs/vb: `<applicationInitialization`, `preloadEnabled`, `HttpRuntime.UnloadAppDomain`, `HostingEnvironment.InitiateShutdown`",
+   "fix": "Warm up in start-up (with an ECS health check grace period), watch memory per task in CloudWatch, and fix leaks instead of relying on recycling",
+   "sources": [
+    "S115",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(?i)<applicationInitialization\\b|preloadEnabled|HttpRuntime\\.UnloadAppDomain|HostingEnvironment\\.InitiateShutdown",
+     "files": [
+      ".cs",
+      ".vb",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-HOST-IIS-ADMIN-API",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "IIS is managed from code or scripts (Microsoft.Web.Administration `ServerManager`, `appcmd`, the WebAdministration / IISAdministration PowerShell modules, the `IIS:\\` drive): none of these exist in a Linux container",
+   "detect": "cs/vb/proj/cfg: `Microsoft.Web.Administration`, `new ServerManager(`; ps1/bat/yml: `appcmd`, `Import-Module WebAdministration`, `New-WebAppPool`, `New-WebSite`, `IIS:\\`",
+   "fix": "Drop the IIS set-up from deployment: the ECS task definition and infrastructure as code replace sites, bindings and app pools",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Web\\.Administration|\\bnew\\s+ServerManager\\(",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg"
+     ]
+    },
+    {
+     "regex": "appcmd(\\.exe)?\\b|Import-Module\\s+(WebAdministration|IISAdministration)|\\bNew-WebAppPool\\b|\\bNew-WebSite\\b|IIS:\\\\",
+     "files": [
+      ".ps1",
+      ".cmd",
+      ".bat",
+      ".yml",
+      ".yaml",
+      "Jenkinsfile"
+     ],
+     "kinds": [
+      "ps1",
+      "bat",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-SESSION-OUT-OF-PROC",
+   "area": "Web platform and IIS hosting",
+   "level": "block",
+   "severity_note": "block",
+   "what": "Out-of-process session state (`<sessionState mode=\"StateServer|SQLServer|Custom\">`, the ASP.NET State Service, the ASPState database set up with aspnet_regsql) is a System.Web feature with no .NET equivalent",
+   "detect": "cfg: `<sessionState mode=\"StateServer|SQLServer|Custom\"`; ps1/cmd/sql: `aspnet_regsql`",
+   "fix": "Use ASP.NET Core session on `IDistributedCache` (ElastiCache Valkey/Redis or DynamoDB) with Data Protection keys shared by all tasks; existing session data does not carry over",
+   "sources": [
+    "S95"
+   ],
+   "already_in": "COVERED: modernization-assessment IIS-SESSION-STATE",
+   "coverage": "COVERED",
+   "patterns": [
+    {
+     "regex": "<sessionState\\b[^>]*mode\\s*=\\s*\"(StateServer|SQLServer|Custom)\"",
+     "files": [
+      ".config"
+     ],
+     "kinds": [
+      "cfg"
+     ]
+    },
+    {
+     "regex": "aspnet_regsql",
+     "files": [
+      ".ps1",
+      ".cmd",
+      ".bat",
+      ".sql"
+     ],
+     "kinds": [
+      "ps1",
+      "bat",
+      "sql"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-REQUEST-VALIDATION",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASP.NET Core has no request validation: input with markup that System.Web rejected (HttpRequestValidationException) now reaches the app, and only output encoding protects the pages. Places that switched validation off show where HTML input is expected",
+   "detect": "cs/vb/markup/cfg: `ValidateRequest=`, `requestValidationMode=`, `[ValidateInput(`, `[AllowHtml]`, `HttpRequestValidationException`, `.Unvalidated`",
+   "fix": "Check that every output is encoded (no `Html.Raw` on user input), sanitise the HTML that is allowed (an HTML sanitizer library), add a Content-Security-Policy, and consider AWS WAF cross-site scripting rules in place of the old global filter",
+   "sources": [
+    "S103",
+    "K"
+   ],
+   "already_in": "PARTIAL: modernization-assessment WEB-REQUEST-VALIDATION",
+   "coverage": "PARTIAL",
+   "patterns": [
+    {
+     "regex": "\\bValidateRequest\\s*=|requestValidationMode\\s*=|\\[ValidateInput\\(|<ValidateInput\\(|\\[AllowHtml\\]|<AllowHtml>|HttpRequestValidationException|\\.Unvalidated\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".cshtml",
+      ".vbhtml",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "markup",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-BIN-FOLDER",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Paths built from the web app's `bin` folder (`HttpRuntime.BinDirectory`, `AppDomain.RelativeSearchPath`, `~/bin/`, `\"bin\\\\...\"`): on .NET the app base directory is the publish folder itself, with no `bin` subfolder",
+   "detect": "cs/vb: `HttpRuntime.BinDirectory`, `RelativeSearchPath`, `\"~/bin/`, `@\"bin\\`, `\"bin\\\\`",
+   "fix": "Use `AppContext.BaseDirectory` (assemblies, plug-ins) or `IWebHostEnvironment.ContentRootPath` (content files)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "HttpRuntime\\.BinDirectory|\\bRelativeSearchPath\\b|\"~?/bin/|@\"~?\\\\?bin\\\\|\"~?(\\\\\\\\)?bin\\\\\\\\",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-WEB-APP-CODE-FOLDERS",
+   "area": "Web platform and IIS hosting",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "ASP.NET special folders compiled at run time (`App_Code`, `App_GlobalResources`, `App_LocalResources`, `App_Browsers`) and `GetGlobalResourceObject` / `GetLocalResourceObject`: .NET compiles nothing at run time and has no such folders",
+   "detect": "cs/vb/proj/markup: `App_Code`, `App_GlobalResources`, `App_LocalResources`, `App_Browsers`, `GetGlobalResourceObject`, `GetLocalResourceObject`",
+   "fix": "Move the code into the project and the .resx files into a Resources folder read with `IStringLocalizer`; check that resource names still match exactly (they are case-sensitive)",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bApp_(Code|GlobalResources|LocalResources|Browsers)\\b|GetGlobalResourceObject|GetLocalResourceObject",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".aspx",
+      ".ascx",
+      ".master",
+      ".cshtml",
+      ".vbhtml"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "markup"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-LOG-JSON-CONSOLE-STATE",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "The .NET 10 JSON console formatter no longer repeats Message inside State: log queries or parsers reading `State.Message` change",
+   "detect": "manual: CloudWatch Logs Insights queries, metric filters or parsers that read `State.Message` while the app uses `AddJsonConsole`",
+   "fix": "Read the top-level `Message`",
+   "sources": [
+    "S72"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "State\\.Message",
+     "files": null,
+     "kinds": [
+      "logs"
+     ]
+    }
+   ],
+   "automated": false,
+   "tuned": true
+  },
+  {
+   "id": "LNX-PERF-SERVER-GC-AFFINITY",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Server GC affinitizes its heaps to the first n processors; in small Fargate tasks this can mean many heaps and high memory: measure",
+   "detect": "proj/runtimeconfig/df: `ServerGarbageCollection true`, `System.GC.Server: true`, `DOTNET_gcServer=1`",
+   "fix": "Measure; consider `DOTNET_GCHeapCount`, `GCNoAffinitize` or workstation GC for small tasks",
+   "sources": [
+    "S19"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "<ServerGarbageCollection>\\s*true|\\\"System\\.GC\\.Server\\\"\\s*:\\s*true|DOTNET_gcServer\\W{1,3}1\\b",
+     "files": [
+      ".csproj",
+      ".fsproj",
+      ".props",
+      ".targets",
+      ".vbproj",
+      "Dockerfile*",
+      "*.dockerfile",
+      "*.runtimeconfig.json",
+      "runtimeconfig.template.json"
+     ],
+     "kinds": [
+      "proj",
+      "df",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-LOG-TRACE-NO-LISTENER",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Trace.Write / Trace.TraceError output goes nowhere in a container unless a listener is configured (the default listener writes to the debugger, not stdout), so these diagnostics vanish from CloudWatch",
+   "detect": "cs/vb: `Trace\\.(Write|WriteLine|TraceError|TraceWarning|TraceInformation)\\(` in a file with no `Trace.Listeners.Add`",
+   "fix": "Move to ILogger with the console provider, or add a ConsoleTraceListener at start-up",
+   "sources": [
+    "S83",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bTrace\\.(Write|WriteLine|WriteIf|WriteLineIf|TraceError|TraceWarning|TraceInformation)\\(",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_file": "Trace\\.Listeners\\.Add|ConsoleTraceListener"
+  },
+  {
+   "id": "LNX-LOG-APPINSIGHTS-SYSTEMWEB",
+   "area": "Logging, performance, GC and runtime",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Application Insights for classic ASP.NET (Microsoft.ApplicationInsights.Web, WindowsServer, PerfCounterCollector, DependencyCollector, Agent.Intercept / Status Monitor) hooks System.Web modules, Windows performance counters and IIS instrumentation: in a Linux container the telemetry stops without an error",
+   "detect": "cs/vb/proj/cfg: `Microsoft.ApplicationInsights.(Web|WindowsServer|PerfCounterCollector|DependencyCollector|Agent.Intercept)`, `ApplicationInsightsHttpModule`",
+   "fix": "On AWS use OpenTelemetry .NET with the AWS Distro for OpenTelemetry (CloudWatch, X-Ray); keep Azure Monitor only through its ASP.NET Core / OpenTelemetry packages",
+   "sources": [
+    "S100",
+    "S101"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.ApplicationInsights\\.(Web|WindowsServer|PerfCounterCollector|DependencyCollector|Agent\\.Intercept)\\b|ApplicationInsightsHttpModule",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj",
+      ".config"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj",
+      "cfg"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "\\.nupkg"
+  },
+  {
+   "id": "LNX-LOG-ETW-TRACEEVENT",
+   "area": "Logging, performance, GC and runtime",
+   "level": "info",
+   "severity_note": "info",
+   "what": "ETW sessions (`TraceEventSession` from Microsoft.Diagnostics.Tracing.TraceEvent, `EventProviderTraceListener`) are Windows-only; on Linux EventSource events reach tools only through EventPipe",
+   "detect": "cs/vb/proj: `Microsoft.Diagnostics.Tracing.Session`, `TraceEventSession`, `EventProviderTraceListener`",
+   "fix": "Use dotnet-trace / dotnet-counters, OpenTelemetry metrics, or an in-process `EventListener`",
+   "sources": [
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "Microsoft\\.Diagnostics\\.Tracing\\.Session|\\bTraceEventSession\\b|\\bEventProviderTraceListener\\b",
+     "files": [
+      ".cs",
+      ".vb",
+      ".csproj",
+      ".vbproj"
+     ],
+     "kinds": [
+      "cs",
+      "vb",
+      "proj"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-BACKSLASH-HOST-PATH",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "The runtime no longer turns `\\` into `/` on Unix (.NET 8+): assembly, native library and DOTNET_ variable paths with backslashes fail",
+   "detect": "cs: `LoadFrom/LoadFile/NativeLibrary.Load/DllImport(@\"...\\...\")`; df/yml: `DOTNET_X=...\\...`",
+   "fix": "Use `/` or `Path.Combine`",
+   "sources": [
+    "S73"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(LoadFrom|LoadFile|LoadFromAssemblyPath|LoadUnmanagedDllFromPath|NativeLibrary\\.(Load|TryLoad)|DllImport)\\s*\\(\\s*@?\\\"[^\\\"]*\\\\[^\\\"]*\\\"",
+     "files": [
+      ".cs"
+     ],
+     "kinds": [
+      "cs"
+     ]
+    },
+    {
+     "regex": "\\bDOTNET_\\w+\\s*[:=]\\s*\\\"?[^\\\"\\s]*\\\\",
+     "files": [
+      "Dockerfile*",
+      "*.dockerfile",
+      ".yaml",
+      ".yml",
+      "*task*.json",
+      "*taskdef*.json"
+     ],
+     "kinds": [
+      "df",
+      "yml"
+     ]
+    }
+   ],
+   "automated": true,
+   "tuned": true
+  },
+  {
+   "id": "LNX-FS-SEARCH-PATTERN-CASE",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "GetFiles / EnumerateFiles / GetDirectories search patterns match case-sensitively on Linux: `*.XML` no longer finds `data.xml`",
+   "detect": "cs/vb: `(Get|Enumerate)(Files|Directories|FileSystemEntries)\\(` with a literal pattern containing an upper-case letter",
+   "fix": "Pass `new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }`, or normalise file names; check patterns built from config too",
+   "sources": [
+    "S80"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(Get|Enumerate)(Files|Directories|FileSystemEntries)\\([^)]*\"[^\"]*\\*[^\"]*[A-Z][^\"]*\"",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "MatchCasing"
+  },
+  {
+   "id": "LNX-FS-EFS-ENCRYPT",
+   "area": "File system and paths",
+   "level": "block",
+   "severity_note": "block",
+   "what": "`File.Encrypt` / `File.Decrypt` and `FileOptions.Encrypted` use NTFS EFS: on Linux they throw PlatformNotSupportedException",
+   "detect": "cs/vb: `File.Encrypt(`, `File.Decrypt(`, `FileOptions.Encrypted`, `FileAttributes.Encrypted`",
+   "fix": "Use encryption at rest on the storage (S3 or EFS with KMS), or encrypt the content in the app (AES-GCM with a KMS data key)",
+   "sources": [
+    "S106"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bFile\\.(Encrypt|Decrypt)\\(|FileOptions\\.Encrypted|FileAttributes\\.Encrypted",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-ENUMERATION-ORDER",
+   "area": "File system and paths",
+   "level": "warn",
+   "severity_note": "warn",
+   "what": "Directory listing order is not guaranteed. NTFS happens to return names sorted; Linux file systems (ext4, overlayfs, EFS) return them in no set order. Code that takes the first or last file, imports files in listing order or runs scripts in that order changes behaviour",
+   "detect": "cs/vb: `GetFiles(...)` / `EnumerateFiles(...)` / `GetDirectories(...)` followed by `.First()`, `.Last()`, `.Take(`, `.ElementAt(` or `[0]` with no `OrderBy` / `Sort` on the line",
+   "fix": "Sort explicitly (`OrderBy(f => f, StringComparer.Ordinal)` or by timestamp) wherever order matters",
+   "sources": [
+    "S105"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "(Get|Enumerate)(Files|Directories|FileSystemEntries|FileSystemInfos)\\([^;]*\\)\\s*(\\.(First|FirstOrDefault|Last|LastOrDefault|Take|ElementAt)\\b|\\[\\s*0\\s*\\])",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true,
+   "unless_in_line": "OrderBy|Sort"
+  },
+  {
+   "id": "LNX-FS-CREATION-TIME",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "File creation time on Linux is the birth time only where the kernel and file system report it; otherwise .NET returns the earlier of the last status change and the last write, and setting it may have no effect. Retention, 'newest file' and audit logic built on it can change",
+   "detect": "cs/vb: `GetCreationTime(`, `SetCreationTime(`, `.CreationTime`",
+   "fix": "Use the last write time, or keep the timestamp in the file name or in metadata (S3 object metadata, a database row)",
+   "sources": [
+    "S107",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\b(Get|Set)CreationTime(Utc)?\\(|\\.CreationTime(Utc)?\\b",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
+      "vb"
+     ]
+    }
+   ],
+   "automated": true
+  },
+  {
+   "id": "LNX-FS-PATH-ROOT-SEMANTICS",
+   "area": "File system and paths",
+   "level": "info",
+   "severity_note": "info",
+   "what": "Drive-letter logic gives different answers on Linux: `Path.VolumeSeparatorChar` is `/`, `Path.IsPathRooted(\"C:\\\\x\")` is false and `Path.GetPathRoot(\"C:\\\\x\")` is empty, so code that detects or strips drive letters takes the other branch",
+   "detect": "cs/vb: `Path.VolumeSeparatorChar`; `Path.IsPathRooted(` / `Path.GetPathRoot(` on a literal with a drive letter",
+   "fix": "Remove drive-letter handling, or guard it with `OperatingSystem.IsWindows()`; use `Path.IsPathFullyQualified` for real paths",
+   "sources": [
+    "S113",
+    "K"
+   ],
+   "already_in": "GAP",
+   "coverage": "GAP",
+   "patterns": [
+    {
+     "regex": "\\bPath\\.VolumeSeparatorChar\\b|\\bPath\\.(IsPathRooted|GetPathRoot)\\([^)]*\"[A-Za-z]:",
+     "files": [
+      ".cs",
+      ".vb"
+     ],
+     "kinds": [
+      "cs",
       "vb"
      ]
     }

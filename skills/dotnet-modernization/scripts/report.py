@@ -116,7 +116,7 @@ def main():
     lg = sub.add_parser("log")
     lg.add_argument("--dir", required=True)
     lg.add_argument("--step", required=True)
-    lg.add_argument("--engine", required=True, choices=["aws-transform", "devtx", "claude", "db-agent", "human"])
+    lg.add_argument("--engine", required=True, choices=["aws-transform", "devtx", "copilot", "claude", "db-agent", "human"])
     lg.add_argument("--status", required=True, choices=["started", "done", "failed", "skipped"])
     lg.add_argument("--note")
     lg.add_argument("--branch")

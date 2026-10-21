@@ -10,6 +10,7 @@
 | A handful of pages, markup a small part of the code (the assessment's token-UI rule) | Rewrite those pages in the target model inside the port; no separate UI project |
 | Admin or internal tool that another application already covers | Ask: retire it into that application (a client decision, never assumed) |
 | Many pages, heavy coupling, must stay live during the move | Incremental: YARP in the new app proxies unported routes to the old one; pages move one at a time |
+| Keep on .NET Framework on Windows | Microsoft says Web Forms will not be ported to .NET, and that staying on .NET Framework on Windows is fine. Record the choice with the cost of keeping that server on Windows |
 | Engine is AWS Transform | Let it produce the Blazor Server pages, then fix page by page below |
 
 **Target per page:** Blazor Static SSR for read-only pages; Blazor Interactive Server for stateful forms (closest to the Web Forms server model); Razor Pages for simple CRUD. One model per application unless there is a reason.
@@ -40,11 +41,24 @@
 
 Auth cookies and machineKey: shared data protection keys, or one re-login ([auth.md](auth.md)). Session: remote-app session (System.Web adapters) while the old app still reads it. Static files and bundles: served by the new app once its first page moves.
 
+## Third-party controls
+
+List every control vendor the pages use (Telerik, DevExpress, Infragistics, Syncfusion, AjaxControlToolkit and others). For each vendor, record the licence, its .NET 10 and Linux support, and whether it sells a Blazor or ASP.NET Core suite. Then give each page that uses a control a target: the vendor's new suite (a licence cost), plain components, or the Framework route above. Check each vendor's current support statement when you write the plan.
+
 ## Gotchas
 
 - Third-party control suites (Telerik, DevExpress, AjaxControlToolkit) have no automatic port: the vendor's Blazor suite (licence) or plain components.
 - `Page_Load` ordering and `Page.IsValid` side effects are easy to lose; the goldens catch the output, the smoke script catches the flow.
 - Framework session locks per request; double submits behave differently.
+
+## Blazor Server operations
+
+Blazor Interactive Server keeps a live connection (a circuit) and its state for each user. Plan for it before cut-over:
+
+- **Sticky sessions.** A reconnect must reach the task that holds the circuit. Turn on stickiness in the ALB target group, or accept that users reload when a task changes ([linux-and-containers.md](linux-and-containers.md)).
+- **Circuit state lives in one task's memory.** A restart or deploy ends every open circuit. Keep state that must survive in the database or a cache.
+- **Data Protection keys** must persist outside the container, or antiforgery and cookies fail after a deploy ([auth.md](auth.md)).
+- **Memory per user.** Each circuit holds its component tree and state. Measure it under load before choosing the task size.
 
 ## Done when
 

@@ -26,6 +26,22 @@
    explicitly when the old output relied on `responseEncoding`.
 7. Delete the `.ashx` file and its web.config registration once the endpoint replays the goldens.
 
+## OWIN host (Startup)
+
+Some apps host Web API or SignalR in an OWIN pipeline (`Startup.Configuration(IAppBuilder)`, `WebApp.Start`, `app.UseWebApi`). Map the pipeline into one ASP.NET Core host:
+
+| OWIN | ASP.NET Core |
+|---|---|
+| `IAppBuilder` | `WebApplication` in `Program.cs` |
+| `app.UseWebApi(config)` | `MapControllers()`. Most `HttpConfiguration` settings move to `AddControllers` options or to endpoint metadata |
+| `OwinMiddleware` subclass with `Invoke(IOwinContext)` | A middleware class with `Invoke(HttpContext)` |
+| `IOwinContext`, `context.Request` | `HttpContext`, `HttpContext.Request` |
+| `WebApp.Start(url)` self-host | Kestrel in the same process |
+| `app.MapSignalR` | [signalr.md](signalr.md) |
+| Cookie and OAuth middleware | [auth.md](auth.md) |
+
+Keep the order of the old `Configuration` method. The order decides which code sees the request first.
+
 ## Done when
 
 No WEB-HANDLER-IFACE or `.ashx` residue; parity replay of every request type passes on the old path.

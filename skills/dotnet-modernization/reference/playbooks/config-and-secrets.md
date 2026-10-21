@@ -25,6 +25,7 @@ secrets, custom sections and environment layering are Claude's.
 7. **Localhost and client IP logic**: a call to `localhost` assumed a service on the same server — make it a configured
    URL. Client IP read from `REMOTE_ADDR` is the load balancer behind AWS: use `ForwardedHeaders` middleware with the
    known proxies set.
+8. **Feature flags.** `web.config` booleans that switch features, and `Microsoft.FeatureManagement` settings, move to AWS AppConfig feature flags. AppConfig has a feature-flag profile type. A .NET configuration provider for it is not confirmed (verify). Until one is confirmed, read flags through a small `IFeatureFlags` interface, so the source can change in one place. `Microsoft.FeatureManagement` reads `IConfiguration`, so it works once its values come through a provider (verify).
 
 ## Done when
 

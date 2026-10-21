@@ -1,7 +1,7 @@
 # Playbook: Linux file system, processes and the container image
 
 **Rules:** FILE-DRIVE, FILE-BACKSLASH-JOIN, HOST-MACHINE-NAME (residue); LNX-FS-*, LNX-PROC-*, LNX-ENV-*, LNX-CTR-*, LNX-CI-* (Linux readiness, [linux-readiness.md](../linux-readiness.md)).
-**Engines:** DevTx KB 19 writes a Dockerfile (fix its samples, below); AWS Transform writes none and lists Linux items in its Next Steps document. Claude does the rest and owns the Dockerfile.
+**Engines:** DevTx KB 19 writes a Dockerfile (fix its samples, below); the AWS Transform .NET agent writes none and lists Linux items in `NextSteps.md` and its Linux readiness report. AWS Transform's separate containerization feature can generate images and ECS (Terraform) or EKS (Helm) deployment code ([engines.md](../engines.md#other-aws-transform-agents)); treat its Dockerfile like any other: run the Linux readiness scan and the container gate on it. Claude does the rest and owns the Dockerfile.
 
 ## File system
 
@@ -45,6 +45,11 @@ ENTRYPOINT ["dotnet", "App.dll"]
 - **Architecture:** build for the platform ECS runs (`docker buildx build --platform linux/amd64` or `linux/arm64` for Graviton) and check native packages exist for it.
 - **Registry:** ECR, not Docker Hub; scan on push.
 - **Database migrations** do not run in the entrypoint (several tasks race): a one-off ECS task in the deployment.
+
+## Networking and state
+
+- **ALB affinity** (cookie-based stickiness on the target group) keeps one user on one task. Use it only as a stopgap for state still held in memory, such as Blazor circuits, SignalR connections or in-process session. Affinity hides restarts and uneven load, so move the state out ([startup-and-middleware.md](startup-and-middleware.md)).
+- **Static egress IPs.** Tasks in private subnets reach the internet through a NAT gateway, which has Elastic IP addresses. A partner that allow-lists IPs needs those addresses. A new NAT gateway means a new address, so agree the change with the partner first.
 
 ## Done when
 

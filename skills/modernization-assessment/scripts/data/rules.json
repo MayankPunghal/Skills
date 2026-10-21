@@ -1,5 +1,5 @@
 {
- "_doc": "Line-based scan rules. types: cs vb markup config sql proj script js ci any. pat: regexes (any match flags the line). requires: file must also match this regex. not: line exclusion. sev: Blocker|High|Medium|Low|Info. conf: Confirmed|Likely|Needs verification. effort: key in estimation.json. baseline: true when the effort is already inside the project-conversion baseline (not added twice). db: impact per database target (blocker|limited|ok). refs: ids in references/sources.md. question: open question for the client when code alone cannot decide.",
+ "_doc": "Line-based scan rules. types: cs vb markup config sql proj script js ci any. pat: regexes (any match flags the line). requires: file must also match this regex. not: line exclusion. sev: Blocker|High|Medium|Low|Info. conf: Confirmed|Likely|Needs verification. effort: key in estimation.json. baseline: true when the effort is already inside the project-conversion baseline (not added twice). db: PostgreSQL impact of the rule, as {\"pg\": \"rework\" | \"redesign\"}: redesign = no PostgreSQL equivalent, the feature needs a different design; rework = PostgreSQL has an equivalent, but the code or SQL must be changed by hand. Rules without db add no database impact. refs: ids in references/sources.md. question: open question for the client when code alone cannot decide.",
  "rules": [
   {
    "id": "WIN-REGISTRY",
@@ -1139,7 +1139,7 @@
     ":\\s*Form\\b(?!\\w)"
    ],
    "why": "WinForms runs on .NET 10 but only on Windows; it cannot run on Linux.",
-   "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or AppStream 2.0/WorkSpaces), or rewrite as a web front end.",
+   "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or Amazon WorkSpaces / Amazon WorkSpaces Applications (formerly AppStream 2.0)), or rewrite as a web front end.",
    "alt": ".NET 10 WinForms on Windows; web UI rewrite; Avalonia",
    "effort": "per-file-desktop",
    "baseline": true,
@@ -1200,7 +1200,7 @@
    "id": "DATA-EF6",
    "cat": "data-access",
    "title": "Entity Framework 6",
-   "sev": "Low",
+   "sev": "Medium",
    "conf": "Confirmed",
    "types": [
     "cs",
@@ -1223,7 +1223,7 @@
    "id": "DATA-SYSTEM-SQLCLIENT",
    "cat": "data-access",
    "title": "System.Data.SqlClient",
-   "sev": "Low",
+   "sev": "Medium",
    "conf": "Confirmed",
    "types": [
     "cs",
@@ -3270,7 +3270,7 @@
    "id": "FE-BUNDLING",
    "cat": "front-end",
    "title": "System.Web.Optimization bundling",
-   "sev": "Low",
+   "sev": "Medium",
    "conf": "Confirmed",
    "types": [
     "cs",
@@ -4717,6 +4717,250 @@
    ],
    "question": "Which database files (SQL Compact, SQLite, .mdf) are kept on the application servers, and how are they backed up?",
    "in_strings": true
+  },
+  {
+   "id": "CACHE-APPFABRIC",
+   "cat": "state-scale",
+   "title": "AppFabric cache client (Windows Server AppFabric)",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.ApplicationServer\\.Caching\\b",
+    "\\bDataCacheFactory(Configuration)?\\b",
+    "<dataCacheClients?\\b"
+   ],
+   "why": "AppFabric Caching is a Windows Server service, and its client package targets .NET Framework (verify the TFMs of the version in use). The cache has to move with the code.",
+   "fix": "Move the cache to Amazon ElastiCache (Valkey or Redis OSS) and rewrite the cache calls on StackExchange.Redis (verify the engine and client version).",
+   "alt": "ElastiCache with StackExchange.Redis",
+   "effort": "medium-change",
+   "refs": [
+    "S33"
+   ]
+  },
+  {
+   "id": "CACHE-NCACHE",
+   "cat": "state-scale",
+   "title": "NCache distributed cache",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bAlachisoft\\.NCache\\b",
+    "<cacheConfig\\b"
+   ],
+   "why": "NCache is a self-hosted cache cluster with its own configuration. Its cache servers and client settings must be rebuilt on AWS, and the client's Linux support depends on the version (verify).",
+   "fix": "Move the cache to Amazon ElastiCache (Valkey or Redis OSS) with StackExchange.Redis, or keep NCache on EC2 or ECS where a vendor feature is needed (verify).",
+   "alt": "ElastiCache; NCache on EC2 or ECS",
+   "effort": "medium-change",
+   "refs": [
+    "S33"
+   ]
+  },
+  {
+   "id": "INT-LUCENE-SOLR",
+   "cat": "integrations",
+   "title": "Self-hosted search index (Lucene.NET or SolrNet)",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bLucene\\.Net\\b",
+    "\\bSolrNet\\b",
+    "\\bFSDirectory\\.Open\\b"
+   ],
+   "why": "Lucene.NET keeps index files on the server disk, and SolrNet needs a self-hosted Solr cluster. Index files are server state that does not survive a container restart or a scale-out.",
+   "fix": "Move the index to Amazon OpenSearch Service and rewrite indexing and queries on the OpenSearch .NET client (verify the client and query mapping); rebuild the index from source data.",
+   "alt": "Amazon OpenSearch Service",
+   "effort": "medium-change",
+   "refs": [
+    "S34"
+   ]
+  },
+  {
+   "id": "INT-MAIL-INBOUND",
+   "cat": "integrations",
+   "title": "Inbound mail read over POP3 or IMAP",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bOpenPop\\.",
+    "\\bS22\\.Imap\\b",
+    "\\bMailKit\\.Net\\.(Imap|Pop3)\\b",
+    "\\bPop3Client\\b"
+   ],
+   "why": "Polling a mailbox over POP3 or IMAP needs a process that stays up and the mailbox password on the server. Sending mail (SMTP) is a different path and is covered by NET-SMTP.",
+   "fix": "Receive mail with Amazon SES receiving rules (S3 or Lambda, then SQS or the app) and stop polling the mailbox (verify the SES receiving Regions and how the sender delivers mail).",
+   "alt": "SES receiving rules with S3, Lambda and SQS",
+   "effort": "medium-change",
+   "refs": [
+    "S35"
+   ],
+   "question": "Which mailbox is polled, who sends mail to it, and can the senders point their mail at an AWS-managed address?"
+  },
+  {
+   "id": "BG-MASSTRANSIT-SQS",
+   "cat": "background",
+   "title": "MassTransit with the Amazon SQS transport",
+   "sev": "Info",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bMassTransit\\.AmazonSQS\\b",
+    "\\bUsingAmazonSqs\\b"
+   ],
+   "why": "Already on an AWS-native transport, so no broker has to be hosted. Queue names, retry and dead-letter settings must still match the SQS limits.",
+   "fix": "Keep the transport. Confirm queue, retry and dead-letter settings, and that the task role has the SQS permissions it needs.",
+   "alt": "Amazon SQS and SNS",
+   "effort": "trivial",
+   "refs": [
+    "S37"
+   ]
+  },
+  {
+   "id": "CFG-FEATURE-FLAGS",
+   "cat": "configuration-secrets",
+   "title": "Feature flags in code or web.config",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bMicrosoft\\.FeatureManagement\\b",
+    "\\bIFeatureManager\\b",
+    "<add\\s+key=\"(Feature|feature|Toggle|toggle)[^\"]*\""
+   ],
+   "why": "Feature flags kept in web.config or in a package's local store change per machine, so each change needs an edit or a deploy on every server.",
+   "fix": "Move the flags to AWS AppConfig feature flags. The AppConfig feature-flag profile type is confirmed; a .NET configuration provider for it is not, so verify it before committing to the .NET binding.",
+   "alt": "AWS AppConfig (feature flags); Parameter Store as a fallback",
+   "effort": "small-change",
+   "refs": [
+    "S36"
+   ]
+  },
+  {
+   "id": "DATA-CASSANDRA",
+   "cat": "data-access",
+   "title": "Apache Cassandra driver",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "proj"
+   ],
+   "pat": [
+    "\\bCassandraCSharpDriver\\b",
+    "\\bCassandra\\.(Mapping|Cluster|ISession)\\b",
+    "\\bCqlSession\\b"
+   ],
+   "why": "A self-hosted Cassandra cluster is reached directly through the CQL driver.",
+   "fix": "Point the driver at Amazon Keyspaces (for Apache Cassandra) with its TLS and credential settings, or keep a self-hosted cluster on EC2 (verify the CQL features and driver version Keyspaces supports).",
+   "alt": "Amazon Keyspaces (for Apache Cassandra)",
+   "effort": "small-change",
+   "refs": [
+    "S38"
+   ]
+  },
+  {
+   "id": "DATA-RAVENDB",
+   "cat": "data-access",
+   "title": "RavenDB document database",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bRaven\\.Client\\b",
+    "\\bRavenDB\\b"
+   ],
+   "why": "RavenDB runs its own server process and has no AWS managed service (verify the current Linux and hosted options).",
+   "fix": "Keep RavenDB on EC2 or ECS, or use the vendor's hosted option (verify). Moving the documents to Amazon DynamoDB or Amazon DocumentDB is a data-model change.",
+   "alt": "RavenDB on EC2 or ECS; Amazon DynamoDB or DocumentDB",
+   "effort": "medium-change",
+   "refs": [
+    "S38"
+   ]
+  },
+  {
+   "id": "DATA-COUCHBASE",
+   "cat": "data-access",
+   "title": "Couchbase document database",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bCouchbase\\.(Client|Core|Extensions|Management)\\b"
+   ],
+   "why": "Couchbase runs as its own cluster, and the SDK connects to it directly.",
+   "fix": "Keep the cluster on EC2 or in the vendor's hosted service (verify), or move the data to Amazon DynamoDB or Amazon DocumentDB if the data model fits (verify).",
+   "alt": "Couchbase on EC2 or hosted; Amazon DynamoDB or DocumentDB",
+   "effort": "medium-change",
+   "refs": [
+    "S38"
+   ]
+  },
+  {
+   "id": "DATA-NEO4J",
+   "cat": "data-access",
+   "title": "Neo4j graph database",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": [
+    "cs",
+    "vb",
+    "config",
+    "proj"
+   ],
+   "pat": [
+    "\\bNeo4j\\.Driver\\b",
+    "\\bNeo4jClient\\b"
+   ],
+   "why": "Neo4j runs its own server, and the Bolt driver connects to it directly.",
+   "fix": "Keep Neo4j on EC2 or in its hosted option (verify), or move the graph to Amazon Neptune, which means rewriting Cypher queries in openCypher or Gremlin (verify).",
+   "alt": "Neo4j on EC2 or hosted; Amazon Neptune",
+   "effort": "medium-change",
+   "refs": [
+    "S38"
+   ]
   }
  ],
  "_doc_parsed": "parsed: for rules on SQL, the T-SQL parser facts that raise the finding instead of the regular expressions (construct labels from sqlscan, or called procedure names by prefix). When a parser is available the rule's patterns are not run on .sql files; the parser also applies the rule to SQL embedded in C#."

@@ -21,13 +21,23 @@ Code that must run in a Linux container cannot call a Windows-only API, even beh
 | System.Drawing (GDI+) | SkiaSharp or ImageSharp (licence check); install fonts in the image ([linux-and-containers.md](linux-and-containers.md)) |
 | `DPAPI` (`ProtectedData`), machine certificate store | ASP.NET Core Data Protection with keys in S3/SSM + KMS; certificates from files or Secrets Manager |
 | `RSACng`, `CngKey`, `DESCryptoServiceProvider`, RC2, weak hashes | `RSA.Create()`, `Aes.Create()`; data encrypted with DES/3DES/RC2 needs a decrypt-old / encrypt-new plan agreed with the owner |
+| `RSACryptoServiceProvider` (from a cast of `X509Certificate2.PrivateKey`), `SHA256Managed`, `AesManaged`, `RijndaelManaged`, `RNGCryptoServiceProvider` | `cert.GetRSAPrivateKey()` (dispose the key), `SHA256.Create()`, `Aes.Create()`, `RandomNumberGenerator` |
+| `Rfc2898DeriveBytes` (PBKDF2) | `Rfc2898DeriveBytes.Pbkdf2(...)` with the same hash algorithm, iteration count and salt. The constructors that do not name a hash use SHA-1 and are obsolete (verify) |
 | Named mutexes / semaphores, named pipes, memory-mapped files across processes | In one container: in-process primitives; across tasks: a distributed lock (ElastiCache, DynamoDB) or a queue |
 | `ServiceBase` (Windows services) | `BackgroundService` ([background-work.md](background-work.md)) |
 | Windows identity, impersonation | [auth.md](auth.md) |
 
+Stored values keep working only if the parameters match. Keep the old hash, iteration count, salt and key for data already stored, and use the new calls for new data. Passwords are rehashed on the next successful login ([auth.md](auth.md)).
+
+**Image libraries.** ImageSharp 4 and ImageSharp.Web 4 need a Six Labors licence key at build time, and the build fails without one. Keep the key in the CI secret store, pass it at build time, and never commit it. Core 4.x is reported to fail Release builds without a key (verify). For SkiaSharp, the `SKFilterQuality` overloads are obsolete: use `SKSamplingOptions` (check the version you pin).
+
 ## Desktop apps (WinForms, WPF)
 
 Windows-only on every .NET version. Options for the plan, a decision for the client: port to .NET 10 and keep on Windows (least change); stream to a browser with Amazon WorkSpaces Applications (formerly AppStream 2.0) with no code change; rewrite the UI for the web (Blazor), reusing view models and services; Avalonia for a Linux desktop. Shared libraries they use still move to `netstandard2.0`/`net10.0` so the web side can use them.
+
+**Deployment.** ClickOnce publishing for .NET 5 and later desktop apps is available from Visual Studio 2019 16.8 onward (verify in the current Visual Studio docs). A legacy sample page says the `ApplicationDeployment` API is not available on .NET 5 and later, so update checks written against it need a redesign (verify). Installers (WiX, MSI) and Authenticode signing are Windows tools: plan the build machine for them.
+
+**Other desktop resources.** Satellite resource assemblies: check that the publish output keeps each culture folder next to the main assembly. Serial ports: `System.IO.Ports` works on Linux, but port names change (`COM3` becomes a device path such as `/dev/ttyUSB0`), so test on the target hardware. Named pipes: Windows pipe security does not carry over, so test the permissions on each platform.
 
 ## Done when
 

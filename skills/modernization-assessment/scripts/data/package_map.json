@@ -4,28 +4,28 @@
   {
    "match": "Microsoft\\.AspNet\\.Mvc",
    "status": "replace",
-   "sev": "Info",
+   "sev": "High",
    "note": "ASP.NET MVC 5 is .NET Framework only.",
    "replacement": "ASP.NET Core MVC (Microsoft.AspNetCore.App framework)"
   },
   {
    "match": "Microsoft\\.AspNet\\.WebApi(\\..*)?",
    "status": "replace",
-   "sev": "Info",
+   "sev": "Medium",
    "note": "Web API 2 is .NET Framework only.",
    "replacement": "ASP.NET Core Web API (Microsoft.AspNetCore.Mvc.WebApiCompatShim is obsolete; port controllers)"
   },
   {
    "match": "Microsoft\\.AspNet\\.(WebPages|Razor)",
    "status": "replace",
-   "sev": "Info",
+   "sev": "High",
    "note": "System.Web Razor.",
    "replacement": "ASP.NET Core Razor"
   },
   {
-   "match": "Microsoft\\.AspNet\\.Web\\.Optimization(\\..*)?",
+   "match": "Microsoft\\.AspNet\\.Web\\.Optimization(?!\\.WebForms)(\\..*)?",
    "status": "replace",
-   "sev": "Low",
+   "sev": "Medium",
    "note": "System.Web bundling.",
    "replacement": "Build-time bundling (Vite/esbuild) or LigerShark.WebOptimizer.Core"
   },
@@ -83,7 +83,7 @@
    "replacement": "Not needed (SDK compiles); Razor runtime compilation package if required"
   },
   {
-   "match": "WebGrease|Antlr|Microsoft\\.AspNet\\.Web\\.Optimization",
+   "match": "WebGrease|Antlr",
    "status": "remove",
    "sev": "Info",
    "note": "Bundling dependencies.",
@@ -110,14 +110,14 @@
   {
    "match": "EntityFramework",
    "status": "ok",
-   "sev": "Low",
+   "sev": "Medium",
    "note": "EF 6.4+ runs on .NET 10 (cross-platform); EDMX needs embedded metadata; maintenance mode.",
    "replacement": "EntityFramework 6.5.x now; Microsoft.EntityFrameworkCore.SqlServer 10 later"
   },
   {
    "match": "System\\.Data\\.SqlClient",
    "status": "replace",
-   "sev": "Low",
+   "sev": "Medium",
    "note": "Deprecated provider.",
    "replacement": "Microsoft.Data.SqlClient"
   },
@@ -143,7 +143,73 @@
    "replacement": "Microsoft.Data.Sqlite"
   },
   {
-   "match": "Dapper(\\..*)?|Newtonsoft\\.Json(\\..*)?|AutoMapper\\..*|NLog|Serilog(\\..*)?|Polly|FluentValidation|Humanizer(\\..*)?|HtmlAgilityPack|CsvHelper|MediatR\\..*|Castle\\.Core|Moq|NUnit|xunit(\\..*)?|MSTest\\..*|FluentAssertions|RestSharp|StackExchange\\.Redis|AWSSDK\\..*|Twilio|Stripe\\.net|SendGrid|SharpZipLib|MimeKit|MailKit|ClosedXML|DocumentFormat\\.OpenXml|NPOI|ExcelDataReader(\\..*)?|QuestPDF|SkiaSharp(\\..*)?|Hangfire\\.Core|Quartz|Autofac|Unity|Ninject|SimpleInjector|Microsoft\\.Extensions\\..*|BouncyCastle(\\..*)?|Portable\\.BouncyCastle|BCrypt\\.Net-Next|Swashbuckle\\.AspNetCore(\\..*)?|MySql\\.Data|MySqlConnector|Npgsql(\\..*)?|MongoDB\\.Driver|Selenium\\.WebDriver|Microsoft\\.Data\\.SqlClient|log4net",
+   "match": "NuGet\\.Core",
+   "status": "blocker",
+   "sev": "High",
+   "note": "NuGet 2.x client library with no .NET 8 or .NET 10 build and no successor package.",
+   "replacement": "No direct successor: remove the dependent feature or rebuild it on the NuGet.* packages (verify)"
+  },
+  {
+   "match": "System\\.Diagnostics\\.DiagnosticSource",
+   "status": "ok",
+   "sev": "Low",
+   "note": "Old 4.x builds force a downgrade (NU1605) against the framework's own version on net8.0 and net10.0.",
+   "replacement": "Package version that matches the target framework (8.x for net8.0, 10.x for net10.0)"
+  },
+  {
+   "match": "Grpc\\.Core(\\..*)?",
+   "status": "replace",
+   "sev": "High",
+   "note": "Grpc.Core (the native C-core runtime) is unsupported by Microsoft and in maintenance mode.",
+   "replacement": "Grpc.Net.Client and Grpc.AspNetCore (managed, cross-platform)"
+  },
+  {
+   "match": "Microsoft\\.AspNet\\.WebForms",
+   "status": "blocker",
+   "sev": "High",
+   "note": "Web Forms runtime: never ported to .NET Core or .NET 8+. Each page is re-authored.",
+   "replacement": "Part of the Web Forms UI rewrite (Razor Pages, MVC views or Blazor)"
+  },
+  {
+   "match": "Swashbuckle\\.(Core|Examples)",
+   "status": "replace",
+   "sev": "Low",
+   "note": "Swashbuckle 5.x for ASP.NET Web API 2 (Swashbuckle.Core, and the Examples add-on).",
+   "replacement": "Swashbuckle.AspNetCore (with Annotations or Filters) at a version for the target framework"
+  },
+  {
+   "match": "Rhino\\.Mocks",
+   "status": "replace",
+   "sev": "Low",
+   "note": "Rhino Mocks has been unmaintained since 2010 and has no one-to-one successor. Each test using its API is rewritten.",
+   "replacement": "Moq or NSubstitute (or FakeItEasy)"
+  },
+  {
+   "match": "NUnit",
+   "status": "ok",
+   "sev": "Low",
+   "note": "NUnit 3 and later run on .NET 10. NUnit 2.x (for example 2.6.4) needs its tests migrated to NUnit 3 first. The package id is the same, so check the version.",
+   "replacement": "Current NUnit 4.x"
+  },
+  {
+   "match": "Portable\\.BouncyCastle",
+   "status": "replace",
+   "sev": "Low",
+   "note": "Deprecated community port, renamed to BouncyCastle.Cryptography. The Org.BouncyCastle namespaces do not change.",
+   "replacement": "BouncyCastle.Cryptography 2.x",
+   "vulnerable_below": {
+    "Portable.BouncyCastle": "1.9.0"
+   }
+  },
+  {
+   "match": "SixLabors\\.ImageSharp(\\..*)?",
+   "status": "licence",
+   "sev": "Medium",
+   "note": "ImageSharp 3.x is under the Six Labors Split License (a paid licence above a revenue threshold). ImageSharp 4.0 and later need a build-time license key, so a 4.x reference fails the build without one.",
+   "replacement": "SkiaSharp (MIT, no build-time key), or pin ImageSharp 3.1.x after a licence decision"
+  },
+  {
+   "match": "Dapper(\\..*)?|Newtonsoft\\.Json(\\..*)?|AutoMapper\\..*|NLog|Serilog(\\..*)?|Polly|FluentValidation|Humanizer(\\..*)?|HtmlAgilityPack|CsvHelper|MediatR\\..*|Castle\\.Core|Moq|xunit(\\..*)?|MSTest\\.(?!TestFramework\\.v1$).*|FluentAssertions|RestSharp|StackExchange\\.Redis|AWSSDK\\..*|Twilio|Stripe\\.net|SendGrid|SharpZipLib|MimeKit|MailKit|ClosedXML|DocumentFormat\\.OpenXml|NPOI|ExcelDataReader(\\..*)?|QuestPDF|SkiaSharp(\\..*)?|Hangfire\\.Core|Quartz|Autofac|Unity|Ninject|SimpleInjector|Microsoft\\.Extensions\\..*|BouncyCastle(\\..*)?|BCrypt\\.Net-Next|Swashbuckle\\.AspNetCore(\\..*)?|MySql\\.Data|MySqlConnector|Npgsql(\\..*)?|MongoDB\\.Driver|Selenium\\.WebDriver|Microsoft\\.Data\\.SqlClient|log4net",
    "status": "ok",
    "sev": "Info",
    "note": "Cross-platform on .NET 10 in current versions; upgrade to a current major (check breaking changes).",

@@ -29,6 +29,20 @@
 | `HttpCookie`, `Request.Cookies[...]` | `Request.Cookies["x"]` (string), `Response.Cookies.Append` with `CookieOptions` |
 | `Session[...]` | `ISession` (strings and bytes only: serialise objects); store in ElastiCache when there are several tasks ([startup-and-middleware.md](startup-and-middleware.md)) |
 
+## System.Web namespace map
+
+| System.Web type or namespace | ASP.NET Core |
+|---|---|
+| `System.Web.Caching` (`Cache`, `CacheDependency`) | `IMemoryCache` or `IDistributedCache`. File dependencies → `IChangeToken` |
+| `System.Web.Hosting.IRegisteredObject` | `IHostedService` ([background-work.md](background-work.md)) |
+| `System.Web.Hosting.VirtualPathProvider` | `IFileProvider` |
+| `System.Web.Hosting.HostingEnvironment` | `IWebHostEnvironment` |
+| `System.Web.Security` (`FormsAuthentication`, `Membership`, `Roles`) | [auth.md](auth.md) |
+| `System.Web.Routing` | Endpoint routing (`MapControllerRoute`, `MapGet`) |
+| `System.Web.Optimization` | A build-time bundler ([startup-and-middleware.md](startup-and-middleware.md)) |
+| `HttpPostedFileBase`, `Request.Files` | `IFormFile`, from `Request.Form.Files` or a model property |
+| `System.Web.Mvc`, `System.Web.Http` | `Microsoft.AspNetCore.Mvc` ([mvc.md](mvc.md), [web-api.md](web-api.md)) |
+
 ## Gotchas
 
 - ASP.NET Core has no synchronisation context: code that relied on `HttpContext.Current` after an `await` on another thread now gets null from a static accessor. Pass the context or the values.

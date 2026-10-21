@@ -1,7 +1,18 @@
 # Playbook: authentication and identity
 
-**Rules:** API-WINDOWS-IDENTITY (residue); LNX-AUTH-*, LNX-CRY-ASPNET-DATAPROTECTION-KEYS, LNX-DATA-INTEGRATED-SECURITY (Linux readiness); AUTH-* (assessment).
+**Rules:** API-WINDOWS-IDENTITY (residue); LNX-AUTH-*, LNX-CRY-ASPNET-DATAPROTECTION-KEYS, LNX-AUTH-SQL-INTEGRATED (Linux readiness); AUTH-* (assessment).
 **Engines:** DevTx KB 08 and AWS Transform move Forms authentication and `[Authorize]` to ASP.NET Core cookies. What depends on Windows (integrated auth, AD lookups, impersonation, machineKey) is a design decision Claude prepares and the user approves.
+
+## Choose the target first
+
+| Need | Target | Notes |
+|---|---|---|
+| Staff sign in with their company identity; groups come from the directory | IAM Identity Center or the client's identity provider (OIDC or SAML) | Groups arrive as claims |
+| Windows users, Kerberos, or existing AD groups that the app must honour | AWS Managed Microsoft AD (with a trust if the directory stays on premises) | Keep the Negotiate path for the app; see below |
+| Customers or external users in an app-owned user pool | Amazon Cognito user pools | Hosted sign-in pages or the API |
+| Existing ASP.NET Identity 2 users | ASP.NET Core Identity on a backfilled schema, or the identity provider above | See the Identity 2 section |
+
+Record the choice per application. A single application with two user populations may need two targets.
 
 ## Forms authentication and machineKey
 
@@ -24,6 +35,16 @@ LDAP lookups (`System.DirectoryServices`): `System.DirectoryServices.Protocols` 
 ## Integrated security to databases
 
 `Integrated Security=SSPI` / `Trusted_Connection=True` → SQL authentication with the secret in Secrets Manager, or IAM authentication for RDS PostgreSQL; Kerberos to SQL Server from Linux only with a keytab. The connection string never carries the password in config.
+
+## Identity 2, OWIN and tokens
+
+- **OWIN cookie middleware** (`UseCookieAuthentication`) maps to ASP.NET Core cookie authentication. Cookies do not carry over, so users sign in again at cut-over unless the keys are shared (see the forms section).
+- **Identity 2 users.** The AspNetUsers, AspNetRoles and related tables can stay. ASP.NET Core Identity expects normalised user name and email columns and a concurrency stamp that Identity 2 does not have. Backfill them, then move the data context to ASP.NET Core Identity. Check the column list against the real schema.
+- **Password hashes.** ASP.NET Core can verify Identity 2 hashes with its Identity V2 compatibility mode (verify the option name in your version). Rehash to the current format on each successful login, so no one has to reset a password.
+- **Antiforgery.** Keep `ValidateAntiForgeryToken` on every state-changing action. The framework issues and checks the token pair. Do not build tokens by hand. The keys must persist, as above.
+- **JWT for API clients.** `AddJwtBearer` with the issuer, audience and signing keys from the identity provider. Old tokens do not verify, so issue new ones at cut-over.
+- **API endpoints.** On .NET 10, cookie authentication returns 401 or 403 for API endpoints instead of redirecting to a login page ([breaking-changes.md](../breaking-changes.md)).
+- **Claims transformation.** A claims hook in the old pipeline maps to `IClaimsTransformation`. Keep role and group mapping there, not in controllers.
 
 ## Done when
 

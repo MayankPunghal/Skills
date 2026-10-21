@@ -40,6 +40,10 @@
   {"id": "OPT-SEARCH-OPENSEARCH", "title": "Self-hosted search (Lucene, Solr, Elasticsearch)", "aws": "Amazon OpenSearch Service",
    "detect": ["\\bLucene\\.Net\\b", "\\bSolrNet\\b", "\\bElasticsearch\\.Net\\b", "\\bNEST\\b"],
    "why": "Removes cluster patching and capacity planning for search.",
-   "hours": [6, 20], "per_file": [1, 3]}
+   "hours": [6, 20], "per_file": [1, 3]},
+  {"id": "OPT-FEATURE-FLAGS-APPCONFIG", "title": "Feature flags in config files or a home-grown table", "aws": "AWS AppConfig feature flags (deployment strategies, validators, rollback); a .NET configuration provider for AppConfig is not confirmed (verify), the AWS SDK or the AppConfig agent sidecar works",
+   "detect": ["\\bMicrosoft\\.FeatureManagement\\b", "\\bIFeatureManager\\b", "\\bFeatureToggle\\b", "\\bFeatureFlags?\\b", "<add\\s+key=\"Feature[._]"],
+   "why": "Changes flags without a redeploy, with gradual rollout and automatic rollback on alarms.",
+   "hours": [4, 8], "per_file": [0.25, 0.5]}
  ]
 }

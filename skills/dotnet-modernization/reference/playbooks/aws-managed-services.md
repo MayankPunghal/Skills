@@ -29,6 +29,17 @@ the `AWS-*` rows of the assessment's aws-native.md (the modernization-assessment
 | Hosted log service (Loggly, Splunk, ...) | CloudWatch Logs | client-swap | log to stdout (JSON), the awslogs driver or FireLens ships it |
 | Session state server / SQL session | ElastiCache (distributed cache) session | config | `AddStackExchangeRedisCache` + `AddSession`; session objects must serialise (no BinaryFormatter) |
 | In-process cache shared across servers | ElastiCache, or keep in-process if per-task is acceptable | decision | with several tasks behind a load balancer, in-process caches diverge |
+| AppFabric caching (`Microsoft.ApplicationServer.Caching.Client`), NCache | ElastiCache (Valkey / Redis OSS) | rewrite | The AppFabric client has no drop-in target: move the calls to StackExchange.Redis or `IDistributedCache`. NCache is documented by its vendor for EC2 hosting, so keeping it there is the other option (verify the current support statement) |
+| Lucene.NET indexes, SolrNet | Amazon OpenSearch Service | rewrite | Index files and Solr cores do not move as files: re-index from the source data. SolrNet queries become OpenSearch queries (`OpenSearch.Client`) |
+| Inbound mail read by POP3 or IMAP polling (OpenPop, S22.Imap, MailKit read) | Amazon SES receiving rules, then S3, then Lambda or SQS | rewrite | A receipt rule stores incoming mail in S3, and a worker reads it from a queue. Check SES receiving support in the Region first (verify). Outbound mail stays on SES |
+| MassTransit on RabbitMQ or Kafka | MassTransit with the Amazon SQS transport (`MassTransit.AmazonSQS`) | client-swap | Consumers stay the same. Change the bus configuration, and test message names and topic setup |
+
+## Cross-task coordination
+
+With several tasks, in-memory coordination stops working. Two replacements:
+
+- **Distributed locks.** A DynamoDB conditional write with an expiry attribute, or ElastiCache `SET NX` with a time-to-live. Expiry matters: a task that dies must not hold the lock forever, so keep the work idempotent anyway. RedLock-style libraries are built for several independent Redis nodes. On one ElastiCache primary a `SET NX` with a time-to-live is usually enough (verify against your topology).
+- **SignalR backplane.** A hub on one task cannot reach a client connected to another task unless the messages cross a backplane. Use the Redis backplane on ElastiCache (`AddStackExchangeRedis`). Stickiness for the negotiation is still needed ([signalr.md](signalr.md)).
 
 ## Done when
 

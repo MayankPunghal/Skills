@@ -12,6 +12,8 @@ Replay sends the same requests to the port and compares status code and body aft
   - masks (regex list, default: GUIDs, ISO and /Date()/ timestamps, session-like tokens) replace volatile values
     with <masked> on both sides; masks.json may add {"regex": "...", "why": "..."} entries or {"xml_path"/"json_key"}
     names whose values are ignored.
+  - the raw response is compared as well, exactly: the charset in Content-Type, the XML declaration (version and
+    encoding) and a leading byte order mark. A changed charset or declaration is a difference, not a formatting detail.
 Writes <out>/parity.json and parity.md with its .html twin (default <out> = the goldens folder's parent). Exit 1 on any
 difference. Standard library only.
 """
@@ -91,6 +93,35 @@ def normal(body, masks, ignore):
         return "text", " ".join(b.split())
 
 
+def charset(ctype):
+    m = re.search(r"charset\s*=\s*\"?([^;\"\s]+)", ctype or "", re.I)
+    return m.group(1).lower() if m else None
+
+
+def xml_declaration(body):
+    """(version, encoding) of a leading XML declaration, or None when the body has none."""
+    m = re.match(r"\s*<\?xml\s+([^?]*)\?>", (body or "").lstrip("﻿"))
+    if not m:
+        return None
+    attrs = dict(re.findall(r"(\w+)\s*=\s*[\"']([^\"']*)[\"']", m.group(1)))
+    enc = attrs.get("encoding")
+    return attrs.get("version"), enc.lower() if enc else None
+
+
+def raw_diff(old, new):
+    """Checks on the raw response that the structural compare ignores: charset, XML declaration, byte order mark."""
+    co, cn = charset(old.get("content_type")), charset(new.get("content_type"))
+    if co != cn:
+        return f"Content-Type charset {co} (golden) vs {cn} (port)"
+    bo, bn = (old.get("body") or "").startswith("﻿"), (new.get("body") or "").startswith("﻿")
+    if bo != bn:
+        return f"byte order mark {'present' if bo else 'absent'} in golden, {'present' if bn else 'absent'} in port"
+    xo, xn = xml_declaration(old.get("body")), xml_declaration(new.get("body"))
+    if xo != xn:
+        return f"XML declaration {xo} (golden) vs {xn} (port)"
+    return None
+
+
 def first_diff(a, b, path="$"):
     if type(a) is not type(b):
         return f"{path}: {type(a).__name__} vs {type(b).__name__}"
@@ -144,15 +175,18 @@ def replay(a):
             ko, vo = normal(old.get("body"), masks, ignore)
             kn, vn = normal(new.get("body"), masks, ignore)
             diff = f"body format {ko} vs {kn}" if ko != kn else first_diff(vo, vn)
+            diff = diff or raw_diff(old, new)
         rows.append({"name": q["name"], "path": q.get("path_new") or q["path"], "status_old": old.get("status"), "status_new": new.get("status"),
                      "ms_old": old.get("ms"), "ms_new": new.get("ms"), "match": diff is None, "diff": diff})
     out = a.out or os.path.dirname(os.path.abspath(a.goldens))
+    os.makedirs(out, exist_ok=True)
     res = {"base_url": a.base_url, "goldens": os.path.abspath(a.goldens), "masks": [m.get("why") or m["regex"] for m in masks],
            "ignored_names": sorted(ignore), "total": len(rows), "matched": sum(r["match"] for r in rows), "rows": rows}
     res["passed"] = res["total"] > 0 and res["matched"] == res["total"]
     json.dump(res, open(os.path.join(out, "parity.json"), "w", encoding="utf-8"), indent=1)
     L = ["# Parity replay", "", f"{res['matched']} of {res['total']} recorded requests match at `{a.base_url}`. "
-         f"**{'PASS' if res['passed'] else 'FAIL'}**.", "", f"Masked: {', '.join(res['masks'])}. Ignored names: {', '.join(res['ignored_names']) or 'none'}.", "",
+         f"**{'PASS' if res['passed'] else 'FAIL'}**.", "", f"Masked: {', '.join(res['masks'])}. Ignored names: {', '.join(res['ignored_names']) or 'none'}. "
+         "Raw checks: Content-Type charset, XML declaration, byte order mark.", "",
          "| Request | Path | Status (old / new) | ms (old / new) | Match | First difference |", "|---|---|---|---|---|---|"]
     for r in rows:
         L.append(f"| {r['name']} | `{r['path']}` | {r['status_old']} / {r['status_new']} | {r['ms_old']} / {r['ms_new']} | "

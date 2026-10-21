@@ -83,13 +83,16 @@ Package: <name>
 
 An application already on net5.0 or later needs no engine run. Do the Linux readiness check only:
 
-1. `linux_readiness.py <folder>` (240 checks: letter case against the files on disk, separators, Windows-only APIs and
+1. `linux_readiness.py <folder>` (337 checks: letter case against the files on disk, separators, Windows-only APIs and
    packages, time zones, culture, encodings, native libraries, file system and process assumptions, IIS hosting, the
    container image; [linux-readiness.md](linux-readiness.md));
 2. fix each hit with [playbooks/linux-and-containers.md](playbooks/linux-and-containers.md) and
    [playbooks/time-and-culture.md](playbooks/time-and-culture.md);
-3. upgrade the target framework to net10.0 if it is out of support (an SDK-style project: change the TFM, update
-   packages, read the breaking-change list for each major version crossed);
+3. upgrade the target framework to net10.0 if it is out of support or about to be: .NET 5, 6 and 7 are out of
+   support, and .NET 8 and .NET 9 both end support on 10 November 2026, so an app on 8 or 9 is not "done"
+   ([breaking-changes.md](breaking-changes.md)). An SDK-style project: change the TFM, update packages, read the
+   breaking-change list for each major version crossed. This is usually done by hand; for a large jump an engine can
+   do it (DevTx accepts .NET Core 1.0-3.1 and .NET 5-7 sources, AWS Transform .NET Core 3.1 and .NET 5-10);
 4. container gate and parity, as above.
 
 ## Run log and hand-over

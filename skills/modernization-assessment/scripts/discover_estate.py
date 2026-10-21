@@ -49,10 +49,13 @@ TFM_SUPPORT = [  # (regex, label, end of support, status)
 ]
 
 
-def tfm_info(tfm):
+def tfm_info(tfm, today=None):
+    """Support status of a target framework. "ending-soon" becomes "out-of-support" once its end date has passed."""
     t = (tfm or "").lower().split("-")[0]
     for rx, label, eos, status in TFM_SUPPORT:
         if re.search(rx, t):
+            if status == "ending-soon" and re.match(r"^\d{4}-\d{2}-\d{2}$", eos) and (today or datetime.date.today().isoformat()) >= eos:
+                status = "out-of-support"
             return {"tfm": tfm, "label": label, "end_of_support": eos, "status": status}
     return {"tfm": tfm, "label": tfm or "unknown", "end_of_support": "unknown", "status": "unknown"}
 

@@ -4,7 +4,7 @@ What breaks after the code compiles, and the rule that catches each one.
 
 | Pitfall | Why | Rule / check | What to do |
 | --- | --- | --- | --- |
-| **Case-sensitive file names** | `~/Content/site.css` vs `Site.css` works on Windows (NTFS is case-insensitive) and 404s on Linux | `FILE-CASE-MISMATCH` (literals checked against the files on disk) | Fix the literal or the file; add a CI check on Linux |
+| **Case-sensitive file names** | `~/Content/site.css` vs `Site.css` works on Windows (NTFS is case-insensitive) and 404s on Linux | `LNX-FS-CASE-LITERAL` (path literals checked against the files on disk; the other `LNX-FS-CASE-*` checks cover Razor views, static URLs, embedded resources, assembly names and appsettings files; the scanner also raises `FILE-CASE-MISMATCH` for path literals in code) | Fix the literal or the file; add a CI check on Linux |
 | **Path separators** | `\` is a valid filename character on Linux | `FILE-BACKSLASH` | `Path.Combine`, `/` |
 | **Drive letters, UNC, %VARS%, special folders** | Do not exist on Linux or containers | `FILE-DRIVE-LETTER`, `NET-UNC-SHARE`, `FILE-WIN-FOLDERS` | Configured paths on mounted storage / S3 |
 | **Time zones** | Hosts and containers run UTC; Windows TZ IDs resolve only through ICU; invariant mode breaks conversions | `TZ-WINDOWS-ID`, `TZ-LOCAL-TIME`, `TZ-SQL-LOCAL-TIME` | Explicit business time zone; IANA IDs or conversion; `tzdata` + ICU in the image |

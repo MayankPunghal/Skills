@@ -26,6 +26,7 @@
 - Log levels from `appsettings.json` (`Logging:LogLevel`), overridable by environment variable (`Logging__LogLevel__Default`).
 - Multi-line stack traces break line-based shipping: the JSON formatter keeps them in one event.
 - Sampling and retention cost money: set CloudWatch retention per log group with DevOps.
+- Trace output does not reach stdout by default. A trace listener that writes to a file in the container writes to a place nobody collects. Send `Trace` calls through `ILogger`, or add a console trace listener and check it in the container log.
 
 ## Done when
 

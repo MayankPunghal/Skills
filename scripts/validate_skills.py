@@ -58,7 +58,7 @@ BOOL_KEYS = {"disable-model-invocation", "user-invocable", "background"}
 SKIP_DIRS = {"__pycache__", "node_modules", ".git"}
 CACHE_DIRS = {".impeccable", ".pytest_cache", ".mypy_cache", ".venv", "venv", ".idea", ".vscode"}
 JUNK_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
-SAMPLE_DIRS = {"samples", "fixtures", "testdata"}  # example output: not style-linted, still scanned for secrets
+SAMPLE_DIRS = {"samples", "fixtures", "testdata", "archive"}  # example output and archived raw reports: not style-linted, still scanned for secrets
 TEXT_EXT = {".md", ".py", ".mjs", ".js", ".json", ".txt", ".yml", ".yaml", ".toml", ".html", ".css", ".ps1", ".bat",
             ".cmd", ".sh", ".tmpl", ".csv", ".template", ""}
 

@@ -710,6 +710,588 @@
      ]
     }
    ]
+  },
+  {
+   "id": "appfabric-cache",
+   "label": "AppFabric Caching",
+   "kind": "cache",
+   "detect": {
+    "packages": "^(ServerAppFabric\\.Client|Microsoft\\.ApplicationServer\\.Caching\\w*|AppFabric\\w*)$",
+    "client": "\\b(DataCacheFactory|DataCacheFactoryConfiguration|DataCache|DataCacheServerEndpoint)\\b|using\\s+Microsoft\\.ApplicationServer\\.Caching",
+    "keyword": "appfabric|datacache",
+    "config_keys": "(?i)dataCacheClient|appfabric",
+    "config_values": ":22233\\b",
+    "legacy": "\\bDataCacheFactory\\b"
+   },
+   "targets": [
+    {
+     "id": "elasticache-valkey",
+     "aws": "Amazon ElastiCache (Valkey or Redis OSS)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "AppFabric Caching is a Windows Server service with a .NET Framework client (verify the TFMs of the package in use): rewrite the cache wrapper on StackExchange.Redis or IDistributedCache; regions and tags have no Redis equivalent (use key prefixes); locking calls (GetAndLock / PutAndUnlock) become a Redis lock; TLS and AUTH or IAM from Secrets Manager.",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-CACHE-ELASTICACHE"
+   ]
+  },
+  {
+   "id": "ncache",
+   "label": "NCache",
+   "kind": "cache",
+   "detect": {
+    "packages": "^(Alachisoft\\.NCache\\.\\w+|NCache\\.\\w+|NCache\\w*)$",
+    "client": "\\b(CacheManager\\.GetCache|ICache|NCache)\\b|using\\s+Alachisoft\\.NCache",
+    "keyword": "ncache",
+    "config_keys": "(?i)ncache",
+    "config_values": ":9800\\b"
+   },
+   "targets": [
+    {
+     "id": "elasticache-valkey",
+     "aws": "Amazon ElastiCache (Valkey or Redis OSS)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Rewrite the cache wrapper on StackExchange.Redis or IDistributedCache; NCache features with no Redis equivalent (SQL dependencies, read-through/write-through providers, groups and tags) move into application code; TLS and AUTH or IAM from Secrets Manager.",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "ncache-ec2",
+     "aws": "NCache on EC2 Linux (keep the product; verify its Linux and .NET 10 client support)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the client at the NCache servers on EC2; licence moves with the client; check the client package supports .NET 10 on Linux.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-CACHE-ELASTICACHE"
+   ]
+  },
+  {
+   "id": "solr",
+   "label": "Apache Solr",
+   "kind": "search",
+   "detect": {
+    "packages": "^(SolrNet\\w*|SolrNet\\.\\w+|SolrExpress\\w*)$",
+    "client": "\\b(ISolrOperations|SolrNet|SolrQuery|Startup\\.Init<|ISolrReadOnlyOperations)\\b|using\\s+SolrNet",
+    "keyword": "solr",
+    "config_keys": "(?i)solr",
+    "config_values": ":8983\\b|/solr/"
+   },
+   "targets": [
+    {
+     "id": "opensearch",
+     "aws": "Amazon OpenSearch Service",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Rewrite the search wrapper on OpenSearch.Client; map the Solr schema to an OpenSearch mapping, analysers and synonyms; faceting becomes aggregations; re-index from the source of record. Check relevance with a sample of real queries.",
+     "fixed": [
+      16,
+      32
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "solr-ec2",
+     "aws": "Solr on EC2 or ECS (keep the product)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point SolrNet at the Solr endpoint on AWS; TLS and authentication; the cores and their config move with DevOps.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ],
+   "supersedes_optional": [
+    "OPT-SEARCH-OPENSEARCH"
+   ]
+  },
+  {
+   "id": "inbound-mail",
+   "label": "Inbound mail (POP3 / IMAP polling)",
+   "kind": "mail",
+   "detect": {
+    "packages": "^(OpenPop\\.NET|S22\\.Imap|ImapX|Limilabs\\.Mail)$",
+    "client": "\\b(Pop3Client|ImapClient|IMailFolder)\\b",
+    "keyword": "pop3|imap|inbox|mail_?reader",
+    "config_keys": "(?i)pop3|imap|incomingmail|mailbox",
+    "config_values": ":(110|143|993|995)\\b"
+   },
+   "targets": [
+    {
+     "id": "ses-receiving",
+     "aws": "Amazon SES email receiving (to S3 and SNS / Lambda; verify the Region supports receiving)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Replace the polling loop with SES receipt rules that store messages in S3 and notify through SNS or Lambda; parse the MIME from S3 with MimeKit; the receiving domain's MX record points at SES (DevOps).",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "keep-mailbox",
+     "aws": "Keep the mailbox (Exchange Online, Microsoft 365 or another host) and poll it from AWS",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the client at the mailbox host; OAuth instead of basic auth where the host requires it; credentials from Secrets Manager.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cassandra",
+   "label": "Apache Cassandra",
+   "kind": "document-store",
+   "detect": {
+    "packages": "^(CassandraCSharpDriver|Cassandra\\w*|DataStax\\.\\w+)$",
+    "client": "\\b(Cluster\\.Builder|ISession|Cassandra\\.Mapping|Table<)\\b|using\\s+Cassandra",
+    "keyword": "cassandra",
+    "config_keys": "(?i)cassandra|contactpoints",
+    "config_values": ":9042\\b"
+   },
+   "targets": [
+    {
+     "id": "keyspaces",
+     "aws": "Amazon Keyspaces (for Apache Cassandra; verify the CQL features in use)",
+     "change": "config",
+     "factor": "code",
+     "work": "TLS with the Starfield certificate, SigV4 authentication plugin or service-specific credentials; consistency LOCAL_QUORUM; check unsupported CQL (some batch, UDF and materialized-view features).",
+     "fixed": [
+      4,
+      8
+     ],
+     "per_provider_file": [
+      1,
+      2
+     ],
+     "per_consumer_site": [
+      0,
+      0.1
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ravendb",
+   "label": "RavenDB",
+   "kind": "document-store",
+   "detect": {
+    "packages": "^(RavenDB\\.Client\\w*|RavenDB\\.\\w+)$",
+    "client": "\\b(DocumentStore|IDocumentSession|IAsyncDocumentSession)\\b|using\\s+Raven\\.Client",
+    "keyword": "raven",
+    "config_keys": "(?i)raven",
+    "config_values": "(?i)ravendb|:38888\\b"
+   },
+   "targets": [
+    {
+     "id": "ravendb-ec2",
+     "aws": "RavenDB on EC2 or RavenDB Cloud on AWS (keep the product; verify hosting options)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the client at the new cluster URLs; client certificate from Secrets Manager; check the client version supports .NET 10.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "documentdb",
+     "aws": "Amazon DocumentDB (rewrite to the MongoDB driver)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Rewrite sessions, indexes and queries on MongoDB.Driver; RavenDB indexes and patching have no direct equivalent.",
+     "fixed": [
+      16,
+      32
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "couchbase",
+   "label": "Couchbase",
+   "kind": "document-store",
+   "detect": {
+    "packages": "^(CouchbaseNetClient|Couchbase\\.\\w+|Linq2Couchbase)$",
+    "client": "\\b(Cluster\\.ConnectAsync|ICluster|IBucket|ICouchbaseCollection)\\b|using\\s+Couchbase",
+    "keyword": "couchbase",
+    "config_keys": "(?i)couchbase",
+    "config_values": "(?i)couchbases?://|:(8091|11210)\\b"
+   },
+   "targets": [
+    {
+     "id": "couchbase-ec2",
+     "aws": "Couchbase on EC2 or Couchbase Capella on AWS (keep the product; verify hosting options)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the client at the new cluster; TLS and credentials from Secrets Manager; client SDK 3.x for .NET 10.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "documentdb-or-dynamodb",
+     "aws": "Amazon DocumentDB or DynamoDB (rewrite)",
+     "change": "rewrite",
+     "factor": "code",
+     "work": "Rewrite the data access for the new store; N1QL queries need redesign; key-value access maps to DynamoDB more directly.",
+     "fixed": [
+      16,
+      32
+     ],
+     "per_provider_file": [
+      3,
+      6
+     ],
+     "per_consumer_site": [
+      0.25,
+      0.5
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "remove",
+     "aws": "Remove (the feature is switched off)",
+     "change": "remove",
+     "factor": "code",
+     "work": "Delete the wrapper, its packages and settings once the client confirms the store is unused in every environment.",
+     "fixed": [
+      1,
+      2
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.1,
+      0.25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "neo4j",
+   "label": "Neo4j",
+   "kind": "graph",
+   "detect": {
+    "packages": "^(Neo4j\\.Driver\\w*|Neo4jClient|Neo4j\\.\\w+)$",
+    "client": "\\b(GraphDatabase\\.Driver|IDriver|IAsyncSession|GraphClient)\\b|using\\s+Neo4j",
+    "keyword": "neo4j",
+    "config_keys": "(?i)neo4j",
+    "config_values": "(?i)bolt(\\+s)?://|neo4j(\\+s)?://|:7687\\b"
+   },
+   "targets": [
+    {
+     "id": "neptune",
+     "aws": "Amazon Neptune with openCypher (verify the Cypher features in use)",
+     "change": "client-swap",
+     "factor": "code",
+     "work": "Use the Neo4j Bolt driver against Neptune's openCypher endpoint with IAM (SigV4) authentication; check unsupported Cypher (APOC procedures, some functions); Neo4jClient fluent queries need checking one by one.",
+     "fixed": [
+      8,
+      16
+     ],
+     "per_provider_file": [
+      2,
+      4
+     ],
+     "per_consumer_site": [
+      0.1,
+      0.25
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    },
+    {
+     "id": "neo4j-ec2",
+     "aws": "Neo4j on EC2 or Neo4j Aura on AWS (keep the product)",
+     "change": "config",
+     "factor": "code",
+     "work": "Point the driver at the new endpoint; TLS and credentials from Secrets Manager.",
+     "fixed": [
+      2,
+      4
+     ],
+     "per_provider_file": [
+      0.5,
+      1
+     ],
+     "per_consumer_site": [
+      0,
+      0
+     ],
+     "per_config_key": [
+      0.25,
+      0.5
+     ]
+    }
+   ]
   }
  ],
  "consumer_repo_fixed": [

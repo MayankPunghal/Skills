@@ -1,0 +1,4 @@
+[
+ {"rule": "LNX-API-REGISTRY", "path": "src/Legacy/Startup/*", "reason": "Reads one value at start; replaced by configuration in sprint 3", "by": "application owner", "expires": "2026-12-31"},
+ {"rule": "LNX-HOST-FORWARDED-HEADERS", "path": "src/Api/Program.cs", "reason": "ASPNETCORE_FORWARDEDHEADERS_ENABLED=true is set in the ECS task definition", "by": "platform team"}
+]

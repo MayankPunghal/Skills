@@ -4,19 +4,25 @@
                                       [--level block|warn|info] [--gate] [--title NAME]
     python scripts/linux_readiness.py --all    (in an assessment workspace: every inventoried repository,
                                                 output to assessment/linux/<repo>/)
+    python scripts/linux_readiness.py <folder-or-Dockerfile> --dockerfile-only [--out <dir>] [--gate]
+    python scripts/linux_readiness.py --explain [LNX-ID | id prefix | words]   (no scan: what a check looks for and why)
 
-Applies scripts/data/linux_readiness.json (240 checks in 19 areas: build and packaging, file system and paths, time
+Applies scripts/data/linux_readiness.json (337 checks in 19 areas: build and packaging, file system and paths, time
 zones, culture, encodings and line endings, processes and shell, environment, crypto and certificates, auth, databases,
 networking, IPC, Windows-only APIs, IIS hosting, container images, configuration, logging and runtime, scheduling and
 messaging, CI). Each automated check is a regex over the file types it names (code, project, config, markup, Dockerfile,
 CI, scripts) or over file paths; the rest are listed as a review checklist.
 Works for .NET Framework code before a port, for ported code, and for applications already on modern .NET (the
-"Linux readiness only" path). Same file in the modernization-assessment and dotnet-modernization skills.
+"Linux readiness only" path). Same file in the modernization-assessment, dotnet-modernization and linux-readiness skills.
 Writes <out>/linux-readiness.json and linux-readiness.md with its .html twin (default <out> = <folder>/.modernization).
---gate: exit 1 while a blocking hit is not waived. Waivers: [{"rule": "LNX-...", "path": "glob", "reason": "...", "by": "..."}].
+--dockerfile-only: only the checks that read Dockerfiles and entrypoint scripts (plus "no .dockerignore"), over a folder or
+one Dockerfile; writes linux-readiness-dockerfile.* instead.
+--gate: exit 1 while a blocking hit is not waived. Waivers: [{"rule": "LNX-...", "path": "glob", "reason": "...", "by": "...",
+"expires": "YYYY-MM-DD"}]; a waiver without a reason, or past its expiry date, is ignored (and reported).
 Standard library only.
 """
 import argparse
+import datetime
 import fnmatch
 import json
 import os
@@ -31,18 +37,25 @@ from _mdhtml import write_pair  # noqa: E402
 SKIP_DIRS = {"bin", "obj", ".git", ".vs", "node_modules", ".modernization", "TestResults", "assessment"}
 TEXT_EXT = {".cs", ".vb", ".csproj", ".vbproj", ".fsproj", ".props", ".targets", ".config", ".json", ".cshtml", ".razor", ".aspx",
             ".ascx", ".master", ".sql", ".yml", ".yaml", ".pubxml", ".ps1", ".sh", ".bat", ".cmd", ".js", ".xml", ".resx", ".html",
-            ".htm", ".css", ".gitattributes", ".dockerfile", ".asax", ".ashx", ".asmx", ".svc", ".settings", ".txt"}
+            ".htm", ".css", ".gitattributes", ".dockerfile", ".asax", ".ashx", ".asmx", ".svc", ".settings", ".txt",
+            ".sln", ".pem", ".crt", ".cer"}
 TEXT_NAMES = {"dockerfile", "jenkinsfile", "nuget.config", ".gitattributes", ".dockerignore"}
 CODE_EXT = {".cs", ".vb"}
 MAX_BYTES = 2_000_000
+DOCKER_FILES = {"Dockerfile*", "*.dockerfile", "entrypoint*"}  # the file globs --dockerfile-only keeps
 
 
-SECRET_RX = re.compile(r"(?i)\b(password|pwd|passwd|secret|apikey|api_key|accesskey|token|sharedkey|accountkey)(\w*\s*[=:]\s*[\"']?)[^;,\"'\s<>]+")
+SECRET_WORDS = r"password|passwd|pwd|secret|apikey|api_key|accesskey|access_key|token|sharedkey|accountkey|privatekey|private_key|credential"
+# key=value, key: value, "key": "value" (the secret word may sit inside a longer name: DB_PASSWORD, ApiSecret, ClientSecret)
+SECRET_RX = re.compile(r"(?i)(\w*(?:" + SECRET_WORDS + r")\w*[\"']?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^;,\"'\s<>]+)")
+# <add key="ApiSecret" value="..."/>: the secret word is in the key attribute, the value in the next one
+SECRET_ATTR_RX = re.compile(r"(?i)(key\s*=\s*[\"'][^\"']*(?:" + SECRET_WORDS + r")[^\"']*[\"']\s+value\s*=\s*[\"'])[^\"']*")
 
 
 def mask(text):
     """Never copy a secret value into a report: keep the key, replace the value."""
-    return SECRET_RX.sub(lambda m: m.group(1) + m.group(2) + "***", text)
+    text = SECRET_ATTR_RX.sub(lambda m: m.group(1) + "***", text)
+    return SECRET_RX.sub(lambda m: m.group(1) + (m.group(2)[0] + "***" + m.group(2)[0] if m.group(2)[:1] in "\"'" else "***"), text)
 
 
 def load_rules(level="info"):
@@ -53,7 +66,7 @@ def load_rules(level="info"):
         for k in ("context", "unless_in_file", "unless_in_line"):
             if r.get(k):
                 r["_" + k] = re.compile(r[k], re.M)
-        for k in ("when_path", "absent_path"):
+        for k in ("when_path", "absent_path", "only_path"):
             if r.get(k):
                 r["_" + k] = re.compile(r[k], re.I)
         for p in r["patterns"]:
@@ -61,6 +74,35 @@ def load_rules(level="info"):
             ci = any(k in ("df", "yml", "ps1", "sh", "bat") for k in p.get("kinds", [])) or (p["files"] == ["@path"] and "(?i:" not in p["regex"])
             p["rx"] = re.compile(p["regex"], re.I if ci else 0)
     return d, rules
+
+
+def docker_only(rules):
+    """--dockerfile-only: keep the patterns that read Dockerfiles or entrypoints, the "absent" checks keyed on a
+    Dockerfile, and the checklist items a person confirms in the Dockerfile (kind df)."""
+    keep = []
+    for r in rules:
+        if r.get("check") == "absent":
+            if "ockerfile" in r.get("when_path", ""):
+                keep.append(r)
+        elif not r["automated"]:
+            if any("df" in p.get("kinds", []) for p in r["patterns"]):
+                keep.append(r)
+        else:
+            pats = [dict(p, files=[g for g in p["files"] if g in DOCKER_FILES]) for p in r["patterns"]
+                    if any(g in DOCKER_FILES for g in p["files"] or [])]
+            if pats:
+                keep.append(dict(r, patterns=pats))
+    return keep
+
+
+def valid_waivers(waivers, today=None):
+    """A waiver must say why (reason) and, when it has an expiry date, still be in date. Returns (usable, ignored)."""
+    today = today or datetime.date.today().isoformat()
+    ok, bad = [], []
+    for w in waivers:
+        why = "no reason" if not str(w.get("reason", "")).strip() else "expired" if w.get("expires") and str(w["expires"]) < today else ""
+        (bad if why else ok).append(dict(w, ignored=why) if why else w)
+    return ok, bad
 
 
 def matches_file(globs, rel):
@@ -101,7 +143,7 @@ def walk(root):
 
 def is_text(path):
     n = os.path.basename(path).lower()
-    return os.path.splitext(n)[1] in TEXT_EXT or n in TEXT_NAMES or n.startswith("dockerfile")
+    return os.path.splitext(n)[1] in TEXT_EXT or n in TEXT_NAMES or n.startswith("dockerfile") or "entrypoint" in n
 
 
 def comment(line, ext):
@@ -138,8 +180,15 @@ def build_index(root):
     return idx
 
 
-def scan(root, level="info", waivers=()):
+def scan(root, level="info", waivers=(), dockerfile_only=False):
     d, rules = load_rules(level)
+    if dockerfile_only:
+        rules = docker_only(rules)
+    waivers, ignored = valid_waivers(waivers)
+    single = os.path.isfile(root)  # one Dockerfile: scan it alone, look for .dockerignore beside it
+    paths = [root] if single else None
+    if single:
+        root = os.path.dirname(os.path.abspath(root))
     index = build_index(root)
     gac = [r for r in rules if r.get("check") == "reference_without_hintpath"]
     path_rules = [(r, p) for r in rules if r["automated"] and not r.get("check") for p in r["patterns"] if p["files"] == ["@path"]]
@@ -151,15 +200,23 @@ def scan(root, level="info", waivers=()):
     hits = []
     rels = []
     files = 0
-    for path in walk(root):
+    if single:  # the build context is usually this folder or a parent: look up to the repository root (.git)
+        up, rels = root, []
+        for _ in range(8):
+            rels += [x for x in os.listdir(up) if os.path.isfile(os.path.join(up, x))]
+            if os.path.exists(os.path.join(up, ".git")) or os.path.dirname(up) == up:
+                break
+            up = os.path.dirname(up)
+    for path in paths or walk(root):
         rel = os.path.relpath(path, root).replace("\\", "/")
-        rels.append(rel)
+        if not single:
+            rels.append(rel)
         for r, p in path_rules:
             if p["rx"].search(rel):
                 hits.append({"rule": r["id"], "file": rel, "line": 0, "text": rel})
         if not is_text(path) or os.path.getsize(path) > MAX_BYTES or rel.lower().endswith("properties/launchsettings.json"):
             continue  # launchSettings.json is local-debug only, never deployed
-        mine = [(r, p) for r, p in text_rules if matches_file(p["files"], rel)]
+        mine = [(r, p) for r, p in text_rules if matches_file(p["files"], rel) and not (r.get("only_path") and not r["_only_path"].search(rel))]
         whole = [(r, p) for r, p in file_rules if matches_file(p["files"], rel)]
         if not mine and not whole and not (gac and rel.lower().endswith(("proj"))):
             continue
@@ -212,14 +269,18 @@ def scan(root, level="info", waivers=()):
         when = [x for x in rels if r["_when_path"].search(x)]
         if when and not any(r["_absent_path"].search(x) for x in rels):
             hits.append({"rule": r["id"], "file": when[0], "line": 0, "text": f"{len(when)} file(s) like {when[0]}; nothing matches {r['absent_path']}"})
+    used = set()
     for h in hits:
-        w = next((w for w in waivers if w.get("rule") in (h["rule"], "*") and fnmatch.fnmatch(h["file"], w.get("path", "*"))), None)
+        i, w = next(((i, w) for i, w in enumerate(waivers) if w.get("rule") in (h["rule"], "*") and fnmatch.fnmatch(h["file"], w.get("path", "*"))), (None, None))
         h["waived"] = bool(w)
         if w:
             h["waiver"] = w.get("reason", "")
+            used.add(i)
     byid = {r["id"]: r for r in rules}
     open_block = [h for h in hits if byid[h["rule"]]["level"] == "block" and not h["waived"]]
     return {"root": os.path.abspath(root), "files_scanned": files, "level": level, "sources": d.get("sources", {}),
+            "mode": "dockerfile" if dockerfile_only else "full",
+            "waivers_ignored": ignored, "waivers_unused": [w for i, w in enumerate(waivers) if i not in used],
             "rules": {r["id"]: {k: r[k] for k in ("area", "level", "what", "fix", "sources", "automated", "detect")} for r in rules},
             "hits": hits, "passed": not open_block,
             "summary": {"block_open": len(open_block), "block_waived": sum(1 for h in hits if byid[h["rule"]]["level"] == "block" and h["waived"]),
@@ -234,7 +295,7 @@ def render(res, title=None):
     per = defaultdict(list)
     for h in res["hits"]:
         per[h["rule"]].append(h)
-    L = [f"# Linux readiness: {title or os.path.basename(res['root'].rstrip(os.sep))}", "",
+    L = [f"# Linux readiness{' (Dockerfile only)' if res.get('mode') == 'dockerfile' else ''}: {title or os.path.basename(res['root'].rstrip(os.sep))}", "",
          f"**{'PASS' if res['passed'] else 'FAIL'}**: {s['block_open']} blocking hits open ({s['block_waived']} waived), {s['warn']} to review, "
          f"{s['info']} for information. {s['rules_hit']} of {s['rules_checked']} automated checks hit, over {res['files_scanned']} files; "
          f"{s['checklist_items']} checks need a person (list at the end).", "",
@@ -260,6 +321,10 @@ def render(res, title=None):
             L.append(f"- `{loc}` {'(waived: ' + h['waiver'] + ') ' if h['waived'] else ''}`{h['text'].replace('`', chr(39))[:110]}`")
         if len(per[rid]) > 25:
             L.append(f"- ... {len(per[rid]) - 25} more in linux-readiness.json")
+    if res.get("waivers_ignored") or res.get("waivers_unused"):
+        L += ["", "## Waivers to tidy", "", "| Rule | Path | Problem |", "|---|---|---|"]
+        L += [f"| {w.get('rule', '')} | {w.get('path', '*')} | ignored: {w['ignored']} |" for w in res.get("waivers_ignored", [])]
+        L += [f"| {w.get('rule', '')} | {w.get('path', '*')} | matches no hit (fixed? remove it) |" for w in res.get("waivers_unused", [])]
     manual = [r for r in R.values() if not r["automated"]]
     if manual:
         L += ["", "## Checklist: checks a person confirms", "", "| Check | Level | What breaks | How to check |", "|---|---|---|---|"]
@@ -271,11 +336,39 @@ def render(res, title=None):
     return "\n".join(L) + "\n"
 
 
+def explain(query):
+    """Print what a check looks for, its level, fix and sources; a prefix or words list the matching checks."""
+    d, rules = load_rules("info")
+    q = (query or "").strip()
+    one = [r for r in rules if r["id"].lower() == q.lower()]
+    found = one or [r for r in rules if r["id"].lower().startswith(q.lower())] or \
+        [r for r in rules if all(re.search(r"\b" + re.escape(w), (r["id"] + " " + r["area"] + " " + r["what"] + " " + r["fix"]).lower()) for w in q.lower().split())]
+    if not found:
+        sys.exit(f"no check matches '{q}': try an id prefix (LNX-CTR, LNX-TZ) or a word (dockerfile, registry)")
+    if len(found) > 1:
+        for r in found:
+            print(f"{r['id']:<34} {r['level']:<5} {'auto' if r['automated'] else 'manual':<6} {r['area']}: {r['what']}")
+        print(f"\n{len(found)} checks; --explain <id> for one")
+        return
+    r = found[0]
+    print(f"{r['id']}  [{r['level']}, {'automated' if r['automated'] else 'checklist: a person confirms'}{', ' + r['check'] if r.get('check') else ''}]")
+    print(f"Area:    {r['area']}\nBreaks:  {r['what']}\nFix:     {r['fix']}\nDetect:  {r['detect']}")
+    for p in r["patterns"]:
+        print(f"Pattern: {p['regex']}  in {', '.join(p['files'] or ['(manual)'])}")
+    for k in ("context", "unless_in_file", "unless_in_line", "only_path", "when_path", "absent_path"):
+        if r.get(k):
+            print(f"{k}: {r[k]}")
+    for s in r["sources"]:
+        print(f"Source:  {s} = {d['sources'].get(s, 'engineering knowledge, not a cited page: verify before reporting as fact')}")
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("root", nargs="?", help="repository or solution folder (omit with --all)")
+    ap.add_argument("root", nargs="?", help="repository or solution folder, or one Dockerfile with --dockerfile-only (omit with --all)")
+    ap.add_argument("--dockerfile-only", action="store_true", help="only the Dockerfile / entrypoint checks; writes linux-readiness-dockerfile.*")
+    ap.add_argument("--explain", nargs="?", const="", metavar="QUERY", help="describe a check (id), or list checks (prefix, words, nothing = all)")
     ap.add_argument("--all", action="store_true", help="assessment workspace: every repository in assessment/inventory, output to assessment/linux/<repo>/")
     ap.add_argument("--out")
     ap.add_argument("--waivers")
@@ -283,6 +376,8 @@ def main():
     ap.add_argument("--gate", action="store_true")
     ap.add_argument("--title")
     a = ap.parse_args()
+    if a.explain is not None:
+        return explain(a.explain)
     wv = json.load(open(a.waivers, encoding="utf-8")) if a.waivers else []
     if a.all:
         jobs = []
@@ -293,19 +388,27 @@ def main():
         if not jobs:
             sys.exit("no repositories in assessment/inventory: run discover_estate.py first, or pass a folder")
     elif a.root:
-        jobs = [(a.root, a.out or os.path.join(a.root, ".modernization"), a.title)]
+        if not os.path.exists(a.root):
+            sys.exit(f"{a.root} does not exist: give a repository folder, or a Dockerfile with --dockerfile-only")
+        if os.path.isfile(a.root) and not a.dockerfile_only:
+            ap.error("a single file is scanned only with --dockerfile-only; give the repository folder for the full check")
+        folder = os.path.dirname(os.path.abspath(a.root)) if os.path.isfile(a.root) else a.root
+        jobs = [(a.root, a.out or os.path.join(folder, ".modernization"), a.title)]
     else:
-        ap.error("give a folder, or --all in an assessment workspace")
+        ap.error("give a folder, or --all in an assessment workspace, or --explain <check>")
+    name = "linux-readiness-dockerfile" if a.dockerfile_only else "linux-readiness"
     failed = False
     for root, out, title in jobs:
-        res = scan(root, a.level, wv)
+        res = scan(root, a.level, wv, a.dockerfile_only)
         os.makedirs(out, exist_ok=True)
-        json.dump(res, open(os.path.join(out, "linux-readiness.json"), "w", encoding="utf-8"), indent=1)
-        hp = write_pair(os.path.join(out, "linux-readiness.md"), render(res, title))
+        json.dump(res, open(os.path.join(out, name + ".json"), "w", encoding="utf-8"), indent=1)
+        hp = write_pair(os.path.join(out, name + ".md"), render(res, title))
         s = res["summary"]
         failed |= not res["passed"]
-        print(f"linux readiness{' ' + title if a.all else ''}: {'PASS' if res['passed'] else 'FAIL'} block {s['block_open']} open / {s['block_waived']} waived, "
-              f"warn {s['warn']}, info {s['info']}; {s['rules_hit']}/{s['rules_checked']} checks hit, {s['checklist_items']} manual -> {hp}")
+        tidy = len(res["waivers_ignored"]) + len(res["waivers_unused"])
+        print(f"linux readiness{' ' + title if a.all else ''}{' (Dockerfile only)' if a.dockerfile_only else ''}: {'PASS' if res['passed'] else 'FAIL'} "
+              f"block {s['block_open']} open / {s['block_waived']} waived, warn {s['warn']}, info {s['info']}; {s['rules_hit']}/{s['rules_checked']} checks hit, "
+              f"{s['checklist_items']} manual{f'; {tidy} waivers to tidy' if tidy else ''} -> {hp}")
     sys.exit(1 if a.gate and failed else 0)
 
 

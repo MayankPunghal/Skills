@@ -21,6 +21,30 @@ what blocks the build afterwards. BUILD-WINDOWS-CI is DevOps; BUILD-INSTALLER is
    the baseline. Nullable stays off unless the project already had it.
 8. **Tests**: test projects move to the same TFM; MSTest v1 / NUnit 2 → current versions (DevTx KB 24).
 
+## NuGet warnings that block the port
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `NU1701` | The package has no build for the target and was restored from a .NET Framework fallback | Replace it with a modern package. If nothing uses it, remove the reference. If code uses it, migrate that code first |
+| `NU1608` | Another package requires a version range that this package's version is outside | Remove the legacy package that sets the constraint. Most of these go away with the `NU1701` package |
+| `NU1605` | A package was downgraded because another package needs a higher version | Add a direct reference at the version the target runtime needs. Do not pin framework packages below the target runtime major |
+| `NU1902` | The package has a known vulnerability | Migrate off the package if you can. Otherwise move to a patched version and record the advisory |
+
+Avoid `NoWarn` for these codes: each one hides a real conflict.
+
+## Build errors after conversion
+
+| Error | Cause | Fix |
+|---|---|---|
+| `NETSDK1022` (duplicate Content or Compile items) | The SDK's default globs already include files that the old project listed by hand | Delete the explicit `Include` items. Use `Update` to change metadata. Or set `EnableDefaultCompileItems` or `EnableDefaultContentItems` to `false` and list the items yourself |
+| `CS0579` (duplicate assembly attributes) | The SDK generates assembly attributes that clash with `Properties/AssemblyInfo.cs` | Set `GenerateAssemblyInfo` to `false` and keep the file, or delete the file and let the SDK generate the attributes. Do one, not both |
+
+## Test projects
+
+- `[ExpectedException]` was removed in NUnit 3. Use `Assert.Throws<T>(() => ...)`.
+- Classic asserts such as `Assert.AreEqual` still compile on NUnit 3. Write the constraint form instead: `Assert.That(actual, Is.EqualTo(expected))`. It compiles on every NUnit 3 and 4 release, while the classic asserts moved between NUnit 4 releases.
+- RhinoMocks is unmaintained and has no one-to-one successor, so rewrite each test. `MockRepository.GenerateMock<T>()` becomes `Mock<T>` (Moq) or `Substitute.For<T>()` (NSubstitute). `AssertWasCalled` becomes `Verify` (Moq) or `Received()` (NSubstitute).
+
 ## Done when
 
 `dotnet build -c Release` passes on Linux (the container's SDK image) with no PROJ-* residue.

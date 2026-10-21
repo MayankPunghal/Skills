@@ -67,7 +67,9 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
                    else "linux-container"].format(target=target_fw)
         rationale.append("Already on cross-platform .NET with no Windows-only blockers found: move to Linux hosting directly.")
         if "out-of-support" in tfm_status or "ending-soon" in tfm_status:
-            rationale.append(f"Target framework {', '.join(tfms)} is out of (or ending) support: retarget to {target_fw} in the same step.")
+            eos = sorted({x["end_of_support"] for x in proj.get("tfm_support", []) if x["status"] in ("out-of-support", "ending-soon")})
+            rationale.append(f"Target framework {', '.join(tfms)} is {'out of' if 'out-of-support' in tfm_status else 'ending'} support"
+                             f" (end of support: {', '.join(eos)}): being on modern .NET is not enough, retarget to {target_fw} in the same step.")
         if "netfx" in fam:
             rationale.append("Still targets .NET Framework (ASP.NET Core on Framework): retarget first.")
     elif (bound and len(bound) >= rules["large_blocker_count_for_rehost"] or ("PKG-BLOCKER" in bound and len(bound) > 1)) and             len({fl for f in fs if f["rule"].split(":")[0] in rules["windows_bound_rules"] and f["severity"] in ("Blocker", "High") for fl in f.get("files", [])}) > rules.get("windows_bound_max_files_to_replace", 10):

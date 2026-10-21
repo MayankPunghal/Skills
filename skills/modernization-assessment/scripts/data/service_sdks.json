@@ -1,6 +1,7 @@
 {
  "_doc": "NuGet packages that are clients for third-party or cloud services (third-party APIs tab). match = regex on package id (case-insensitive, anchored); service = what it talks to; aws = typical AWS-side consideration. First match wins.",
  "sdks": [
+  {"match": "MassTransit\\.AmazonSQS", "service": "Amazon SQS and SNS (MassTransit transport)", "aws": "Native on AWS: MassTransit creates queues and topics unless the account forbids it; use the task's IAM role and pre-create them with DevOps where needed"},
   {"match": "AWSSDK\\.(\\w+)(\\..*)?", "service": "AWS {1}", "aws": "Native on AWS: use IAM roles instead of access keys"},
   {"match": "WindowsAzure\\.Storage|Azure\\.Storage\\..*|Microsoft\\.Azure\\.Storage\\..*", "service": "Azure Storage", "aws": "Amazon S3 (or keep Azure with cross-cloud credentials)"},
   {"match": "WindowsAzure\\.ServiceBus|Azure\\.Messaging\\.ServiceBus|Microsoft\\.Azure\\.ServiceBus", "service": "Azure Service Bus", "aws": "Amazon SQS / SNS / Amazon MQ"},

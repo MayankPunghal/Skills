@@ -1,5 +1,5 @@
 {
- "_doc": "What must not be left after the port (read by residue_scan.py). level: block = the gate fails while it remains (unless waived); warn = review, may be acceptable; info = context. where: code (.cs/.vb), project (.csproj/.vbproj), config (.config/.json), file (the file's existence), sql (string literals in code that look like SQL; scope \"line\" = the whole line holding such a literal, for concatenation). when: always, postgresql (only when the database target is PostgreSQL only), dual (only with a dual-database target), linux (always on Linux targets). playbook = the dotnet-modernization playbook that fixes it; kb = DevTx knowledge-base files. group: port = residue of the .NET Framework port; linux = Linux readiness (also run alone with --only linux for applications already on modern .NET).",
+ "_doc": "What must not be left after the port (read by residue_scan.py). level: block = the gate fails while it remains (unless waived); warn = review, may be acceptable; info = context. where: code (.cs/.vb), markup (.cshtml, .razor, .aspx, .ascx, .master, .asmx, .svc, .ashx, .asax; code rules apply), static (.html, .htm, .js under wwwroot; code rules apply), project (.csproj, .vbproj, .fsproj, .props, .targets), config (.config, appsettings*.json), sql (string literals in code that look like SQL, and .sql files; scope \"line\" = the whole line holding such a literal, for concatenation), file (the file's name or path). when: always, postgresql (only when the database target is PostgreSQL only), dual (only with a dual-database target), postgresql|dual (both). scope \"file\": one regex over the whole file, multi-line; the hit is the line where the match starts. requires_file / unless_file: the rule applies only to files where the regex matches / does not match. info_if_tree: the rule reports at info level when a project or props file in the scanned folder matches (for example a CoreWCF package reference). playbook = the dotnet-modernization playbook that fixes it; kb = DevTx knowledge-base files. group: port = residue of the .NET Framework port; linux = Linux readiness (also run alone with --only linux for applications already on modern .NET).",
  "rules": [
   {
    "id": "PROJ-LEGACY",
@@ -87,6 +87,21 @@
    ]
   },
   {
+   "id": "WEB-SYSTEMWEB-BARE",
+   "where": "code",
+   "level": "block",
+   "pattern": "^\\s*(?:using\\s+System\\.Web\\s*;|Imports\\s+System\\.Web\\s*$)|@using\\s+System\\.Web\\b|<%@\\s*Import\\s+Namespace\\s*=\\s*\"?System\\.Web\\b|\\b(?:HttpContextBase|HttpRequestBase|HttpResponseBase|HttpUtility|HttpPostedFileBase|HttpServerUtilityBase|HttpSessionStateBase|HttpApplicationStateBase)\\b",
+   "message": "Bare System.Web import or System.Web root type (HttpContextBase, HttpRequestBase, HttpUtility, HttpPostedFileBase): System.Web does not exist on .NET 10",
+   "playbook": "systemweb-residue",
+   "kb": [
+    "02",
+    "25"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "WEB-HTTPCONTEXT-CURRENT",
    "where": "code",
    "level": "block",
@@ -101,6 +116,18 @@
    ]
   },
   {
+   "id": "WEB-HOSTING-IHOSTING",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bIHostingEnvironment\\b",
+   "message": "IHostingEnvironment (obsolete in ASP.NET Core 6+): use IWebHostEnvironment",
+   "playbook": "startup-and-middleware",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "WEB-HANDLER-IFACE",
    "where": "code",
    "level": "block",
@@ -110,6 +137,18 @@
    "kb": [
     "14"
    ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "ATTR-UIHINT-PREAPP",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\[\\s*UIHint\\b|\\bPreApplicationStartMethod\\b",
+   "message": "UIHint attribute (MVC display templates) or PreApplicationStartMethod (System.Web startup hook): map to ASP.NET Core templates or startup code",
+   "playbook": "mvc",
+   "kb": [],
    "group": [
     "port"
    ]
@@ -139,6 +178,36 @@
    "kb": [
     "20"
    ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WCF-SERVER-CODE",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\[\\s*(?:ServiceContract|OperationContract|ServiceBehavior)(?:Attribute)?\\b|\\bServiceHost(?:Factory)?\\b|\\bWebServiceHostFactory\\b|\\bWebScriptServiceHostFactory\\b",
+   "message": "WCF server code (ServiceContract, OperationContract, ServiceHost): port to CoreWCF or to a REST endpoint; info when a CoreWCF package is referenced",
+   "playbook": "wcf-services",
+   "kb": [
+    "20"
+   ],
+   "info_if_tree": "<PackageReference\\s+Include=\\\"CoreWCF",
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WCF-SERVER-CONFIG",
+   "where": "config",
+   "level": "block",
+   "pattern": "<system\\.serviceModel\\b",
+   "message": "WCF server configuration (system.serviceModel): move the bindings to CoreWCF setup in code; info when a CoreWCF package is referenced",
+   "playbook": "wcf-services",
+   "kb": [
+    "20"
+   ],
+   "info_if_tree": "<PackageReference\\s+Include=\\\"CoreWCF",
    "group": [
     "port"
    ]
@@ -187,11 +256,51 @@
    ]
   },
   {
+   "id": "CFG-PROVIDERNAME-SQLCLIENT",
+   "where": "config",
+   "level": "warn",
+   "pattern": "providerName\\s*=\\s*\\\"System\\.Data\\.SqlClient\\\"",
+   "message": "providerName System.Data.SqlClient in config: the provider is deprecated; use Microsoft.Data.SqlClient for the SQL Server path, or Npgsql",
+   "playbook": "config-and-secrets",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "API-CALLCONTEXT",
    "where": "code",
    "level": "block",
    "pattern": "\\bCallContext\\.|System\\.Runtime\\.Remoting\\b",
    "message": ".NET Remoting / CallContext (AsyncLocal<T> or request-scoped services)",
+   "playbook": "ambient-context-and-remoting",
+   "kb": [
+    "28"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "API-REMOTING",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bTcpChannel\\b|\\bHttpChannel\\b|\\bChannelServices\\b|\\bRemotingServices\\b|\\bRemotingConfiguration\\b|\\bActivator\\.GetObject\\b|\\bRealProxy\\b|\\bInitializeLifetimeService\\b|\\bISponsor\\b|\\[\\s*OneWay\\s*\\]|\\[\\s*Synchronization(?:Attribute)?\\b",
+   "message": ".NET Remoting symbols (TcpChannel, ChannelServices, Activator.GetObject, RealProxy, ISponsor, [OneWay], [Synchronization]): replace with HTTP, gRPC or WCF client calls",
+   "playbook": "ambient-context-and-remoting",
+   "kb": [
+    "28"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "RMT-CONFIG",
+   "where": "config",
+   "level": "block",
+   "pattern": "<system\\.runtime\\.remoting\\b",
+   "message": ".NET Remoting configuration (system.runtime.remoting): Remoting does not exist on .NET 10",
    "playbook": "ambient-context-and-remoting",
    "kb": [
     "28"
@@ -222,6 +331,19 @@
    "pattern": "System\\.EnterpriseServices\\b|\\bServicedComponent\\b",
    "message": "COM+ / EnterpriseServices",
    "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-MSDTC",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bMSDTC\\b|\\bDistributedTransactionManager\\b|\\bTransactionInterop\\b|\\bTransactionManager\\.(?:ImplicitDistributedTransactions|DistributedTransactionStarted|Promote|Reenlist)\\b",
+   "message": "Distributed transaction support (MSDTC, TransactionInterop): not available on Linux; keep each transaction on one database or use an outbox",
+   "playbook": "raw-sql-and-data-access",
    "kb": [],
    "group": [
     "port",
@@ -326,13 +448,54 @@
   {
    "id": "API-DRAWING",
    "where": "code",
-   "level": "warn",
+   "level": "block",
    "pattern": "\\bSystem\\.Drawing\\.(Bitmap|Graphics|Image|Font)\\b|\\bnew\\s+Bitmap\\(",
    "message": "System.Drawing (Windows only on .NET 7+; ImageSharp / SkiaSharp)",
    "playbook": "windows-only-apis",
    "kb": [
     "21"
    ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-DRAWING-USING",
+   "where": "code",
+   "level": "warn",
+   "pattern": "^\\s*using\\s+System\\.Drawing\\s*;",
+   "message": "using System.Drawing: System.Drawing.Common is Windows-only at run time on .NET 7+ (Color and Point are fine; Image, Bitmap, Graphics and Font are not)",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-DRAWING-IMAGE",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bImage\\b",
+   "message": "Image in a file that imports System.Drawing: Windows-only at run time; use ImageSharp or SkiaSharp",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "requires_file": "\\busing\\s+System\\.Drawing\\s*;",
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-DRAWING-COLOR",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bColor\\b",
+   "message": "Color in a file that imports System.Drawing: Color runs on Linux, so review only that the file uses no other System.Drawing type",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "requires_file": "\\busing\\s+System\\.Drawing\\s*;",
    "group": [
     "port",
     "linux"
@@ -354,11 +517,26 @@
    ]
   },
   {
-   "id": "TZ-WINDOWS-ID",
+   "id": "API-CRYPTO-SYSLIB",
    "where": "code",
    "level": "warn",
+   "pattern": "\\bRNGCryptoServiceProvider\\b|\\bSHA(?:256|384|512)Managed\\b",
+   "message": "Obsolete crypto constructors (RNGCryptoServiceProvider, SHA256Managed and kin): use RandomNumberGenerator and SHA256.HashData (SYSLIB0021, SYSLIB0023)",
+   "playbook": "windows-only-apis",
+   "kb": [
+    "22"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "TZ-WINDOWS-ID",
+   "where": "code",
+   "level": "block",
    "pattern": "\"(Eastern|Central|Mountain|Pacific|GMT|W\\. Europe|India|China|Tokyo|AUS Eastern|Arabian) Standard Time\"",
-   "message": "Windows time-zone id (works on .NET 6+ with ICU, but confirm the image has tzdata and ICU)",
+   "message": "Windows time-zone id: use the IANA id (Windows ids are mapped through ICU on Linux)",
    "playbook": "time-and-culture",
    "kb": [],
    "group": [
@@ -369,7 +547,7 @@
   {
    "id": "TZ-LOCAL",
    "where": "code",
-   "level": "info",
+   "level": "warn",
    "pattern": "\\bDateTime\\.Now\\b|\\.ToLocalTime\\(\\)",
    "message": "Local time: containers run UTC; check business-time assumptions",
    "playbook": "time-and-culture",
@@ -385,6 +563,21 @@
    "level": "block",
    "pattern": "@?\"[A-Za-z]:\\\\\\\\",
    "message": "Drive-letter path in code",
+   "playbook": "linux-and-containers",
+   "kb": [
+    "19"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "FILE-DRIVE-FWD",
+   "where": "code",
+   "level": "block",
+   "pattern": "@?\\\"[A-Za-z]:/",
+   "message": "Drive-letter path with forward slashes in code (C:/...): not a path on Linux",
    "playbook": "linux-and-containers",
    "kb": [
     "19"
@@ -441,7 +634,7 @@
   {
    "id": "HOST-MACHINE-NAME",
    "where": "code",
-   "level": "info",
+   "level": "warn",
    "pattern": "\\bEnvironment\\.MachineName\\b|\\bDns\\.GetHostName\\(",
    "message": "Machine name: a container's host name changes per task",
    "playbook": "linux-and-containers",
@@ -514,6 +707,46 @@
    ]
   },
   {
+   "id": "SVC-SWAGGER-WEBAPI2",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bEnableSwagger(?:Ui)?\\b|\\bSwaggerConfig\\b|\\bGlobalConfiguration\\.Configuration\\b|\\bIExamplesProvider\\b(?!\\s*<)",
+   "message": "Swashbuckle 5 / Web API 2 Swagger setup (EnableSwagger, SwaggerConfig, GlobalConfiguration): replace with Swashbuckle.AspNetCore",
+   "playbook": "web-api",
+   "kb": [
+    "23"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "TEST-RHINO-MOCKS",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\busing\\s+Rhino\\.Mocks\\b|\\bMockRepository\\b|\\bGenerate(?:Mock|Stub)<",
+   "message": "Rhino.Mocks: no build for .NET 10; move the tests to Moq or NSubstitute",
+   "playbook": "build-and-packages",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "TEST-EXPECTEDEXCEPTION",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\[\\s*ExpectedException(?:Attribute)?\\b",
+   "message": "ExpectedException attribute (MSTest v1 / NUnit 2 style): use Assert.ThrowsException (MSTest) or Assert.Throws (xUnit, NUnit 3)",
+   "playbook": "build-and-packages",
+   "kb": [
+    "24"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "DB-SQLCLIENT",
    "where": "code",
    "level": "block",
@@ -543,11 +776,27 @@
    ]
   },
   {
+   "id": "DATA-EF6-RESIDUE",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bSystem\\.Data\\.Entity\\b|\\bDatabase\\.(?:SetInitializer|SqlQuery)\\b|\\bSetInitializer\\s*<|\\bDbEntityEntry\\b|\\bDbEntityValidationException\\b|\\bObjectContext\\b|\\bDbModelBuilder\\b",
+   "message": "Entity Framework 6 API (System.Data.Entity, Database.SetInitializer, Database.SqlQuery, DbEntityEntry, ObjectContext): replace with EF Core",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "06",
+    "08",
+    "16"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "DB-SQLERROR-NUMBER",
    "where": "code",
    "level": "warn",
    "when": "postgresql|dual",
-   "pattern": "\\bSqlException\\b[^;\\n]*\\.Number\\b|\\.Number\\s*==\\s*(1205|2627|2601|547|-2)\\b",
+   "pattern": "\\bSqlException\\b[^;\\n]*\\.Number\\b|\\.Number\\s*==\\s*(1205|2627|2601|547|515|4060|8152|-2)\\b|\\bcase\\s+(?:1205|2627|2601|547|515|4060|8152|-2)\\s*:",
    "message": "SQL Server error numbers (map PostgreSQL SQLSTATE codes too)",
    "playbook": "raw-sql-and-data-access",
    "kb": [
@@ -571,12 +820,83 @@
    ]
   },
   {
+   "id": "DB-SEAM-DIRECT-CLIENT",
+   "where": "code",
+   "level": "block",
+   "when": "dual",
+   "pattern": "\\bSqlConnection\\b|\\bSqlCommand\\b|\\bSqlDataAdapter\\b|\\bSqlTransaction\\b|\\bSqlDataReader\\b",
+   "message": "SQL Server client used outside the connection factory (dual mode): route it through the factory, or waive the factory file",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SQLDEPENDENCY",
+   "where": "code",
+   "level": "block",
+   "when": "postgresql|dual",
+   "pattern": "\\bSqlDependency\\b|\\bSqlNotificationRequest\\b",
+   "message": "SqlDependency (query change notifications): no PostgreSQL equivalent; use LISTEN/NOTIFY or polling",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SEAM-PROVIDER-FACTORY",
+   "where": "code",
+   "level": "warn",
+   "when": "dual",
+   "pattern": "\\bDbProviderFactories\\b|\\bDbProviderFactory\\b",
+   "message": "DbProviderFactory lookup (dual mode): the one place the engine is chosen; confirm it is the factory the code uses",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SEAM-PROVIDER-CONDITIONAL",
+   "where": "code",
+   "level": "warn",
+   "when": "dual",
+   "pattern": "(?i:\\b\\w*provider\\w*\\s*[!=]=\\s*\\\")|(?i:\\bswitch\\s*\\(\\s*\\w*provider\\w*\\s*\\))",
+   "message": "Provider conditional (provider == \"...\" or a switch on a provider): engine choice outside the factory; move it into the factory",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
    "id": "SQL-TSQL-IN-STRING",
    "where": "sql",
    "level": "block",
    "when": "postgresql|dual",
-   "pattern": "\\bTOP\\s*\\(?\\d|\\bGETDATE\\s*\\(|\\bISNULL\\s*\\(|\\bWITH\\s*\\(\\s*NOLOCK|@@IDENTITY|\\bSCOPE_IDENTITY\\s*\\(|\\[dbo\\]\\.|\\bNEWID\\s*\\(|\\bDATEADD\\s*\\(|\\bCONVERT\\s*\\(\\s*(varchar|nvarchar|datetime|int)\\b|\\bLEN\\s*\\(|\\bFOR\\s+XML\\b|\\bOUTPUT\\s+INSERTED\\b",
+   "pattern": "\\bTOP\\s*\\(?\\s*[@\\d]|\\bGETDATE\\s*\\(|\\bISNULL\\s*\\(|\\bWITH\\s*\\(\\s*NOLOCK|@@IDENTITY|\\bSCOPE_IDENTITY\\s*\\(|\\[dbo\\]\\.|\\bNEWID\\s*\\(|\\bDATEADD\\s*\\(|\\bCONVERT\\s*\\(\\s*(varchar|nvarchar|datetime|int)\\b|\\bLEN\\s*\\(|\\bFOR\\s+XML\\b|\\bOUTPUT\\s+(?:INSERTED|DELETED)\\b|\\bMERGE\\s+(?:INTO\\s+)?\\[?\\w+\\]?(?:\\s+AS\\s+\\w+)?\\s+USING\\b",
    "message": "T-SQL-only syntax in a SQL string (PostgreSQL rejects it; move to the dialect resource for the PostgreSQL path)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-TSQL-SESSION",
+   "where": "sql",
+   "level": "block",
+   "when": "postgresql|dual",
+   "pattern": "\\b(?:FROM|INTO|JOIN|UPDATE|TABLE)\\s+#\\w+|\\bWITH\\s*\\(\\s*(?:NOLOCK|UPDLOCK|HOLDLOCK|READPAST|ROWLOCK|XLOCK|TABLOCKX?)\\b|\\b(?:UPDLOCK|READPAST|HOLDLOCK|ROWLOCK|XLOCK|TABLOCKX)\\b|@@(?:ROWCOUNT|ERROR|TRANCOUNT|SPID)\\b|\\bsp_executesql\\b|\\bxp_cmdshell\\b",
+   "message": "T-SQL session features (#temp tables, lock hints, @@ROWCOUNT, sp_executesql, xp_cmdshell): PostgreSQL has no direct equivalent; rewrite by hand",
    "playbook": "raw-sql-and-data-access",
    "kb": [
     "07"
@@ -609,6 +929,35 @@
     "07"
    ],
    "scope": "line",
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-PLPGSQL-PARAM-PREFIX",
+   "where": "sql",
+   "level": "warn",
+   "when": "postgresql|dual",
+   "pattern": "CREATE\\s+(?:OR\\s+REPLACE\\s+)?(?:FUNCTION|PROCEDURE)\\s+[\\w.\\\"]+\\s*\\((?:\\s*|[^()]*?,\\s*)(?!(?:IN|OUT|INOUT|VARIADIC)\\s)(?!p_|v_)\\w+\\s+\\w",
+   "message": "PL/pgSQL parameter without the p_ (or v_) prefix: a parameter named like a column makes column references ambiguous (heuristic: names in the CREATE header)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "scope": "file",
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-REFCURSOR-CLOSE",
+   "where": "sql",
+   "level": "warn",
+   "when": "postgresql|dual",
+   "pattern": "\\bFETCH\\s+(?:ALL|NEXT|FORWARD(?:\\s+ALL)?|\\d+)\\s+(?:FROM|IN)\\b",
+   "message": "refcursor fetched with no CLOSE in the same file: close it, or fetch it inside the transaction that ends it, so the cursor does not stay open",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "scope": "file",
+   "unless_file": "\\bCLOSE\\s+(?:ALL|\\\"[^\\\"]+\\\"|\\w+)",
    "group": [
     "port"
    ]

@@ -3,9 +3,11 @@
     python scripts/residue_scan.py <solution-or-repo-folder> [--db-target sqlserver|postgresql|dual]
                                    [--waivers waivers.json] [--out <dir>] [--gate] [--only linux]
 
-Applies scripts/data/residue_rules.json to the ported code: .cs/.vb (code), .csproj/.vbproj (project),
-.config/.json (config), file names (file), and SQL text inside string literals (sql). Rules with "when" apply only to
-that database target. bin/, obj/, .git/, node_modules/, packages/ and the run folder itself are skipped.
+Applies scripts/data/residue_rules.json to the ported code: .cs/.vb (code), markup (.cshtml, .razor, .aspx, .ascx, .master,
+.asmx, .svc, .ashx, .asax: the code rules apply to the markup too), .html/.htm/.js under wwwroot (static, code rules),
+.csproj/.vbproj/.fsproj/.props/.targets (project), .config/.json (config), .sql files (sqlfile), file names (file), and SQL text
+inside string literals in code (sql). Rules with "when" apply only to that database target. bin/, obj/, .git/, node_modules/,
+packages/ and the run folder itself are skipped.
 
 Waivers (optional JSON list): {"rule": "WEB-FORMS-FILE", "path": "glob, e.g. legacy/**", "reason": "...", "by": "..."};
 a waived hit stays in the report, marked waived, and does not fail the gate.
@@ -25,9 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _mdhtml import write_pair  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKIP_DIRS = {"bin", "obj", ".git", ".vs", "node_modules", ".modernization", "TestResults", "wwwroot"}
+SKIP_DIRS = {"bin", "obj", ".git", ".vs", "node_modules", ".modernization", "TestResults"}
 KIND = {".cs": "code", ".vb": "code", ".csproj": "project", ".vbproj": "project", ".fsproj": "project",
-        ".config": "config", ".json": "config"}
+        ".props": "project", ".targets": "project",
+        ".config": "config", ".json": "config", ".sql": "sqlfile",
+        ".cshtml": "markup", ".razor": "markup", ".aspx": "markup", ".ascx": "markup", ".master": "markup",
+        ".asmx": "markup", ".svc": "markup", ".ashx": "markup", ".asax": "markup"}
+STATIC_EXT = {".html", ".htm", ".js"}  # scanned only under a wwwroot folder
+WHERE_FOR_KIND = {"code": ("code", "sql"), "markup": ("code",), "static": ("code",), "project": ("project",),
+                  "config": ("config",), "sqlfile": ("sql",)}
+TREE_EXT = {".csproj", ".vbproj", ".fsproj", ".props", ".targets"}
 SQL_HINT = re.compile(r"\b(SELECT|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|EXEC(UTE)?\s|MERGE\s+INTO|FROM\s+\[?\w+)\b", re.I)
 # C# regular, verbatim and interpolated literals; VB "..." literals ("" escapes)
 LIT = re.compile(r'\$?@\$?"(?:[^"]|"")*"|\$?"(?:\\.|[^"\\\n])*"')
@@ -49,7 +58,14 @@ def rules(db_target, only=None):
             continue
         if only and only not in r.get("group", ["port"]):
             continue
-        out.append({**r, "rx": re.compile(r["pattern"], re.I if r["where"] == "sql" else 0)})
+        flags = re.I if r["where"] == "sql" else 0
+        if r.get("scope") == "file":
+            flags |= re.M
+        item = {**r, "rx": re.compile(r["pattern"], flags)}
+        for key, name in (("requires_file", "req_rx"), ("unless_file", "unl_rx"), ("info_if_tree", "tree_rx")):
+            if r.get(key):
+                item[name] = re.compile(r[key], re.I | re.M)
+        out.append(item)
     return out
 
 
@@ -75,6 +91,14 @@ def files(root):
             yield os.path.join(d, f)
 
 
+def file_kind(rel, ext):
+    if ext in KIND:
+        return KIND[ext]
+    if ext in STATIC_EXT and "/wwwroot/" in "/" + rel.lower():
+        return "static"
+    return None
+
+
 def strip_comment(line, vb):
     s = line.lstrip()
     if s.startswith("//") or s.startswith("*") or s.startswith("/*") or (vb and s.startswith("'")):
@@ -89,19 +113,39 @@ def waived(hit, waivers):
     return None
 
 
+def project_tree(root):
+    """Text of every project and props file in the scanned folder (for rules with info_if_tree)."""
+    parts = []
+    for p in files(root):
+        if os.path.splitext(p)[1].lower() in TREE_EXT:
+            try:
+                parts.append(open(p, encoding="utf-8-sig", errors="replace").read())
+            except OSError:
+                continue
+    return "\n".join(parts)
+
+
 def scan(root, db_target="sqlserver", waivers=(), only=None):
     rs = rules(db_target, only)
+    tree = project_tree(root) if any(r.get("tree_rx") for r in rs) else ""
+    for r in rs:
+        if r.get("tree_rx") and r["tree_rx"].search(tree):
+            r["level"] = "info"
     by_where = defaultdict(list)
     for r in rs:
         by_where[r["where"]].append(r)
     hits = []
+
+    def add(r, rel, line, text):
+        hits.append({"rule": r["id"], "level": r["level"], "file": rel, "line": line, "text": mask(text.strip())[:160]})
+
     for p in files(root):
         rel = os.path.relpath(p, root).replace("\\", "/")
         for r in by_where["file"]:
             if r["rx"].search(rel):
-                hits.append({"rule": r["id"], "level": r["level"], "file": rel, "line": 0, "text": os.path.basename(rel)})
+                add(r, rel, 0, os.path.basename(rel))
         ext = os.path.splitext(p)[1].lower()
-        kind = KIND.get(ext)
+        kind = file_kind(rel, ext)
         if not kind or (kind == "config" and ext == ".json" and not os.path.basename(p).lower().startswith("appsettings")):
             continue
         try:
@@ -109,22 +153,37 @@ def scan(root, db_target="sqlserver", waivers=(), only=None):
         except OSError:
             continue
         vb = ext == ".vb"
+        applicable = []
+        for r in rs:
+            if r["where"] not in WHERE_FOR_KIND[kind]:
+                continue
+            if r.get("req_rx") and not r["req_rx"].search(text):
+                continue
+            if r.get("unl_rx") and r["unl_rx"].search(text):
+                continue
+            applicable.append(r)
+        for r in applicable:
+            if r.get("scope") == "file":
+                for m in r["rx"].finditer(text):
+                    add(r, rel, text.count("\n", 0, m.start()) + 1, " ".join(m.group(0).split()))
+        plain = [r for r in applicable if r.get("scope") != "file" and (r["where"] != "sql" or kind == "sqlfile")]
+        literal = [r for r in applicable if r.get("scope") != "file" and r["where"] == "sql" and kind == "code"]
         for n, line in enumerate(text.splitlines(), 1):
             src = strip_comment(line, vb) if kind == "code" else line
             if not src.strip():
                 continue
-            for r in by_where[kind]:
+            for r in plain:
                 if r["rx"].search(src):
-                    hits.append({"rule": r["id"], "level": r["level"], "file": rel, "line": n, "text": mask(src.strip())[:160]})
-            if kind == "code" and by_where["sql"]:
+                    add(r, rel, n, src)
+            if literal:
                 lits = [m.group(0) for m in LIT.finditer(src)]
                 sqlish = [x for x in lits if SQL_HINT.search(x) or re.search(r"\bdbo\b|@@|NOLOCK|\bWHERE\b", x, re.I)]
                 seen = set()
-                for r in by_where["sql"]:
+                for r in literal:
                     for target in ([src] if sqlish else []) if r.get("scope") == "line" else sqlish:
                         if r["id"] not in seen and r["rx"].search(target):
                             seen.add(r["id"])
-                            hits.append({"rule": r["id"], "level": r["level"], "file": rel, "line": n, "text": mask(target.strip())[:160]})
+                            add(r, rel, n, target)
     for h in hits:
         w = waived(h, waivers)
         h["waived"] = bool(w)

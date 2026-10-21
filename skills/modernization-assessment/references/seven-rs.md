@@ -28,7 +28,7 @@ Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a 
 
 1. **Database project** → database assessment ([database-assessment.md](database-assessment.md)).
 2. **Desktop (WinForms/WPF)** → **Retain** on Windows (upgrade to .NET 10 Windows Desktop when the back end moves). Option: Refactor to web.
-3. **Already modern** → **Replatform** to Linux containers. "Modern" means .NET 5+, not `-windows`, no Windows-bound rule and no High linux-readiness finding. Retarget to .NET 10 if out of support.
+3. **Already modern** → **Replatform** to Linux containers. "Modern" means .NET 5+, not `-windows`, no Windows-bound rule, no High linux-readiness finding, and a target still in support on the report date. .NET 8 and .NET 9 both reach end of support on 10 Nov 2026 (S4), so an app on either is retargeted to .NET 10 in the port (finding `INV-TFM-SUPPORT`, which turns from "ending soon" to "out of support" on the end date; the 7R rationale names the date). Retarget to .NET 10 if out of support.
 4. **Windows-bound blockers** → **Rehost** on Windows now; Refactor the blocking component later. This applies when 3 or more of these are present, or a blocker package plus another: COM, Win32 P/Invoke, Office interop, Crystal, fax, EnterpriseServices, WF, Remoting, MSMQ, unsupported WCF bindings, blocker packages.
 5a. **Web Forms project with a token UI** (≤ 3 pages and markup under 5% of its hand-written lines: a gateway or service with a status page) → **Replatform**; the page or two are rewritten inside the port (`webforms_token_ui` in `data/decision_rules.json`).
 5. **Web Forms UI** → **Refactor** when small; **Retain + hybrid** when the app has ≥ 25 KLOC or ≥ 60 pages (thresholds in `data/decision_rules.json`).
@@ -73,7 +73,7 @@ Microsoft recommends **incremental migration** (strangler fig with YARP and Syst
 | Worker / Windows service | .NET Worker Service as an ECS service; timed work through EventBridge Scheduler → ECS task |
 | Console / batch | Scheduled ECS task (EventBridge Scheduler) or Lambda when short-running |
 | Retained .NET Framework | EC2 Windows (IIS) or ECS Windows containers; consider AWS Elastic Beanstalk Windows platform for simple sites |
-| Desktop | .NET 10 Windows Desktop on user machines; Amazon WorkSpaces / AppStream 2.0 if centrally hosted |
+| Desktop | .NET 10 Windows Desktop on user machines; Amazon WorkSpaces / Amazon WorkSpaces Applications (formerly AppStream 2.0) if centrally hosted |
 
 ## Client scenarios (code side)
 

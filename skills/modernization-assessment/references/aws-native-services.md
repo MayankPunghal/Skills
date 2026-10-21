@@ -10,7 +10,7 @@
 - [Limits](#limits)
 
 ## What it answers
-When the client wants servers they run today replaced by AWS managed services (intake `aws_native`), the question is how much **code** changes per service: Redis, Memcached and Aerospike caches, Elasticsearch, SMTP mail, SFTP / FTP, SMB file shares, MongoDB, RabbitMQ, Kafka, MSMQ, hosted log services (Loggly, Splunk, Sumo Logic, Papertrail) and out-of-process session state. Creating the AWS resources, networking, DNS, verified mail domains and data migration are DevOps work and are not in these hours.
+When the client wants servers they run today replaced by AWS managed services (intake `aws_native`), the question is how much **code** changes per service: Redis, Memcached, Aerospike, AppFabric and NCache caches, Elasticsearch and Solr, SMTP mail and inbound POP3 / IMAP mail, SFTP / FTP, SMB file shares, MongoDB, Cassandra, RavenDB, Couchbase, Neo4j, RabbitMQ, Kafka, MSMQ, hosted log services (Loggly, Splunk, Sumo Logic, Papertrail) and out-of-process session state. Creating the AWS resources, networking, DNS, verified mail domains and data migration are DevOps work and are not in these hours.
 
 Script: `scripts/aws_native.py`. Catalogue: `scripts/data/aws_native.json` (detection patterns, AWS target options, rates). Add a service or an option there, not in code.
 

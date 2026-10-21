@@ -7,8 +7,11 @@ Claude's clean-up after the porting engine, one playbook per kind of change. `re
 | [build-and-packages](build-and-packages.md) | SDK-style projects, TFMs, packages, HintPaths, web targets | PROJ-* | 00, 01, 06, 24, 27 | yes |
 | [systemweb-residue](systemweb-residue.md) | `HttpContext.Current`, `Server.MapPath`, `HttpRuntime.Cache`, System.Web in shared libraries (adapters, pass-the-values) | WEB-SYSTEMWEB-NS, WEB-HTTPCONTEXT-CURRENT, FILE-MAPPATH | 02 | most, in the web project |
 | [http-handlers-and-modules](http-handlers-and-modules.md) | `.ashx`, `IHttpHandler`/`IHttpAsyncHandler`, `IHttpModule` → endpoints and middleware | WEB-HANDLER-IFACE | 14 | partly |
+| [web-api](web-api.md) | Web API 2 → ASP.NET Core controllers: return types, message handlers, formatters, error shape, CORS, OData, Swagger/OpenAPI | WEB-SYSTEMWEB-NS | 04, 23 | yes |
+| [mvc](mvc.md) | MVC 5 → ASP.NET Core MVC: routes, areas, filters, child actions → view components, helpers, views, DI resolver | WEB-SYSTEMWEB-NS | 03, 15 | yes |
 | [webforms-ui](webforms-ui.md) | `.aspx`/`.ascx`/`.master` with code-behind and script → Blazor or Razor Pages, page by page | WEB-FORMS-FILE | 25, 26 | Blazor Server, with an unsupported list |
 | [asmx-and-soap-clients](asmx-and-soap-clients.md) | ASMX services, Web References, SOAP clients | WEB-SOAP-PROXY | — | some clients |
+| [signalr](signalr.md) | ASP.NET SignalR → ASP.NET Core SignalR: hubs, JS and .NET clients, reconnect, Redis backplane and ALB stickiness | — | — | no |
 | [wcf-services](wcf-services.md) | WCF services (CoreWCF) and clients (svcutil), wire compatibility | — | 20 | yes |
 | [startup-and-middleware](startup-and-middleware.md) | Global.asax → Program.cs, DI, middleware order, ALB forwarded headers, session and state | CFG-WEBCONFIG-APP | 05, 10, 13, 14 | yes |
 | [config-and-secrets](config-and-secrets.md) | web.config → appsettings, protected sections, secrets to Secrets Manager / Parameter Store | CFG-* | 11 | partly |
@@ -20,6 +23,7 @@ Claude's clean-up after the porting engine, one playbook per kind of change. `re
 | [logging](logging.md) | stdout JSON, `ILogger`, EventLog, file appenders, hosted log services, OpenTelemetry | API-EVENTLOG, SVC-HOSTED-LOG | 12 | no |
 | [linux-and-containers](linux-and-containers.md) | Letter case, paths, processes, environment, the Dockerfile (non-root, 8080, health, no secrets) | FILE-DRIVE, FILE-BACKSLASH-JOIN, HOST-MACHINE-NAME | 19 (fix its samples) | Next Steps list only |
 | [aws-managed-services](aws-managed-services.md) | Redis, Memcached, Aerospike, SMTP, SFTP/file shares, MSMQ, MongoDB, hosted logging → AWS services | SVC-*, API-MSMQ, FILE-UNC | — | no |
+| [reporting](reporting.md) | ReportViewer/RDLC, SSRS and Crystal Reports: what runs on .NET 10, the options per report family (a decision) | — | — | no |
 | [raw-sql-and-data-access](raw-sql-and-data-access.md) | SQL Server → PostgreSQL in the code: seams, contract, refcursors, multi-result sets, OUTPUT, TVPs, bulk copy, transactions, errors, types | DB-*, SQL-* | 07, 16, 17, 18 (SQL Server only) | no (DB porting agent or Claude with the DB porting skills) |
 
 Each playbook has the same shape: **Rules** (what sends you here), **Engines** (what the engine already did), the steps, **Gotchas**, **Done when**. A playbook that says a change needs a decision (retire a feature, change a contract external callers use, move users to a new sign-in) stops for the user.

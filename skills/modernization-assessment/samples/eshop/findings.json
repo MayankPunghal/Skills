@@ -31,7 +31,7 @@
    }
   ],
   "why": "WinForms runs on .NET 10 but only on Windows; it cannot run on Linux.",
-  "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or AppStream 2.0/WorkSpaces), or rewrite as a web front end.",
+  "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or Amazon WorkSpaces / Amazon WorkSpaces Applications (formerly AppStream 2.0)), or rewrite as a web front end.",
   "alt": ".NET 10 WinForms on Windows; web UI rewrite; Avalonia",
   "effort_key": "per-file-desktop",
   "baseline": true,
@@ -81,7 +81,7 @@
    }
   ],
   "why": "WinForms runs on .NET 10 but only on Windows; it cannot run on Linux.",
-  "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or AppStream 2.0/WorkSpaces), or rewrite as a web front end.",
+  "fix": "Retain on Windows (upgrade to .NET 10 Windows Desktop, or Amazon WorkSpaces / Amazon WorkSpaces Applications (formerly AppStream 2.0)), or rewrite as a web front end.",
   "alt": ".NET 10 WinForms on Windows; web UI rewrite; Avalonia",
   "effort_key": "per-file-desktop",
   "baseline": true,

@@ -714,6 +714,38 @@
         2,
         6
       ]
+    },
+    "SET NOCOUNT": {
+      "level": "auto",
+      "pg": "remove the statement: it only suppresses row-count messages, and PostgreSQL drivers return row counts without them",
+      "hours": [
+        0.01,
+        0.02
+      ]
+    },
+    "SET ANSI options": {
+      "level": "auto",
+      "pg": "SET ANSI_NULLS, ANSI_PADDING, ANSI_WARNINGS and QUOTED_IDENTIFIER ON match PostgreSQL's default behaviour: remove the statement. OFF settings: see SET option OFF",
+      "hours": [
+        0.01,
+        0.03
+      ]
+    },
+    "sp_getapplock": {
+      "level": "rewrite",
+      "pg": "pg_try_advisory_lock or pg_advisory_lock (session scope), or pg_advisory_xact_lock (transaction scope). The owner option has no direct equivalent, and the wait timeout does not either: pg_try_advisory_lock returns at once, so loop with a timeout in the application. A pooled Npgsql connection keeps a session lock until it is released, so prefer the transaction-scoped form",
+      "hours": [
+        0.5,
+        2
+      ]
+    },
+    "sp_releaseapplock": {
+      "level": "rewrite",
+      "pg": "pg_advisory_unlock for a session-scoped lock; a transaction-scoped lock ends with the transaction (pg_advisory_xact_lock)",
+      "hours": [
+        0.1,
+        0.5
+      ]
     }
   },
   "functions": {
@@ -1419,6 +1451,22 @@
       "hours": [
         1,
         3
+      ]
+    },
+    "ROUND": {
+      "level": "rewrite",
+      "pg": "round() on numeric rounds halves away from zero, but round() on double precision rounds halves to even: cast float values to numeric before rounding to match SQL Server (verify on sample values)",
+      "hours": [
+        0.02,
+        0.1
+      ]
+    },
+    "SCHEMA_NAME": {
+      "level": "rewrite",
+      "pg": "SCHEMA_NAME() with no argument: current_schema(); SCHEMA_NAME(schema_id): look the name up in pg_namespace",
+      "hours": [
+        0.02,
+        0.1
       ]
     }
   },

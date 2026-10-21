@@ -100,7 +100,7 @@ target `netstandard2.0` or multi-target `net48;net10.0`. The execution plan orde
 ## WPF and WinForms
 
 Windows-only on every .NET version ([WPF](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/overview/)). Options:
-keep on Windows and port to .NET 10 (least change); stream to a browser with Amazon WorkSpaces applications (formerly
+keep on Windows and port to .NET 10 (least change); stream to a browser with Amazon WorkSpaces Applications (formerly
 AppStream 2.0) with no code change; rewrite to a web UI (Blazor) reusing view models; Avalonia for a Linux desktop
 *(practice)*. Challenges: Windows APIs (registry, printing, COM), third-party control licences, designer tooling, DPI,
 deployment (ClickOnce / MSI), AppDomains (gone on .NET).
@@ -147,7 +147,7 @@ One engine per project (the execution plan chooses it):
   references, mixed `.aspx`/`.cshtml`, third-party UI controls or Web Site projects; it writes a Next Steps document
   that includes Linux readiness ([AWS Transform for .NET](https://docs.aws.amazon.com/transform/latest/userguide/dotnet.html)).
 - **AWS DevTx Version Upgrade Toolkit**: Upgrade Assistant (deprecated by Microsoft in favour of the GitHub Copilot app
-  modernization agent) then Kiro CLI with a 28-file .NET knowledge base, iterated until the build passes. Its knowledge
+  modernization agent) then Kiro CLI with a 29-file .NET knowledge base, iterated until the build passes. Its knowledge
   base covers project files, System.Web, MVC, Web API, hosting, packages, data access, auth, config, logging, DI,
   middleware, Linux containers, WCF → CoreWCF, crypto, tests, Web Forms → Razor / Blazor and Remoting; it does not cover
   AWS managed-service swaps, IHttpAsyncHandler plumbing or ASMX Web References.

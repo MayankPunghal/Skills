@@ -11,6 +11,7 @@ This skill costs and assesses the **code and SQL conversion** only. Where the da
 
 - [Scenarios](#scenarios)
 - [Steps](#steps)
+- [Other routes AWS offers](#other-routes-aws-offers)
 - [What the inventory counts](#what-the-inventory-counts)
 - [Writing the recommendation](#writing-the-recommendation)
 
@@ -31,9 +32,16 @@ This skill costs and assesses the **code and SQL conversion** only. Where the da
    - Ask for schema scripts if the repositories hold none.
 2. **Read the feature matrix** (report section 6) and open the evidence for every `redesign` and `rework` finding.
 3. **Check data access per application:** EF6/EDMX, ADO.NET, Dapper, stored-procedure calls, T-SQL in code strings. This decides how much application code changes.
-4. **Name the conversion tooling** in the narrative (AWS DMS Schema Conversion or AWS SCT for the first pass, then manual review of complex routines).
+4. **Name the conversion tooling** in the narrative (AWS DMS Schema Conversion or AWS SCT for the first pass, then manual review of complex routines; for apps already on .NET 6+, the AWS Transform SQL Server agent, see below). Neither AWS SCT nor DMS Schema Conversion converts the .NET code that calls SQL Server: AWS SCT's application code (C#) conversion covers Oracle sources only, and DMS Schema Conversion converts database objects, not application code. The data-access code is a separate effort, counted in this assessment.
 5. **Time zone and collation:** check `TZ-SQL-LOCAL-TIME` findings; PostgreSQL collation and case-sensitivity differ from SQL Server defaults.
 6. **Authentication:** Windows-auth connection strings (`DATA-INTEGRATED-SECURITY`) become username/password or IAM authentication, with credentials in Secrets Manager.
+
+## Other routes AWS offers
+
+Name them when they fit, as options for the client and its DB team; the skill still costs `dual`, `postgresql` or `none`.
+- **AWS Transform SQL Server modernization:** SQL Server 2008 R2-2022 to Aurora PostgreSQL 15+ only (not RDS for PostgreSQL). It converts schema, T-SQL procedures to PL/pgSQL, triggers and identity, and the .NET data-access code (EF 6.3-6.5, EF Core 1.0-10.0, ADO.NET), with synthetic data, equivalence checks and a report of the share of schema converted. It needs apps on .NET 6, 7, 8 or 10 (port .NET Framework first), C# only, one account and Region per job; cross-database dependencies stay human work. It is PostgreSQL only: it does not fit the `dual` scenario.
+- **Babelfish for Aurora PostgreSQL:** the app keeps T-SQL and the SQL Server driver and connects over TDS, with few code changes. Run **Babelfish Compass** (AWS's recommended check; AWS SCT also assesses it) to see which T-SQL is supported. AWS DMS does a full load only, no ongoing replication, into a Babelfish target. AWS's SCT example: Aurora PostgreSQL 98% of storage objects and 52% of code objects converted automatically or with minimal change, Babelfish 97% and 45%. Babelfish lowers the code change but keeps T-SQL as a long-term dependency. Limits: Aurora PostgreSQL only, not RDS for PostgreSQL; no RDS Proxy and no IAM database authentication (verify); SCRAM authentication and Database Activity Streams are not supported (verify); CHECKSUM values differ from SQL Server (verify); identifiers longer than 63 bytes are hashed (verify); numeric identity precision differs (19 against 38) (verify); OUTPUT clause restrictions and a 100-parameter cap apply (verify). Check each against the current Babelfish compatibility page before quoting it.
+- **Cost context** (hosting is outside this assessment; quote only with the source): AWS's example, us-east-1, on-demand, r6i/r6g.2xlarge: SQL Server Enterprise on EC2 about $2,835 a month, RDS for SQL Server Enterprise about $3,750, Aurora PostgreSQL about $1,032. AWS claims savings of up to 80% (EC2 SQL Server Enterprise to RDS for PostgreSQL), up to 70% (to Aurora PostgreSQL) and up to 90% for variable loads on Aurora Serverless v2: these are vendor claims with no baseline ([sources.md](sources.md), S31).
 
 ## What the inventory counts
 

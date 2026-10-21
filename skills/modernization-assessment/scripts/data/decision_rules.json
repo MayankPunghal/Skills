@@ -52,7 +52,7 @@
   "linux-worker": "{target} Worker Service on Linux - ECS service / scheduled ECS task (EventBridge Scheduler)",
   "linux-batch": "{target} console job on Linux - scheduled ECS task (EventBridge Scheduler) or AWS Lambda if short-running",
   "windows-retain": ".NET Framework 4.8.1 on Windows - Amazon EC2 Windows (IIS) or ECS Windows containers; shared libraries multi-targeted to netstandard2.0",
-  "windows-desktop": ".NET 10 Windows Desktop on user machines (optionally Amazon WorkSpaces / AppStream 2.0); back-end calls repointed to AWS",
+  "windows-desktop": ".NET 10 Windows Desktop on user machines (optionally Amazon WorkSpaces / Amazon WorkSpaces Applications (formerly AppStream 2.0)); back-end calls repointed to AWS",
   "database": "see database assessment",
   "ec2-same-os": "Amazon EC2 with the same operating system as today (Windows Server to Windows Server, Linux to Linux); same runtime, IIS / service hosting unchanged"
  },
