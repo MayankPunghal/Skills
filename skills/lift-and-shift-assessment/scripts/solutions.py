@@ -11,14 +11,14 @@ Measures per solution:
   config_files      config files that hold hard-coded addresses, paths or credentials (values to externalise)
   endpoints         distinct internal addresses and host names the solution connects to (DNS or connection values to set)
   deployables       projects that are deployed (Windows service, web application, console job)
-  workloads         deployable x environment; an unknown environment list counts as 1 environment (flagged UNKNOWN)
+  workloads         solution x environment (one environment = one workload; the deployables sit inside it); an unknown environment list counts as 1 environment (flagged UNKNOWN)
   retarget          projects whose framework differs from the target framework chosen in the intake
 A project shared by two solutions is listed in both and counted once in the estate totals (estimate_hours.py).
 """
 import os
 import re
 
-from _common import OUT, SOURCE_DIR_SKIP, load_config, load_state, mark_step, read_json, utf8_stdout, write_json
+from _common import skip_dir, OUT, SOURCE_DIR_SKIP, load_config, load_state, mark_step, read_json, utf8_stdout, write_json
 import intake as I
 
 ENV_VAR = re.compile(r'GetEnvironmentVariable\(\s*"([A-Za-z0-9_.]+)"')
@@ -35,7 +35,7 @@ def env_vars_of(root, rel):
     base = os.path.dirname(os.path.join(root, rel))
     found = set()
     for d, dirs, files in os.walk(base):
-        dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
         for f in files:
             if f.lower().endswith(".cs"):
                 try:
@@ -59,7 +59,7 @@ def main():
     retarget_to = (cfg.get("intake") or {}).get("retarget_to") or ""
     wants_retarget = "retarget" in I.selected(cfg)
     excluded = {x.strip().lower() for x in re.split(r"[,;\n]", str((cfg.get("intake") or {}).get("scope_exclusions") or "")) if x.strip() and x.strip().lower() != "unknown"}
-    sols, assumed = [], False
+    sols, assumed, loose_out, folded = [], False, [], []
     for repo in sorted(r for r in st["repos"] if st["repos"][r].get("scope") != "out"):
         inv = read_json(os.path.join(OUT, "inventory", repo + ".json"))
         if not inv:
@@ -70,8 +70,21 @@ def main():
         for s in inv.get("solutions", []):
             groups.append((os.path.splitext(os.path.basename(s["path"]))[0], s["path"], [x["path"] for x in s["projects"] if x["path"] in by_path]))
         loose = [p["path"] for p in inv.get("projects", []) if not any(p["path"] in g[2] for g in groups)]
-        if loose:
+        if loose and groups:  # the repo has solutions: a project outside them is listed for the client to confirm, not estimated
+            loose_out += [{"repo": repo, "name": by_path[x]["name"], "path": x, "type": by_path[x].get("type"), "frameworks": by_path[x].get("target_frameworks"),
+                           "deployable": bool(by_path[x].get("deployable")), "loc": by_path[x].get("loc_code", 0)} for x in loose]
+        elif loose:
             groups.append(("(no solution file)", "", loose))
+        keep = []
+        for g in groups:
+            sup = next((h for h in groups if h is not g and set(g[2]) <= set(h[2]) and (set(g[2]) < set(h[2]) or groups.index(h) < groups.index(g))), None)
+            if sup and g[1]:
+                folded.append({"repo": repo, "solution_file": g[1], "into": sup[1] or sup[0]})
+            else:
+                keep.append(g)
+        groups = keep  # same code opened by a smaller .sln: one solution, not two
+        taken = [g[0] for g in groups]
+        groups = [(g[0] if taken.count(g[0]) == 1 else f"{g[0]} ({os.path.dirname(g[1].replace(chr(92), '/')) or 'root'})", g[1], g[2]) for g in groups]  # same file name in two folders: keep the ids unique
         for name, sln_path, paths in groups:
             if {repo.lower(), name.lower(), f"{repo}/{name}".lower(), (sln_path or "").lower()} & excluded:
                 continue  # out of scope (intake: scope_exclusions)
@@ -82,10 +95,10 @@ def main():
             ev = set()
             for p in projs:
                 ev |= env_vars_of(inv["root"], p["path"])
-            cfiles = sorted({r["file"] for r in conf.get("rows", []) if (r.get("project") or "").lower() in names})
+            cfiles = sorted({r["file"] for r in conf.get("rows", []) if (r.get("project") or "").lower() in names and not r["file"].lower().endswith(".pubxml")})  # publish profiles are build-time, not runtime config
             eps = {}
             for r in conf.get("network_access", []):
-                if r.get("class") in INTERNAL and (r.get("project") or "").lower() in names:
+                if r.get("class") in INTERNAL and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]*", r["destination"] or "") and (r.get("project") or "").lower() in names:  # a host name or IP only: template text such as "{0}&amp" is not a destination
                     eps.setdefault(r["destination"], {"destination": r["destination"], "class": r["class"], "projects": set()})["projects"].add(r["project"])
             wl_envs = envs or ["UNKNOWN"]
             assumed = assumed or not envs
@@ -98,7 +111,7 @@ def main():
                               "family": p.get("framework_family"), "deployable": bool(p.get("deployable")), "loc": p.get("loc_code", 0)} for p in projs],
                 "deployables": [p["name"] for p in deployables],
                 "environments": envs, "environments_confirmed": confirmed, "environments_assumed": not envs,
-                "workloads": [{"deployable": d["name"], "environment": e} for d in deployables for e in wl_envs],
+                "workloads": [{"environment": e, "deployables": [d["name"] for d in deployables]} for e in wl_envs] if deployables else [],  # a solution without a deployable (libraries only) is nothing to move
                 "frameworks": fw, "retarget_projects": to_change,
                 "env_vars": sorted(ev), "config_files": cfiles,
                 "endpoints": [{**v, "projects": sorted(v["projects"])} for v in sorted(eps.values(), key=lambda x: x["destination"])],
@@ -110,13 +123,17 @@ def main():
             count.setdefault((s["repo"], p["path"]), []).append(s["id"])
     shared = [{"repo": k[0], "project": k[1], "solutions": v} for k, v in count.items() if len(v) > 1]
     write_json(os.path.join(OUT, "solutions", "index.json"), {"solutions": sols, "shared_projects": shared, "environments_assumed": assumed,
-                                                              "retarget_to": retarget_to or "unknown"})
+                                                              "retarget_to": retarget_to or "unknown", "loose_projects": loose_out, "folded_solutions": folded})
     mark_step(root, "solutions")
     print(f"{len(sols)} solutions · {sum(len(s['projects']) for s in sols)} projects · {sum(len(s['deployables']) for s in sols)} deployables · "
-          f"{sum(len(s['workloads']) for s in sols)} workloads" + (" · environments UNKNOWN: 1 per deployable assumed" if assumed else ""))
+          f"{sum(len(s['workloads']) for s in sols)} workloads" + (" · environments UNKNOWN: 1 per solution assumed" if assumed else ""))
     for s in sols:
         print(f"  {s['id']}: {len(s['projects'])} projects, {len(s['deployables'])} deployables, {len(s['env_vars'])} env vars, "
               f"{len(s['config_files'])} config files, {len(s['endpoints'])} internal endpoints, {len(s['retarget_projects'])} to retarget")
+    for f in folded:
+        print(f"  {f['repo']}: {f['solution_file']} holds only projects that {f['into']} also holds: folded into it")
+    if loose_out:
+        print(f"  {len(loose_out)} project(s) are in no solution file: listed, not estimated (confirm with the client that they are deployed)")
     if shared:
         print(f"  {len(shared)} project(s) belong to more than one solution: counted once in the estate totals")
 

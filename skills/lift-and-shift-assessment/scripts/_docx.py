@@ -8,8 +8,14 @@
 
 Opens in Word, and imports into Google Docs and LibreOffice. Cell values are plain strings; a string starting with '**' is bold.
 """
+import re
 import zipfile
 from xml.sax.saxutils import escape
+
+LINK_RID = "rId2"  # relationship id of the workbook link (the branded template has its own)
+LINK_URL = None  # when set, the word "workbook" in the text becomes a link to the companion workbook (it survives a PDF export)
+LINK_WORD = re.compile(r"\bworkbook\b")
+SHEET_NAMES = re.compile(r"(\bsheets? )([A-Z][A-Za-z]+(?: and [A-Z][A-Za-z]+)*)")  # "sheet Build", "sheets Outbound and Inbound"
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 FONT = "Arial"
@@ -19,15 +25,20 @@ HEAD_FILL = "EEF0F2"  # light grey table header, as in the reference
 def _runs(text, size=None, bold=False, color=None):
     out = []
     for i, part in enumerate(str(text).split("\n")):
-        rpr = ""
-        if bold:
-            rpr += "<w:b/>"
-        if color:
-            rpr += f'<w:color w:val="{color}"/>'
-        if size:
-            rpr += f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
-        br = "<w:br/>" if i else ""
-        out.append(f'<w:r>{"<w:rPr>" + rpr + "</w:rPr>" if rpr else ""}{br}<w:t xml:space="preserve">{escape(part)}</w:t></w:r>')
+        sz = f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>' if size else ""
+        rpr = ("<w:b/>" if bold else "") + (f'<w:color w:val="{color}"/>' if color else "") + sz
+        pieces = LINK_WORD.split(part) if LINK_URL else [part]
+        for j, piece in enumerate(pieces):
+            if j:
+                lr = ("<w:b/>" if bold else "") + '<w:color w:val="0563C1"/><w:u w:val="single"/>' + sz
+                out.append(f'<w:hyperlink r:id="{LINK_RID}" w:history="1"><w:r><w:rPr>{lr}</w:rPr><w:t>workbook</w:t></w:r></w:hyperlink>')
+            br = "<w:br/>" if i and not j else ""
+            if piece or br or len(pieces) == 1:
+                segs = SHEET_NAMES.split(piece)  # [text, "sheet ", name, text, ...]: the name is bold so the reader can find the tab
+                for k, seg in enumerate(segs):
+                    props = ("<w:b/>" + rpr.replace("<w:b/>", "")) if k % 3 == 2 else rpr
+                    if seg or (k == 0 and br):
+                        out.append(f'<w:r>{"<w:rPr>" + props + "</w:rPr>" if props else ""}{br if k == 0 else ""}<w:t xml:space="preserve">{escape(seg)}</w:t></w:r>')
     return "".join(out)
 
 
@@ -119,7 +130,9 @@ class Docx:
         rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
         drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+                 + (f'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{escape(LINK_URL, {chr(34): "&quot;"})}" TargetMode="External"/>' if LINK_URL else "")
+                 + '</Relationships>')
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("[Content_Types].xml", ct)
             z.writestr("_rels/.rels", rels)

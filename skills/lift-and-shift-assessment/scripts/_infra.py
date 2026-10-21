@@ -12,7 +12,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _common import SOURCE_DIR_SKIP, data, mask, read_text, rel
+from _common import skip_dir, SOURCE_DIR_SKIP, data, mask, read_text, rel
 
 CONFIG_EXT = {".config", ".json", ".xml", ".yml", ".yaml", ".ini", ".env", ".properties", ".settings", ".toml", ".conf"}
 CODE_EXT = {".cs", ".vb"}
@@ -65,7 +65,8 @@ TLD_OK = {"local", "lan", "corp", "internal", "intra", "intranet", "home", "loca
 def plausible_host(h, port):
     """True for an IP, a dotted name that ends like a domain, or a short bare server name; false for namespaces, keys and tokens."""
     if re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", h):
-        return not (h.startswith(("0.", "127.", "255.")) or all(int(x) < 10 for x in h.split(".")))
+        o = [int(x) for x in h.split(".")]
+        return not (h.startswith(("0.", "127.", "255.")) or all(x < 10 for x in o) or (o[0] < 10 and o[1] < 10))  # 2.1.13.0 is a version, not an address
     if len(h) > 45 or re.fullmatch(r"[0-9a-fA-F]{12,}", h):
         return False
     labels = h.split(".")
@@ -83,7 +84,7 @@ def plausible_host(h, port):
 def host_tokens(text, ports):
     """Host names / IPs (with optional port) in a value. No credentials: user-info and key=value pairs are not hosts."""
     out = []
-    text = re.sub(r"(?i)(user id|uid|user|username|password|pwd|pass|secret|token|apikey|accesskey|key|salt|hash)\s*[=:]\s*[^;,\s\"']*", " ", text)
+    text = re.sub(r"(?i)\b(user id|uid|user|username|password|pwd|pass|secret|token|apikey|accesskey|key|salt|hash)\s*[=:]\s*[^;,\s\"']*", " ", text)
     for m in HOST_RX.finditer(text):
         h, port = m.group(1), m.group(2)
         low = h.lower()
@@ -128,7 +129,7 @@ def detect_dependencies(repo_root, inv, facts, cfg):
         return next((pp for d, pp in pdirs if n.startswith(d + os.sep)), None)
 
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+        dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
         for fn in files:
             path = os.path.join(d, fn)
             ext = os.path.splitext(fn)[1].lower()
@@ -257,7 +258,7 @@ def hosting_evidence(repo_root, inv, cfg):
             add("windows" if p.get("type") != "netcore-worker" else "neutral", f"service project ({p.get('type')})", "indicative", p["path"], 1,
                 f"{p['name']} is a service/worker: installed as a Windows service or systemd unit (check the install scripts)")
     for d, dirs, files in os.walk(repo_root):
-        dirs[:] = [x for x in dirs if x.lower() not in skip and not x.startswith(".")]
+        dirs[:] = [x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".")]
         depth = os.path.relpath(d, repo_root).count(os.sep)
         if depth > 6:
             dirs[:] = []

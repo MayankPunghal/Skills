@@ -26,7 +26,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
-from _common import (OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
+from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, data, load_config, load_state, mark, mask, read_json, read_text, rel, slug,
                      utf8_stdout, write_json)
 
 # appsettings*.json, jobsettings.json, settings.json, secrets.json …: .NET configuration JSON (launchSettings is IDE-only)
@@ -35,7 +35,7 @@ SETTINGS_JSON = re.compile(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w
 TEMPLATE_FILE = re.compile(r"(?i)[._-](example|sample|template|tmpl|dist)([._-]|$)")
 PLACEHOLDER = re.compile(r"(?i)^\s*(|<.*>|\$\{.*\}|\$\(.*\)|#\{.*\}|%.*%|\{\{.*\}\}|\{\w*\}|x{3,}|\*+|\.+|changeme|change[-_ ]?me\w*|"
                          r"password|pass|pwd|secret|your[-_ ]?\w*|placeholder|replace[-_ ]?\w*|set[-_ ]by[-_ ].*|to[-_ ]?do|tbd|dummy|sample|example)\s*$")
-SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd$|secret|token$|apikey|api_key|accesskey|access_key|privatekey|private_key|credential|clientkey|sharedkey|signingkey)")
+SECRET_KEY = re.compile(r"(?i)((?<!by)(?<!com)(?<!sur)pass(word|wd|phrase)?$|pwd$|secret|token$|apikey|api_key|accesskey|access_key|privatekey|private_key|credential|clientkey|sharedkey|signingkey|licen[sc]e[._-]?key|activation[._-]?key)")
 # values that are never secrets: flags, numbers, unexpanded variables, URLs without user info
 TRIVIAL_VALUE = re.compile(r"(?i)\s*(|true|false|\d+|none|null|\$\(.*\)|#\{.*\}|\{.*\}|xxx+|\*+|changeme|[a-z][\w+.-]*://[^@\s]*)\s*")
 # __name__: a token some release pipelines replace, but nothing in .NET expands it; without a replacement step it ships as written
@@ -206,7 +206,7 @@ class Scan:
         oos = [os.path.normpath(os.path.join(self.root, x)) for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]  # non-.NET projects: out of scope
         self.facts["out_of_scope_skipped"] = [x.replace("\\", "/") for x in (self.inv.get("scope") or {}).get("skip_dirs", [])]
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in skip and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
+            dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, skip) and not x.startswith(".") and os.path.normpath(os.path.join(d, x)) not in oos)
             for fn in files:
                 path = os.path.join(d, fn)
                 ext = os.path.splitext(fn)[1].lower()
@@ -725,7 +725,7 @@ class Scan:
                 fw["mstest-v1"] += 1
             base = os.path.dirname(os.path.join(self.root, p["path"]))
             for d, dirs, files in os.walk(base):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if fn.endswith((".cs", ".vb")):
                         try:
@@ -787,7 +787,7 @@ class Scan:
     def case_paths(self):
         idx = {}
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP and not x.startswith(".")]
+            dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP) and not x.startswith(".")]
             for fn in files:
                 rp = rel(os.path.join(d, fn), self.root)
                 idx.setdefault(rp.lower(), rp)
@@ -796,7 +796,7 @@ class Scan:
             base = os.path.dirname(p["path"])
             pdir = os.path.join(self.root, base)
             for d, dirs, files in os.walk(pdir):
-                dirs[:] = [x for x in dirs if x.lower() not in SOURCE_DIR_SKIP]
+                dirs[:] = [x for x in dirs if not skip_dir(d, x, SOURCE_DIR_SKIP)]
                 for fn in files:
                     if os.path.splitext(fn)[1].lower() not in (".cs", ".vb", ".cshtml", ".aspx", ".ascx", ".master", ".config", ".vbhtml"):
                         continue

@@ -29,7 +29,29 @@ DEFAULTS = {
     "intake": {},                    # questionnaire answers (intake.py): work items, environments, DevOps notes, status
 }
 
-SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}
+SOURCE_DIR_SKIP = {"bin", "obj", "packages", "node_modules", ".git", ".vs", "testresults", "bower_components", ".idea", "dist"}  # "packages" only when it is a NuGet restore folder: see skip_dir()
+
+
+def nuget_folder(path):
+    """A restored NuGet packages folder (repositories.config, or packages/<Id>.<version>/*.nupkg), not application source in a folder named Packages."""
+    try:
+        if os.path.exists(os.path.join(path, "repositories.config")):
+            return True
+        for sub in os.listdir(path)[:8]:
+            q = os.path.join(path, sub)
+            if os.path.isdir(q) and any(f.lower().endswith(".nupkg") for f in os.listdir(q)):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def skip_dir(parent, name, skip, fold=True):
+    """True when a walk should not enter folder `name` under `parent`: its name is in `skip`. A folder named packages is skipped only when it
+    is a NuGet restore folder: application source can live in a folder of that name."""
+    if name.lower() == "packages":
+        return "packages" in skip and nuget_folder(os.path.join(parent, name))
+    return (name.lower() if fold else name) in skip
 
 
 def utf8_stdout():
@@ -109,6 +131,24 @@ def read_text(path):
 
 def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-") or "x"
+
+
+def gitlab_token(cfg):
+    """The GitLab read token from the environment variable named in assessment.json -> gitlab.token_env (default GITLAB_TOKEN). On Windows a
+    variable set with setx after the session started is not in this process yet, so the user environment in the registry is read too.
+    The token is returned to the caller only: never print it, write it to a file or put it on a command line."""
+    name = ((cfg.get("gitlab") or {}).get("token_env") or "GITLAB_TOKEN").strip()
+    tok = os.environ.get(name)
+    if not tok and os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                tok = winreg.QueryValueEx(k, name)[0]
+        except OSError:
+            tok = None
+    if not tok:
+        raise SystemExit(f"set the GitLab read token in the environment variable {name} (assessment.json gitlab.token_env); it is never printed")
+    return tok.strip()
 
 
 def tool_exe(name):
