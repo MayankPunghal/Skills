@@ -45,8 +45,10 @@ const AGENTS = {
   copilot: { label: "GitHub Copilot",           detect: ".copilot", global: null,              project: ".github/skills" },
 };
 
-// Skills that need another skill installed beside them (migration-assessment reuses the documenter's installer and graphify setup).
-const DEPENDS = { "migration-assessment": ["codebase-documenter"] };
+// Skills that need another skill installed beside them (modernization-assessment reuses the documenter's installer and graphify setup).
+const DEPENDS = { "modernization-assessment": ["codebase-documenter"] };
+// Skills that were renamed: `update` replaces an install of the old name with the new one (old copy backed up).
+const RENAMED = { "migration-assessment": "modernization-assessment" };
 // A skill that ships this script gets an optional "install prerequisites" step after copying.
 const SETUP_SCRIPT = ["scripts", "install_prerequisites.py"];
 const MIN_PY = [3, 10]; // the skills' scripts use 3.10+ syntax
@@ -421,7 +423,20 @@ async function cmdUpdate(flags) {
   if (!m.installs.length) { say("Nothing recorded yet — run the installer first."); return; }
   const available = readSkills().map((s) => s.name);
   let n = 0;
+  const rstamp = new Date().toISOString().replace(/[:.]/g, "-");
   for (const it of m.installs) {
+    const renamed = RENAMED[it.skill];
+    if (renamed && available.includes(renamed) && fs.existsSync(path.dirname(it.path))) {
+      const target = path.join(path.dirname(it.path), renamed);
+      const backed = backupExisting(it.path, rstamp);
+      backupExisting(target, rstamp);
+      if (it.link) fs.symlinkSync(skillDir(renamed), target, "junction");
+      else copyDir(skillDir(renamed), target);
+      say(`${green("✔")} ${it.skill} → ${renamed} ${dim("→")} ${target}${backed ? dim(`  (old copy backed up: ${backed})`) : ""}`);
+      Object.assign(it, { skill: renamed, path: target, at: new Date().toISOString() });
+      n++;
+      continue;
+    }
     if (it.link) { say(dim(`= ${it.skill} → ${it.path} (linked — already refreshed by this run)`)); continue; }
     if (!available.includes(it.skill)) { say(yellow(`! ${it.skill} no longer in the repo — left as is at ${it.path}`)); continue; }
     if (!fs.existsSync(path.dirname(it.path))) { say(yellow(`! ${it.path} — folder gone, skipped`)); continue; }
@@ -431,6 +446,7 @@ async function cmdUpdate(flags) {
     say(`${green("✔")} ${it.skill} ${dim("→")} ${it.path}`);
     n++;
   }
+  m.installs = m.installs.filter((i, k) => m.installs.findIndex((j) => j.path === i.path) === k); // a rename can meet an existing install
   saveManifest(m);
   say(green(`\nUpdated ${n} install(s).`));
   if (!flags["no-zips"]) buildZips();

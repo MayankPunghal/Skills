@@ -78,7 +78,7 @@ From documenting a 5,000-file ASP.NET MVC + SQL Server system (342 + 54 + 65 tab
   - Error messages: read the whole literal (strings nested in `$"{string.Join(", ", e)}"` holes) and follow `"a" + name + "b"` concatenation instead of cutting at the first quote.
   - Hand-written pages that copy generated counts drift silently; use `[[n:...]]` tags.
   - String-literal matching is one shared module (`scripts/code_text.py`) for the assessment scan and the portability page, so both outputs agree. `nameof(...)` in a reflection call is compile-time, not run-time binding.
-- After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and migration-assessment's `map_graphs.py` does the same for the resolver and the database layer.
+- After a skill update, graph layers written by an older script are stale. `build_site.py` reruns `sql_graph.py` when `sql-graph.json` is older than the script, and modernization-assessment's `map_graphs.py` does the same for the resolver and the database layer.
 
 ## Site and links
 

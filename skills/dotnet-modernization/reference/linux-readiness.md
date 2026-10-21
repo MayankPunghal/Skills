@@ -1,6 +1,6 @@
 # Linux readiness
 
-What works on Windows today but breaks, or behaves differently, in a Linux container on AWS (ECS/EKS, Fargate or EC2). One check, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/linux_readiness.json`. The same two files ship in the migration-assessment and dotnet-modernization skills: change both together.
+What works on Windows today but breaks, or behaves differently, in a Linux container on AWS (ECS/EKS, Fargate or EC2). One check, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/linux_readiness.json`. The same two files ship in the modernization-assessment and dotnet-modernization skills: change both together.
 
 ## Contents
 
@@ -116,6 +116,6 @@ AWS: AWS Transform user guide (Visual Studio, how it works, .NET capabilities an
 
 Community: rootless .NET containers (`USER $APP_UID`, UID 1654); ICU and tzdata in Alpine/chiseled images (dotnet-docker discussions); cross-platform time zones with .NET Core; case-sensitivity write-ups.
 
-Local: DevTx KB `19-linux-containerization.md`; the migration-assessment rule catalogue (`rules.json`) and `linux-pitfalls.md`; the dotnet-modernization residue catalogue (`residue_rules.json`).
+Local: DevTx KB `19-linux-containerization.md`; the modernization-assessment rule catalogue (`rules.json`) and `linux-pitfalls.md`; the dotnet-modernization residue catalogue (`residue_rules.json`).
 
 URLs for every source are in the `sources` block of `data/linux_readiness.json`.

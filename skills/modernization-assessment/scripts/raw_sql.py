@@ -1,8 +1,8 @@
 """Raw SQL and database-object usage for one repository: the application side of SQL Server -> PostgreSQL.
 
-    py -X utf8 raw_sql.py --root <repo> --out <output dir> [--name xmlgateway]
+    py -X utf8 raw_sql.py --root <repo> --out <output dir> [--name myrepo]
 
-Writes <out>/sql-inventory.json and <out>/sql-inventory.csv. Covers what migration-assessment's _dbinventory.py does not:
+Writes <out>/sql-inventory.json and <out>/sql-inventory.csv. Covers what modernization-assessment's _dbinventory.py does not:
 
   procedures  every stored-procedure call site in C# / VB, with the procedure NAME even when no .sql file defines it
               (literal, constant or variable), the call API (ExecuteReader / NonQuery / Scalar / XmlReader / DataSet /

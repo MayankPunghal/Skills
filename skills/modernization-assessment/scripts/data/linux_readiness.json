@@ -1,5 +1,5 @@
 {
- "_doc": "Linux readiness checks for .NET applications moving from Windows to Linux containers on AWS. Generated from the research catalogue (reference/linux-readiness.md). level: block / warn / info. patterns: regex + file globs; automated = every pattern has file types (linux_readiness.py scans it), else it is a checklist item for review. coverage: COVERED / PARTIAL / GAP against the migration-assessment rules.json and the residue rules at generation time. Items whose source is K are engineering knowledge, not a cited page.",
+ "_doc": "Linux readiness checks for .NET applications moving from Windows to Linux containers on AWS. Generated from the research catalogue (reference/linux-readiness.md). level: block / warn / info. patterns: regex + file globs; automated = every pattern has file types (linux_readiness.py scans it), else it is a checklist item for review. coverage: COVERED / PARTIAL / GAP against the modernization-assessment rules.json and the residue rules at generation time. Items whose source is K are engineering knowledge, not a cited page.",
  "sources": {
   "S1": "Platform compatibility analyzer: https://learn.microsoft.com/en-us/dotnet/standard/analyzers/platform-compat-analyzer",
   "S2": "CA1416 rule: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1416 (linked from S1; not fetched)",
@@ -32,7 +32,7 @@
   "S30": "Case sensitivity write-up: https://www.benlocke.co.uk/case-sensitivity/",
   "S31": "URL case sensitivity and assembly loading: https://blogs.msdn.microsoft.com/junfeng/2005/03/20/url-case-sensitivity-and-assembly-loading/",
   "S32": "Umbraco thread on case-sensitive file names: https://discord-chats.umbraco.com/t/22323315/handling-case-sensitivity-of-filenames-when-transferring-to-?t=v2",
-  "S33": "DevTx KB 19 and migration-assessment rules (see section 22 and the rule catalogues named in section 23)."
+  "S33": "DevTx KB 19 and modernization-assessment rules (see section 22 and the rule catalogues named in section 23)."
  },
  "rules": [
   {
@@ -667,7 +667,7 @@
     "S30",
     "S32"
    ],
-   "already_in": "GAP: FILE-CASE-MISMATCH is documented in migration-assessment/references/linux-pitfalls.md but is not in rules.json or any script",
+   "already_in": "GAP: FILE-CASE-MISMATCH is documented in modernization-assessment/references/linux-pitfalls.md but is not in rules.json or any script",
    "coverage": "GAP",
    "patterns": [
     {

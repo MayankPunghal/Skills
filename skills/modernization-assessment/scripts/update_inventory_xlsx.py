@@ -220,7 +220,7 @@ def main():
     about = [list(r) for r in book.get("About", [["Item", "Detail"]])]
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     new_items = {
-        "Assessment sheets": f"Added {now} by the migration-assessment skill: Assessment scope, Non-.NET coupling, Server dependencies, Server coverage, Network access, Config map, Servers (DevOps list), Hosting evidence, Assessment additions. "
+        "Assessment sheets": f"Added {now} by the modernization-assessment skill: Assessment scope, Non-.NET coupling, Server dependencies, Server coverage, Network access, Config map, Servers (DevOps list), Hosting evidence, Assessment additions. "
                              "Other sheets are unchanged.",
         "Server dependencies (how)": "Found in code by the skill's catalogue (NuGet package, code use, config key, docker-compose image). Only host names / IPs / ports are kept, never config values. "
                                      "'Candidate servers' = servers of that type in the DevOps list; 'Matched servers' only when the code names a server of the list.",

@@ -8,7 +8,7 @@ your own sample reports). Placeholders:
   {{block:<name>}}      generated tables/diagrams (see BLOCKS below)
   {{narrative:<name>}}  text written by the assessor in assessment/narrative/<name>.md (HTML comments stripped)
 Outputs (assessment/report/):
-  <Client>-AWS-Migration-Assessment.md, findings.csv, findings.json, applications.csv, packages.csv, open-questions.csv, endpoints.csv
+  <Client>-AWS-Modernization-Assessment.md (AWS-Migration-Assessment for lift-and-shift), findings.csv, findings.json, applications.csv, packages.csv, open-questions.csv, endpoints.csv
 """
 import argparse
 import csv
@@ -1494,7 +1494,7 @@ def main():
         return fn(c) if fn else f"_Unknown block {name}._"
     report = re.sub(r"\{\{(meta|block|narrative):([\w-]+)\}\}", sub, tpl)
     rdir = os.path.join(OUT, "report")
-    name = a.out or f"{slug(meta['client']).title().replace('-', '')}-AWS-Migration-Assessment.md"
+    name = a.out or f"{slug(meta['client']).title().replace('-', '')}-AWS-{'Migration' if lift(cfg) else 'Modernization'}-Assessment.md"
     report = tags(report)  # tags in decisions / reviews too
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)

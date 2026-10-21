@@ -14,7 +14,7 @@ what blocks the build afterwards. BUILD-WINDOWS-CI is DevOps; BUILD-INSTALLER is
 3. **Binary references** (`<Reference Include=... HintPath=...>` to a DLL in the repo): find the package or the source;
    a .NET Framework-only DLL is a blocker until replaced (DevTx KB 27 lists the usual ones).
 4. **Polyfills to drop**: Microsoft.Net.Http, System.ValueTuple, Microsoft.Bcl.*, System.Net.Http (the framework has them).
-5. **Windows-only packages**: replace (assessment package map: `migration-assessment/scripts/data/package_map.json`).
+5. **Windows-only packages**: replace (assessment package map: `modernization-assessment/scripts/data/package_map.json`).
 6. **Major upgrades** (AutoMapper, Newtonsoft → System.Text.Json only when asked, log4net/NLog): one package per commit,
    read its breaking changes, rebuild.
 7. **Warnings**: do not raise `TreatWarningsAsErrors` during the port; record the count in verify.md and compare with

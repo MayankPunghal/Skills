@@ -1,4 +1,4 @@
-# Evaluations for migration-assessment
+# Evaluations for modernization-assessment
 
 Run each prompt in a fresh session, first without the skill (baseline), then with it. Record the difference below.
 
@@ -11,7 +11,7 @@ Run each prompt in a fresh session, first without the skill (baseline), then wit
 ## Triggering and routing
 
 ### Bare invocation
-Prompt: `/migration-assessment`
+Prompt: `/modernization-assessment`
 Should trigger: yes
 First file Claude should open: `scripts/context.py` output, not a step
 Done looks like: state, recommended NEXT and the step menu are shown; no step starts.

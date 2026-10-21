@@ -22,7 +22,7 @@ Adapters (codebase-docs.json "adapters", run in order; generic-areas always last
                    calls (DI, overrides, messages, events, method groups, jobs, redirects, filters) to graph.json
   generic-views    every view, page and screen (MVC, Razor Pages, Blazor, Web Forms, ASMX / ASHX, WinForms, WPF / MAUI XAML)
                    with route, model, layout, code-behind, lines and totals per kind and project
-  generic-portability  Windows-to-Linux / modern .NET portability flags (the migration-assessment portability rules only),
+  generic-portability  Windows-to-Linux / modern .NET portability flags (the modernization-assessment portability rules only),
                    file:line per rule, plus the Windows-only packages from generic-deps
   generic-endpoints  network endpoints: every outbound destination (host, port, protocol, internal / external, config key,
                    methods that use it), every inbound listener (launchSettings, Kestrel, Docker, compose, WCF) and the outbound

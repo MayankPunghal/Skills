@@ -31,7 +31,7 @@ New here? The one-page **[Quick start](QUICKSTART.md)** covers install and the t
 - [The .NET to AWS family](#the-net-to-aws-family)
 - [Skill guide](#skill-guide)
   - [codebase-documenter](#codebase-documenter)
-  - [migration-assessment](#migration-assessment)
+  - [modernization-assessment](#modernization-assessment)
   - [dotnet-modernization](#dotnet-modernization)
   - [lift-and-shift-assessment](#lift-and-shift-assessment)
   - [gh-review-pr](#gh-review-pr)
@@ -55,19 +55,19 @@ New here? The one-page **[Quick start](QUICKSTART.md)** covers install and the t
 | [**dotnet-modernization**](skills/dotnet-modernization/SKILL.md) | Carries out the modernization of legacy .NET Framework applications to .NET 10 on Linux containers on AWS, after an assessment. One porting engine per project (AWS DevTx Version Upgrade Toolkit or AWS Transform for .NET), then Claude cleans up what the engine left, playbook by playbook, and pass/fail gates prove the result. | 14 commands · 17 clean-up playbooks · residue scan (44 rules) · Linux readiness (240 checks) · parity replay · execution report · bundled DevTx .NET knowledge base |
 | [**gh-review-pr**](skills/gh-review-pr/SKILL.md) | Reviews a GitHub pull request, or local changes since a commit, on three separate axes: quality (bugs, security, design, performance), the repo's documented standards plus a code-smell baseline, and the spec (linked issue or spec file). Every finding has the issue, possible fixes, the risk if not addressed and an impact × likelihood rating. Writes an HTML review report and can post inline PR comments. | 6 Node scripts · review lenses + smell baseline · spec checklist · HTML report · findings cache · inline posting |
 | [**lift-and-shift-assessment**](skills/lift-and-shift-assessment/SKILL.md) | Produces a draft AWS lift-and-shift (Windows to Windows, EC2) assessment for a .NET estate of any size: one Word document for the whole project, a small companion workbook, and an estimate in developer working hours, solution by solution. | 11-step workflow · ~50-question intake · build check · hours model · Word + Excel output |
-| [**migration-assessment**](skills/migration-assessment/SKILL.md) | Assesses legacy .NET estates (one repo or hundreds) for AWS and Linux. It scans for everything that breaks on Linux or .NET 10, classifies apps with the 7 Rs, estimates effort, and writes a client-ready report (Markdown, interactive HTML, JSON/CSV). Ends with an execution plan for dotnet-modernization. | 170+ detection rules · Linux readiness (240 checks) · raw SQL inventory · AWS managed-service map · estimation model · report templates · worked sample |
+| [**modernization-assessment**](skills/modernization-assessment/SKILL.md) | Assesses legacy .NET estates (one repo or hundreds) for modernization to .NET 10, Linux and AWS. It scans for everything that breaks on Linux or .NET 10, classifies apps with the 7 Rs, estimates effort, and writes a client-ready report (Markdown, interactive HTML, JSON/CSV). Ends with an execution plan for dotnet-modernization. | 170+ detection rules · Linux readiness (240 checks) · raw SQL inventory · AWS managed-service map · estimation model · report templates · worked sample |
 | [**skill-publisher**](skills/skill-publisher/SKILL.md) | Takes any skill folder or zip, refactors it to the [conventions](CONVENTIONS.md) without dropping content, validates it, scans it for secrets, pushes it to this repo and installs it with its prerequisites. | Staging · secret scan · validator gate · git automation |
 
-Every skill is **self-contained**: scripts, templates and data ship inside the skill folder, so it works on any machine where it's installed. Every skill is also **model-invocable**: Claude reads the descriptions and uses a skill when a request fits, or you call it by name (`/codebase-documenter`). Type a skill's name on its own (`/migration-assessment`) to see its menu and the recommended next step.
+Every skill is **self-contained**: scripts, templates and data ship inside the skill folder, so it works on any machine where it's installed. Every skill is also **model-invocable**: Claude reads the descriptions and uses a skill when a request fits, or you call it by name (`/codebase-documenter`). Type a skill's name on its own (`/modernization-assessment`) to see its menu and the recommended next step.
 
 ## Which skill do I need?
 
 | You want to… | Use | Start with |
 |---|---|---|
 | Understand or hand over an unfamiliar codebase | **codebase-documenter** | `/codebase-documenter full run on C:\code\MyApp` |
-| Know what it takes to move .NET apps to AWS and Linux, with hours and a plan | **migration-assessment** | `/migration-assessment assess the estate at C:\code\MyApp` |
+| Know what it takes to move .NET apps to AWS and Linux, with hours and a plan | **modernization-assessment** | `/modernization-assessment assess the estate at C:\code\MyApp` |
 | Actually port the apps the assessment planned | **dotnet-modernization** | `/dotnet-modernization modernize-package <name>` |
-| Check an app already on .NET 5+ for Linux containers | **dotnet-modernization** (or migration-assessment) | `/dotnet-modernization linux-readiness` |
+| Check an app already on .NET 5+ for Linux containers | **dotnet-modernization** (or modernization-assessment) | `/dotnet-modernization linux-readiness` |
 | Move Windows servers to EC2 as they are, with an hours estimate | **lift-and-shift-assessment** | `/lift-and-shift-assessment` |
 | Review a pull request or your local changes | **gh-review-pr** | `/gh-review-pr 42` |
 | Add, clean up or update a skill in this collection | **skill-publisher** | `/skill-publisher C:\path\to\my-skill` |
@@ -78,7 +78,7 @@ Four skills work as one pipeline. Each writes files the next one reads, so a lat
 
 ```mermaid
 flowchart LR
-    A["codebase-documenter<br/>graph + docs"] --> B["migration-assessment<br/>scan · 7 Rs · estimate · plan"]
+    A["codebase-documenter<br/>graph + docs"] --> B["modernization-assessment<br/>scan · 7 Rs · estimate · plan"]
     B -->|"execution-plan.json"| C["dotnet-modernization<br/>port · clean up · verify"]
     B -.->|"same OS, EC2"| D["lift-and-shift-assessment<br/>Word doc + hours"]
     C --> E["Linux containers on AWS<br/>execution report"]
@@ -87,11 +87,11 @@ flowchart LR
 | Stage | Skill | What it decides or does | Hand-off file |
 |---|---|---|---|
 | Map | codebase-documenter | Knowledge graph and call graph the assessment reads for reachability | `graphify-out/` |
-| Assess and plan | migration-assessment | What breaks, the 7R per app, effort and timeline, and per package: **one porting engine** (DevTx or AWS Transform), **one database tool**, the clean-up playbooks, libraries first | `assessment/execution-plan.json` |
+| Assess and plan | modernization-assessment | What breaks, the 7R per app, effort and timeline, and per package: **one porting engine** (DevTx or AWS Transform), **one database tool**, the clean-up playbooks, libraries first | `assessment/execution-plan.json` |
 | Execute | dotnet-modernization | Runs the chosen engine, Claude clean-up one playbook per commit, SQL Server → PostgreSQL in the code, AWS managed-service swaps, the container, then the gates | `.modernization/execution-report.html` |
 | Same-OS move | lift-and-shift-assessment | Windows-to-Windows on EC2 when modernizing is out of scope | `<client>-lift-and-shift-assessment.docx` |
 
-Installing migration-assessment brings codebase-documenter with it. Both migration-assessment and dotnet-modernization ship the same Linux readiness check (240 checks), so an app already on modern .NET gets the same answer from either.
+Installing modernization-assessment brings codebase-documenter with it. Both modernization-assessment and dotnet-modernization ship the same Linux readiness check (240 checks), so an app already on modern .NET gets the same answer from either.
 
 ## Skill guide
 
@@ -105,17 +105,17 @@ Turns a codebase you don't know into a website you can read offline, plus a laye
 - **Needs:** Python 3.10+, MkDocs Material and graphify (the prerequisite installer handles them). An LLM key is optional, only to name code areas.
 - **Details:** [SKILL.md](skills/codebase-documenter/SKILL.md) · [Quick start](QUICKSTART.md#document-a-codebase-codebase-documenter).
 
-### migration-assessment
+### modernization-assessment
 
 Assesses and plans; it never changes code. Works for one repository or hundreds.
 
-- **Try:** `/migration-assessment assess the estate at C:\code\MyApp, workspace C:\work\myapp-assessment`.
+- **Try:** `/modernization-assessment assess the estate at C:\code\MyApp, workspace C:\work\myapp-assessment`.
 - **It asks first:** the target (modernize to .NET 10 on Linux, or lift-and-shift with the same OS) and the database plan (SQL Server + PostgreSQL, PostgreSQL only, or no change).
 - **It finds:** Windows-only APIs, System.Web and Web Forms, WCF, COM, registry, MSMQ, auth/AD/machineKey, config secrets (names only), hard-coded hosts and UNC paths, letter case and path issues, time zones, SQL Server features against PostgreSQL, raw SQL in the code, server-hosted services with their AWS managed options, vulnerable NuGet packages, and 240 Linux readiness checks.
 - **You get:** a client-ready report (interactive HTML, Markdown, JSON/CSV) with a justified 7R decision per application, effort and timeline with ranges, risks and open questions, and `execution-plan.json` for dotnet-modernization.
 - **Steps:** `intake` → `discover-estate` → `map-code-graph` → `scan-repos` → `linux-readiness` → `map-infra` → `review-findings` → `classify-applications` → `estimate-effort` → `plan-execution` → `write-report` → `verify-report`; or `assess-estate` for all of them, `resume` to continue.
 - **Tip:** pass `--prepared-by "Your Company"` (or set `ASSESSMENT_PREPARED_BY`) to put your name on the report.
-- **Details:** [SKILL.md](skills/migration-assessment/SKILL.md) · [README](skills/migration-assessment/README.md).
+- **Details:** [SKILL.md](skills/modernization-assessment/SKILL.md) · [README](skills/modernization-assessment/README.md).
 
 ### dotnet-modernization
 
@@ -175,7 +175,7 @@ The installer walks through four choices:
 ```
 Mayank's Skills installer  ·  6 skills
 
-✔ Which skills? codebase-documenter, migration-assessment, skill-publisher
+✔ Which skills? codebase-documenter, modernization-assessment, skill-publisher
 ✔ Install where? Global
 ✔ For which agents? Claude Code, Codex / .agents (shared)
 ✔ Install prerequisites for codebase-documenter? Yes, install now
@@ -201,7 +201,7 @@ Some skills need more, and their prerequisite installers check for it:
 | Skill | Also needs |
 |---|---|
 | codebase-documenter | MkDocs Material, graphify (installed at user level) |
-| migration-assessment | graphify (via codebase-documenter); a .NET SDK for the optional build check |
+| modernization-assessment | graphify (via codebase-documenter); a .NET SDK for the optional build check |
 | dotnet-modernization | .NET 10 SDK, Docker, and the chosen porting engine (DevTx toolkit or AWS Transform `atx` CLI) |
 | gh-review-pr | GitHub CLI (`gh auth login`) |
 
@@ -242,7 +242,7 @@ npx -y github:MayankPunghal/Skills --yes
 npx -y github:MayankPunghal/Skills --skills=codebase-documenter --scope=project --agents=claude,cursor
 
 # The .NET to AWS family (codebase-documenter comes along automatically)
-npx -y github:MayankPunghal/Skills --yes --skills=migration-assessment,dotnet-modernization
+npx -y github:MayankPunghal/Skills --yes --skills=modernization-assessment,dotnet-modernization
 
 # Get the latest versions of everything you installed
 npx -y github:MayankPunghal/Skills update
@@ -263,7 +263,7 @@ npx github:MayankPunghal/Skills
 
 - **Always current.** npx reuses its cached copy of a GitHub package without checking for a newer one. The installer therefore keeps its own clone and installs from the latest `main` every time.
 - **Safe to rerun.** Replaced skills are backed up, never deleted. The managed clone is never reset while it holds unpushed work.
-- **Dependencies.** Selecting a skill brings the skills it needs. For example, migration-assessment brings codebase-documenter.
+- **Dependencies.** Selecting a skill brings the skills it needs. For example, modernization-assessment brings codebase-documenter.
 - **Prerequisites.** These are user-level installs with no admin rights; anything already present is skipped.
 - **Private skills.** The installer also checks an optional private source. Machines with access get those skills in the same menu (tagged *personal*); everyone else sees only the skills in this repo, with no prompt and no error.
 
@@ -338,7 +338,7 @@ package.json                makes the repo runnable with npx
 
 ### Skill-specific notes
 
-- **migration-assessment** puts a consultancy name on reports: pass `--prepared-by "Your Company"`, or set `ASSESSMENT_PREPARED_BY` once per machine.
+- **modernization-assessment** puts a consultancy name on reports: pass `--prepared-by "Your Company"`, or set `ASSESSMENT_PREPARED_BY` once per machine.
 - **codebase-documenter** names graph communities with an LLM. When no key is set it suggests OpenRouter with **GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, the default), and any other model or provider works: `--model`, `graph.model`, or `CODEBASE_DOCS_LLM_MODEL`.
-- **migration-assessment** and **dotnet-modernization** ship the same `linux_readiness.py` and `data/linux_readiness.json`; change them together.
+- **modernization-assessment** and **dotnet-modernization** ship the same `linux_readiness.py` and `data/linux_readiness.json`; change them together.
 - **dotnet-modernization** bundles the AWS DevTx .NET migration knowledge base under Apache-2.0 (see its [NOTICE](skills/dotnet-modernization/NOTICE)).

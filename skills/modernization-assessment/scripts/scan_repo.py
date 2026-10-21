@@ -964,7 +964,7 @@ def nuget_info(pid, versions, cache_dir):
     elif raw is None:
         url = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/index.json"
         try:
-            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"})
+            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 body = r.read()
                 if r.headers.get("Content-Encoding") == "gzip" or body[:2] == b"\x1f\x8b":
@@ -1038,7 +1038,7 @@ def platform_assets(pid, entries, versions, cache_dir):
         try:
             reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
             def get(u):
-                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"}), timeout=20) as r:
+                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"}), timeout=20) as r:
                     b = r.read()
                 return json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
             leaf = get(get(reg)["catalogEntry"])

@@ -707,7 +707,7 @@ class Scan:
             lib, ver = m.group(1).lower(), m.group(2) or ""
             old = (lib == "jquery" and ver and ver_lt(ver, "3.5.0")) or (lib == "bootstrap" and ver and ver_lt(ver, "3.4.1")) or lib == "angular" or (lib == "modernizr" and ver and ver_lt(ver, "3.0"))
             if old:
-                rule = next((r for r in self.rules if r["id"] == "FE-LEGACY-LIBS"), None)  # a front-end library check belongs to migration-assessment
+                rule = next((r for r in self.rules if r["id"] == "FE-LEGACY-LIBS"), None)  # a front-end library check belongs to modernization-assessment
                 if rule:
                   self.add(rule, self.project_of(os.path.join(self.root, fp)), fp, 1, f"{os.path.basename(fp)} ({lib} {ver or 'version in file'})")
         # tests
@@ -903,7 +903,7 @@ def nuget_info(pid, versions, cache_dir):
     elif raw is None:
         url = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/index.json"
         try:
-            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"})
+            req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 body = r.read()
                 if r.headers.get("Content-Encoding") == "gzip" or body[:2] == b"\x1f\x8b":
@@ -977,7 +977,7 @@ def platform_assets(pid, entries, versions, cache_dir):
         try:
             reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
             def get(u):
-                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "migration-assessment"}), timeout=20) as r:
+                with urllib.request.urlopen(urllib.request.Request(u, headers={"Accept-Encoding": "gzip", "User-Agent": "modernization-assessment"}), timeout=20) as r:
                     b = r.read()
                 return json.loads(gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b)
             leaf = get(get(reg)["catalogEntry"])

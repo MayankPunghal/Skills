@@ -2,7 +2,7 @@
 
 **Rules:** NET-SMTP, LS-SMTP-PORT25, INT-SMTP-PICKUP-IIS, NET-FTP, WIN-MSMQ, FILE-LOCAL-WRITE, NET-UNC-SHARE,
 LS-NETWORK-MOUNT, IIS-SESSION-STATE, STATE-SESSION, STATE-APP-CACHE (assessment); SVC-* , API-MSMQ, FILE-UNC (residue);
-the `AWS-*` rows of the assessment's aws-native.md (migration-assessment `the migration-assessment skill's `aws_native.py``).
+the `AWS-*` rows of the assessment's aws-native.md (the modernization-assessment skill's `aws_native.py`).
 **Engines:** neither engine covers these. Claude does them, one service per commit.
 
 ## Order per service

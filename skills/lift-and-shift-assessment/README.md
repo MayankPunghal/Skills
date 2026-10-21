@@ -2,7 +2,7 @@
 
 A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, no C# change) of a .NET estate in **developer working hours**, solution by solution, and writes it up as **one Word document** plus a **small workbook**.
 
-It is the narrow sibling of `migration-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
+It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
 ## What it does
 

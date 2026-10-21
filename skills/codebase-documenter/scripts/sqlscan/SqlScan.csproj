@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- T-SQL parser helper for codebase-documenter / migration-assessment. Built on first use by sql_parse.py. -->
+  <!-- T-SQL parser helper for codebase-documenter / modernization-assessment. Built on first use by sql_parse.py. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>

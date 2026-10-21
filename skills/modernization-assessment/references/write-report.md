@@ -33,8 +33,8 @@ Write per [style-guide.md](style-guide.md).
 ## Deliverables
 
 All in `assessment/report/`:
-- `<Client>-AWS-Migration-Assessment.html`: interactive, single file, works offline (search, filters, charts, CSV downloads, print to PDF);
-- `<Client>-AWS-Migration-Assessment.md` (convert with pandoc/Word/Docs if a document is needed);
+- `<Client>-AWS-Modernization-Assessment.html`: interactive, single file, works offline (search, filters, charts, CSV downloads, print to PDF);
+- `<Client>-AWS-Modernization-Assessment.md` (convert with pandoc/Word/Docs if a document is needed);
 - `findings.csv` / `findings.json` (spreadsheet or deck);
 - `applications.csv`;
 - `packages.csv`;

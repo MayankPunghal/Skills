@@ -8,14 +8,14 @@ You need **Node.js 18+**, **Git** and **Python 3.10+**.
 
 ```bash
 npm config set allow-git root
-npx -y github:MayankPunghal/Skills --yes --skills=codebase-documenter,migration-assessment,gh-review-pr
+npx -y github:MayankPunghal/Skills --yes --skills=codebase-documenter,modernization-assessment,gh-review-pr
 ```
 
 The first line is only needed on npm 12 or later. The second installs the three skills below for Claude Code, with their prerequisites, without questions (drop the flags to choose interactively). Claude Code picks them up straight away.
 
 ## 2. Use
 
-Type the skill name on its own (for example `/migration-assessment`) and it shows its menu and the recommended next step. Or just ask in plain words: Claude picks the right skill.
+Type the skill name on its own (for example `/modernization-assessment`) and it shows its menu and the recommended next step. Or just ask in plain words: Claude picks the right skill.
 
 ### Document a codebase: `codebase-documenter`
 
@@ -60,10 +60,10 @@ To keep the docs out of git, add `docs/`, `site/`, `AGENTS.md` and `.claude/skil
 
 Claude Code can only read folders the session was opened in or given access to, so add the code folder to the session too. The workspace where you ran the documentation skill already works this way: its `codebase-docs.json` points at the code.
 
-### Assess a .NET app for AWS: `migration-assessment`
+### Assess a .NET app for AWS: `modernization-assessment`
 
 ```
-/migration-assessment assess the estate at C:\code\MyApp, workspace C:\work\myapp-assessment
+/modernization-assessment assess the estate at C:\code\MyApp, workspace C:\work\myapp-assessment
 ```
 
 - **You get:** a client-ready report covering what breaks on Linux or .NET 10, a 7R decision per application, an effort estimate and timeline, risks and open questions. It comes as an interactive HTML page (`assessment/report/*.html`), Markdown and CSV exports.

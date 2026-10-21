@@ -1,6 +1,6 @@
 """Execution plan: the hand-off from this assessment to the dotnet-modernization skill that does the work.
 
-    python scripts/plan_execution.py [--port-engine devtx|aws-transform|claude] [--db-tool janus|claude]
+    python scripts/plan_execution.py [--port-engine devtx|aws-transform|claude] [--db-tool db-agent|claude]
 
 Run after estimate_effort.py (it reads assessment/estimate.json). Operating model, one tool per job:
   - ONE porting engine for every package: the AWS DevTx Version Upgrade Toolkit (Upgrade Assistant + Kiro CLI with its
@@ -8,7 +8,7 @@ Run after estimate_effort.py (it reads assessment/estimate.json). Operating mode
     project.
   - Claude with the dotnet-modernization skill cleans up what that engine does not cover (playbook by playbook) and does
     the AWS managed-service swaps.
-  - ONE database tool: the Janus Porting Agent, or Claude with the Janus skill set when Janus is not approved or the
+  - ONE database tool: the DB porting agent, or Claude with the DB porting skills when the DB porting agent is not approved or the
     repository is too complex for it.
   - Applications already on modern .NET (net5.0 or later) get the Linux readiness check only: no engine run.
 Order: shared class libraries first, simplest first (they unblock the applications that reference them), then the
@@ -17,7 +17,7 @@ For each package it writes a short stream table (who does what, hours) and the c
 finding with its owner, playbook and files stays in assessment/execution-plan.json. Also: data access (raw SQL,
 procedure calls, result-set procedures) and the AWS managed-service swaps.
 Writes assessment/execution-plan.json, assessment/report/execution-plan.md and its .html twin.
-Defaults: assessment.json "execution": {"port_engine": "devtx", "db_tool": "janus" for dual else "claude"}.
+Defaults: assessment.json "execution": {"port_engine": "devtx", "db_tool": "db-agent" for dual else "claude"}.
 """
 import argparse
 import json
@@ -37,7 +37,7 @@ ENGINES = {
     "claude": "Claude with the dotnet-modernization skill (knowledge base and playbooks), project by project",
 }
 SHORT = {"devtx": "DevTx toolkit", "aws-transform": "AWS Transform", "claude": "Claude"}
-DB_TOOLS = {"janus": "Janus Porting Agent", "claude": "Claude with the Janus skill set"}
+DB_TOOLS = {"db-agent": "DB porting agent", "claude": "Claude with the DB porting skills"}
 GATES = [
     "baseline: the original solution builds and its tests (or recorded request/response pairs) are captured before any change",
     "build: dotnet build -c Release passes for net10.0 with no new warnings treated as errors",
@@ -104,7 +104,7 @@ def main():
     ex = cfg.get("execution") or {}
     db_sel = (est.get("scenario") or {}).get("database", "none")
     engine = a.port_engine or ex.get("port_engine") or "devtx"
-    db_tool = a.db_tool or ex.get("db_tool") or ("janus" if db_sel == "dual" else "claude")
+    db_tool = a.db_tool or ex.get("db_tool") or ("db-agent" if db_sel == "dual" else "claude")
     owners, rules = coverage()
     mod = modern_projects(root)
     files_of = {}

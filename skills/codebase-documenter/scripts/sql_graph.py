@@ -1,7 +1,7 @@
 """Add the database layer to the graphify graph: database objects as nodes, and the edges graphify cannot see.
 
     python <skill>/scripts/sql_graph.py [--quiet]                                  # documentation workspace
-    python <skill>/scripts/sql_graph.py --source-root SRC --graph-dir DIR [--quiet]  # standalone (migration-assessment)
+    python <skill>/scripts/sql_graph.py --source-root SRC --graph-dir DIR [--quiet]  # standalone (modernization-assessment)
 
 graphify extracts no nodes from .sql files and does not read SQL inside C# strings, so procedures, tables and the code that
 uses them are disconnected. This script parses both with sql_parse.py (Microsoft's T-SQL parser, sqlglot fallback) and adds:

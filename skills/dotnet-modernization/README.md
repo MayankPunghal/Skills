@@ -1,6 +1,6 @@
 # dotnet-modernization
 
-A Claude Code skill that carries out the modernization of legacy .NET Framework applications to .NET 10 on Linux containers on AWS, after the **migration-assessment** skill has planned it (or from scratch on one repository).
+A Claude Code skill that carries out the modernization of legacy .NET Framework applications to .NET 10 on Linux containers on AWS, after the **modernization-assessment** skill has planned it (or from scratch on one repository).
 
 - **One porting engine per project:** the AWS DevTx Version Upgrade Toolkit or AWS Transform for .NET (Claude with the DevTx knowledge base when neither is available).
 - **Claude cleans up** what the engine leaves, with 17 playbooks: project files and packages, System.Web residue, HTTP handlers and modules, Web Forms UI, ASMX and SOAP clients, WCF, startup and middleware, config and secrets, auth, ambient context and remoting, Windows-only APIs, background work, time and culture, logging, Linux and containers, AWS managed services, raw SQL and data access.

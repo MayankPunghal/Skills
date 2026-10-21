@@ -1,4 +1,4 @@
-"""Install the migration-assessment skill (and the codebase-documenter skill it builds on) for Claude Code.
+"""Install the modernization-assessment skill (and the codebase-documenter skill it builds on) for Claude Code.
 
     python install.py                 # personal install: ~/.claude/skills/ (all projects)
     python install.py --project DIR   # project install: DIR/.claude/skills/
@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "migration-assessment"
+NAME = "modernization-assessment"
 SIBLING = os.path.join(os.path.dirname(HERE), "codebase-documenter")
 
 

@@ -232,7 +232,7 @@ def operations():
     if rows:
         sections["operations"] += ["", "| What | Name | Source |", "| --- | --- | --- |"] + [
             f'| <a id="{slug("run", w, n)}"></a>{w} | `{esc(n)}` | `{p}:{ln}` |' for w, n, p, ln in sorted(rows)]
-    # scheduled and background jobs (scripts/scheduled_jobs.py, shared with migration-assessment): what runs when, configured how
+    # scheduled and background jobs (scripts/scheduled_jobs.py, shared with modernization-assessment): what runs when, configured how
     jobs = SJ.scan(ROOT, OPT.get("exclude_dirs"))
     if jobs:
         sections["operations"] += ["", f"**Scheduled and background jobs** ({len(jobs)}; {sum(1 for j in jobs if j['windows_only'])} on a Windows-only "

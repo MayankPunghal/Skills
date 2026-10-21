@@ -279,7 +279,7 @@ def scan(root, library_sources=(), facts=None, choices=None, factors=None, catal
 
 
 def optional_rows(res):
-    """One row per service in the shape of migration-assessment's optional modernizations (estimate_effort.py, report 7.3).
+    """One row per service in the shape of modernization-assessment's optional modernizations (estimate_effort.py, report 7.3).
     manual_hours + factor let the caller apply its own AI factors; supersedes names the generic optional items this replaces."""
     rows = []
     for s in res["services"]:

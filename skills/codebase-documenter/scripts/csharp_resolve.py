@@ -1611,7 +1611,7 @@ def main():
     ap.add_argument("--source-root", help="standalone use (no codebase-docs.json): the code to read")
     ap.add_argument("--graph-dir", help="standalone use: folder holding graph.json; csharp-resolve.json is written there")
     a = ap.parse_args()
-    if a.source_root and a.graph_dir:      # e.g. migration-assessment's map_graphs.py
+    if a.source_root and a.graph_dir:      # e.g. modernization-assessment's map_graphs.py
         root, cfg = os.getcwd(), {"source_root": a.source_root, "graph_dir": a.graph_dir, "adapter_options": {}}
     else:
         root, cfg = load_config()

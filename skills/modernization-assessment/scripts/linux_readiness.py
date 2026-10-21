@@ -11,7 +11,7 @@ networking, IPC, Windows-only APIs, IIS hosting, container images, configuration
 messaging, CI). Each automated check is a regex over the file types it names (code, project, config, markup, Dockerfile,
 CI, scripts) or over file paths; the rest are listed as a review checklist.
 Works for .NET Framework code before a port, for ported code, and for applications already on modern .NET (the
-"Linux readiness only" path). Same file in the migration-assessment and dotnet-modernization skills.
+"Linux readiness only" path). Same file in the modernization-assessment and dotnet-modernization skills.
 Writes <out>/linux-readiness.json and linux-readiness.md with its .html twin (default <out> = <folder>/.modernization).
 --gate: exit 1 while a blocking hit is not waived. Waivers: [{"rule": "LNX-...", "path": "glob", "reason": "...", "by": "..."}].
 Standard library only.

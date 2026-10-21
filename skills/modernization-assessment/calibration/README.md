@@ -2,7 +2,7 @@
 
 Put sample assessment reports (PDF, DOCX, PPTX, XLSX, MD or HTML) in `calibration/samples/`, then ask Claude:
 
-> "/migration-assessment calibrate-report"
+> "/modernization-assessment calibrate-report"
 
 or
 

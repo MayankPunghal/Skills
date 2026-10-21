@@ -2,7 +2,7 @@
 
 They are not the project's code: counting them inflates code volume, and graphing them buries the real communities and hubs
 under thousands of library functions. Shared by survey_codebase.py, code_graph.py (graphify --exclude), network_endpoints.py
-and the migration-assessment map_graphs.py. Standard library only.
+and the modernization-assessment map_graphs.py. Standard library only.
 
 Four sources, all additive:
   - configured folders: "graph": {"vendor_dirs": ["Scripts/highmapsv10.1", "Content/kendo"]} in codebase-docs.json

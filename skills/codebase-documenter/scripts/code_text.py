@@ -1,5 +1,5 @@
 """String-literal awareness for line rules over C# / VB: a rule that names an API should not fire on text inside a string
-(log messages, test titles, help text). Standard library only; shared by migration-assessment's scan_repo.py and the
+(log messages, test titles, help text). Standard library only; shared by modernization-assessment's scan_repo.py and the
 codebase-documenter's generic-portability adapter, so both outputs agree.
 
     from code_text import code_match

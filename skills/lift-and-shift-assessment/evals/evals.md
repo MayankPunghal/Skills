@@ -29,7 +29,7 @@ Done looks like: scan_repo.py, solutions.py and the other gated tools refuse whi
 
 ### Should not trigger
 Prompt: "Port this WCF service to ASP.NET Core on Linux containers."
-Should trigger: no (migration-assessment or normal coding help).
+Should trigger: no (modernization-assessment or normal coding help).
 
 ## Acceptance test: reference benchmark
 

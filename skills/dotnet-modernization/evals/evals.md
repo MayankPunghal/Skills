@@ -34,7 +34,7 @@ Done looks like: no porting engine; `linux_readiness.py` on the folder; fixes by
 
 ### Should not trigger
 Prompt: "Assess these 40 repositories and estimate how long moving to AWS would take."
-Should trigger: no (migration-assessment does this)
+Should trigger: no (modernization-assessment does this)
 Done looks like: the assessment skill is used instead.
 
 ### Should not trigger (small)

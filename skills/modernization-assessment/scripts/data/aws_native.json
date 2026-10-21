@@ -411,7 +411,7 @@
    "label": "MongoDB",
    "kind": "document-store",
    "detect": {
-    "packages": "^(MongoDB\\.Driver\\w*|MongoDB\\.Bson|Odysseus\\.Mongo|mongocsharpdriver|Mongo2Go)$",
+    "packages": "^(MongoDB\\.Driver\\w*|MongoDB\\.Bson|[\\w.]+\\.Mongo|mongocsharpdriver|Mongo2Go)$",
     "client": "\\b(MongoClient|MongoServer|MongoDatabase|IMongoDatabase|MongoCollection|IMongoCollection|BsonDocument|MongoUrl|WriteConcern)\\b|using\\s+MongoDB\\.",
     "keyword": "mongo",
     "config_keys": "(?i)mongo",
@@ -717,5 +717,5 @@
   2
  ],
  "_doc_consumer": "consumer_repo_fixed: a repository that only calls a wrapper living in a shared library still runs its paths against the new endpoint once (smoke test, settings). The wrapper's own work (fixed + per_provider_file) is counted with the library.",
- "_doc_supersedes": "supersedes_optional: generic items of migration-assessment's optional_modernizations.json that this service's row replaces in the same repository (same service, priced from the wrapper and call sites instead of a flat per-file rate)."
+ "_doc_supersedes": "supersedes_optional: generic items of modernization-assessment's optional_modernizations.json that this service's row replaces in the same repository (same service, priced from the wrapper and call sites instead of a flat per-file rate)."
 }

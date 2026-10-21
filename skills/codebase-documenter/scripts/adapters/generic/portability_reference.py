@@ -1,4 +1,4 @@
-"""Windows-to-Linux portability checks (.NET), reusing the migration-assessment skill's rule file.
+"""Windows-to-Linux portability checks (.NET), reusing the modernization-assessment skill's rule file.
 
 Writes docs/reference/platform-portability.md (anchors port-…) and docs/agent/portability.json:
   summary     occurrences by category and severity, per project
@@ -10,7 +10,7 @@ file-handling, time-culture; option "categories"), not the rest of the assessmen
 WinForms and IIS-bound hosting are the largest Windows-only items in most legacy apps, so a page that left them out would
 read as "nothing Windows-only here" for exactly the apps that have the most. Findings are flags and suggestions, never enforced.
 Rule file lookup: env DOCS_ASSESSMENT_RULES, option "rules", the sibling skill folder
-(<skills>/migration-assessment/scripts/data/rules.json), then ~/.claude/skills/…; skipped when none is found.
+(<skills>/modernization-assessment/scripts/data/rules.json), then ~/.claude/skills/…; skipped when none is found.
 Matching follows the assessment scanner: a rule applies to its file types; "requires" must match somewhere in the
 file, "not" excludes a line; comment lines and block comments are ignored.
 """
@@ -23,7 +23,7 @@ from collections import Counter, defaultdict
 from _scan import BACK, DOCS, Methods, cut, esc, options, project_of, read, slug, walk, write_page
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from code_text import code_match  # noqa: E402  (same string-literal rule as migration-assessment's scan)
+from code_text import code_match  # noqa: E402  (same string-literal rule as modernization-assessment's scan)
 from _stats import stat  # noqa: E402  (headline numbers for [[n:...]] tags)
 
 OPT = options("generic-portability")
@@ -61,8 +61,8 @@ def rules_path():
     here = os.path.dirname(os.path.abspath(__file__))
     skills = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(here))))  # <skills>/codebase-documenter/scripts/adapters/generic
     for p in (os.environ.get("DOCS_ASSESSMENT_RULES"), OPT.get("rules"),
-              os.path.join(skills, "migration-assessment", "scripts", "data", "rules.json"),
-              os.path.join(os.path.expanduser("~"), ".claude", "skills", "migration-assessment", "scripts", "data", "rules.json")):
+              os.path.join(skills, "modernization-assessment", "scripts", "data", "rules.json"),
+              os.path.join(os.path.expanduser("~"), ".claude", "skills", "modernization-assessment", "scripts", "data", "rules.json")):
         if p and os.path.isfile(p):
             return p
     return None
@@ -102,7 +102,7 @@ def snippet(line):
 def main():
     path = rules_path()
     if not path:
-        print("platform-portability: skipped (migration-assessment rules.json not found; set DOCS_ASSESSMENT_RULES or "
+        print("platform-portability: skipped (modernization-assessment rules.json not found; set DOCS_ASSESSMENT_RULES or "
               "adapter_options.generic-portability.rules)")
         return
     rules = load_rules(path)
@@ -152,7 +152,7 @@ def main():
            "Windows-only APIs, System.Web / Web Forms, WCF and desktop UI, IIS-bound hosting, APIs removed from .NET, Windows "
            "paths and files, Windows time-zone IDs and culture assumptions. Each row is a flag with a suggested fix, not a verdict: check the code before changing it (a branch "
            "on `OperatingSystem.IsWindows()` or a Windows-only deployment may make a site harmless).", "",
-           f"Checks: {len(rules)} rules in {len(CATEGORIES)} categories, taken from the migration-assessment rule set "
+           f"Checks: {len(rules)} rules in {len(CATEGORIES)} categories, taken from the modernization-assessment rule set "
            f"(`rules.json`, portability categories only). Comment lines and commented-out blocks are ignored.", "",
            '<a id="index"></a>', "",
            "- [Summary](#port-summary)", "- [Rules that matched](#port-rules)", "- [By project](#port-projects)",

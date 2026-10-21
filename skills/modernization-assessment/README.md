@@ -1,6 +1,6 @@
-# migration-assessment
+# modernization-assessment
 
-A Claude Code skill that turns a client's legacy .NET code base (one repository or hundreds) into an evidence-backed **AWS Migration & Modernization Assessment Report**. It works out, from the code alone, what will break on AWS/Linux and .NET 10, how each application should move (7 Rs, including hybrid .NET Standard 2.0 paths), and how much effort it takes.
+A Claude Code skill that turns a client's legacy .NET code base (one repository or hundreds) into an evidence-backed **AWS Modernization Assessment Report**. It works out, from the code alone, what will break on AWS/Linux and .NET 10, how each application should move (7 Rs, including hybrid .NET Standard 2.0 paths), and how much effort it takes.
 
 It builds on the **codebase-documenter** skill: the same structure, the same graphify integration, and its prerequisite installer. It can also call the documenter to fully document a high-risk application.
 
@@ -24,7 +24,7 @@ python install.py --project /path/to/workspace
 Open Claude Code in an empty folder outside the client's repositories, then say:
 
 - *"Assess the .NET code in D:\clients\acme\repos for AWS migration"*, or
-- `/migration-assessment assess-estate`.
+- `/modernization-assessment assess-estate`.
 
 Individual steps:
 - `discover-estate`, `map-code-graph`, `scan-repos`;
@@ -78,13 +78,13 @@ Effort (modernize path) is **coding hours only** (no QA, DevOps, project managem
 ## What it produces
 
 All in `assessment/report/`:
-- **`<Client>-AWS-Migration-Assessment.html`** — the version for PMs, BAs and the client. It is one self-contained page that combines the report and every export:
+- **`<Client>-AWS-Modernization-Assessment.html`** — the version for PMs, BAs and the client. It is one self-contained page that combines the report and every export:
   - sidebar navigation and global search;
   - a key-facts ledger and severity charts (rows with no findings are listed once instead of drawn empty);
   - findings explorer (filter by severity, category or application; click for evidence and fix);
   - sortable application, package, dependency, project and question tables with Download CSV;
   - Gantt timeline, glossary for non-technical readers, dark mode and print/PDF.
-- **`<Client>-AWS-Migration-Assessment.md`**, with 11 sections:
+- **`<Client>-AWS-Modernization-Assessment.md`**, with 11 sections:
   1. Executive summary
   2. Scope and method
   3. Application inventory
@@ -101,7 +101,7 @@ All in `assessment/report/`:
 ## Structure
 
 ```
-migration-assessment/
+modernization-assessment/
 ├── SKILL.md                 workflow, principles, command table
 ├── README.md, install.py
 ├── references/              checklist (section 5 extended), windows-api-catalog (generated), package-map (generated),
@@ -157,8 +157,12 @@ Changelog: **2.13.0** adopts the effort calculator of the sibling skill `lift-an
 
 The skill now ends with a plan the **dotnet-modernization** skill executes. It assesses and plans; it does not change code.
 
-- **`plan_execution.py`** writes `assessment/report/execution-plan.md` (+ .html, .json): **one** porting engine per project (`--port-engine devtx|aws-transform|claude`, default DevTx; never two engines on one project), Claude's clean-up grouped by playbook, **one** database tool (`--db-tool janus|claude`: Janus, or Claude with the Janus skill set), AWS managed-service swaps. Work is shown as a few streams per package (prepare, engine, Linux, Claude, database, AWS native, outside), shared class libraries first and simplest first; repeated findings are collapsed with counts; data access shows raw SQL, procedure calls, result-set and multi-result procedures.
+- **`plan_execution.py`** writes `assessment/report/execution-plan.md` (+ .html, .json): **one** porting engine per project (`--port-engine devtx|aws-transform|claude`, default DevTx; never two engines on one project), Claude's clean-up grouped by playbook, **one** database tool (`--db-tool db-agent|claude`: the DB porting agent, or Claude with the DB porting skills), AWS managed-service swaps. Work is shown as a few streams per package (prepare, engine, Linux, Claude, database, AWS native, outside), shared class libraries first and simplest first; repeated findings are collapsed with counts; data access shows raw SQL, procedure calls, result-set and multi-result procedures.
 - **Already-modern applications** (.NET 5+) get the Linux readiness check only, no engine run.
 - **Linux readiness** (`linux_readiness.py`, step 3.2): 240 checks in 19 areas, including letter case of file references checked against the files on disk, container-image checks (no `USER`, SDK in the final stage, no `.dockerignore`, ICU/tzdata), CRLF scripts and secrets in config (masked). The report's Linux readiness table gains a "Linux checks (block / warn)" column, and a modern app with an open blocking hit is no longer "Linux-ready". Same script and rules as the dotnet-modernization skill. Details: [references/linux-readiness.md](references/linux-readiness.md).
 - **7 Rs with justification:** every application carries why not the other Rs, what happens next ("Retire, then what?"), risks and who signs off (`data/decision_rules.json` `r7_guidance`), in the Markdown and HTML reports. A Web Forms project with a token UI (3 pages or fewer, markup under 5% of the code) is Replatform, not Refactor. [references/seven-rs.md](references/seven-rs.md) has the decision tree.
 - **Challenges** ([references/modernisation-challenges.md](references/modernisation-challenges.md)): tightly coupled Web Forms page by page, System.Web.HttpContext across shared libraries (pass the values, System.Web adapters, `IHttpContextAccessor`), libraries first, WCF/ASMX wire compatibility, WPF/WinForms, MongoDB/DocumentDB, features with no counterpart, what each engine covers.
+
+## Renamed to modernization-assessment (3.0.0)
+
+The skill was called **migration-assessment** up to 2.14.0. The terms are now kept apart: **migration** is moving workloads to AWS as they are (lift-and-shift, the `lift-and-shift-assessment` skill and this skill's lift-and-shift track); **modernization** is moving them to .NET 10, Linux containers and AWS managed services, which is what this skill assesses and plans. The report is now the **AWS Modernization Assessment** (`<Client>-AWS-Modernization-Assessment.md` / `.html`; the lift-and-shift track keeps `<Client>-AWS-Migration-Assessment`). Nothing else changed: same commands, scripts, rules and workspace layout. The installer's `update` replaces an installed `migration-assessment` with this skill.

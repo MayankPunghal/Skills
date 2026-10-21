@@ -1,4 +1,4 @@
-"""Shared helpers for migration-assessment scripts (standard library only, Python 3.10+).
+"""Shared helpers for modernization-assessment scripts (standard library only, Python 3.10+).
 
 Every script runs with the current directory = the assessment workspace (the folder holding assessment.json).
 """
@@ -17,7 +17,7 @@ OUT = "assessment"  # all generated files live under <workspace>/assessment/
 
 DEFAULTS = {
     "client": "",                    # client name as it should appear in the report
-    "engagement": "AWS Migration & Modernization Assessment",
+    "engagement": "AWS Modernization Assessment",
     "prepared_by": os.environ.get("ASSESSMENT_PREPARED_BY", ""),  # consultancy name on the report: --prepared-by, or set ASSESSMENT_PREPARED_BY once per machine
     "estate_roots": [],              # folders that hold the client's repositories / solutions
     "target_dotnet": "net10.0",      # .NET 10 LTS (support to Nov 2028); .NET 8 ends 10 Nov 2026
@@ -255,7 +255,7 @@ def issues_log(root, client=""):
     if not os.path.exists(p):
         ver = re.search(r"(?m)^\s*version:\s*[\"']?([\w.\-]+)", read_text(os.path.join(SKILL_DIR, "SKILL.md")) or "")
         t = read_text(os.path.join(SKILL_DIR, "templates", "SKILL-ISSUES.md.tmpl")) or ""
-        for k, v in (("skill", "migration-assessment"), ("version", ver.group(1) if ver else "unknown"),
+        for k, v in (("skill", "modernization-assessment"), ("version", ver.group(1) if ver else "unknown"),
                      ("product", client or "this estate")):
             t = t.replace("{{" + k + "}}", v)
         write_text(p, t)

@@ -9,7 +9,7 @@ workflow: intake, baseline, port, db, cleanup:<playbook>, aws-native:<service>, 
 Engines: aws-transform, devtx, claude, db-agent, human.
 build writes <dir>/execution-report.md and its .html twin from what is in <dir>: run-log.jsonl, baseline.json,
 verify.json, residue.json, parity.json, waivers (in residue.json), and, with --plan, the package's planned items from the
-migration-assessment execution plan, each marked done / open by whether its playbook still has residue hits.
+modernization-assessment execution plan, each marked done / open by whether its playbook still has residue hits.
 """
 import argparse
 import json

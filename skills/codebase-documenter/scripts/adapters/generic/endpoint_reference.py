@@ -1,6 +1,6 @@
 """Network endpoints: every outbound destination (inbound listener) the code and its configuration name, for firewall,
 security-group, NAT and VPN allow-lists and for integration documentation. Detection lives in scripts/network_endpoints.py
-(shared with migration-assessment).
+(shared with modernization-assessment).
 
 Writes docs/reference/network-endpoints.md (anchors net-<host>-<port>, net-in-<n>, net-client-<n>) and
 docs/agent/network.json:

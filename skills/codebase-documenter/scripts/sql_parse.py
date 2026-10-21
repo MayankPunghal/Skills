@@ -16,7 +16,7 @@ SQL in C# (--code): a C# lexer (not a regex) finds string literals (regular, ver
 (flagged dynamic), and keeps only literals that start with a SQL keyword, parse without errors and either use a
 data-access API nearby or write the keyword in one case (so UI text such as "Select an item" is not taken for SQL).
 
-Python API (import from other scripts, migration-assessment included):
+Python API (import from other scripts, modernization-assessment included):
   engine()                         "scriptdom" | "sqlglot" | None
   parse(items)                     items: [{"id", "text"}] -> results in the sqlscan schema (see sqlscan/Program.cs)
   scan_files(root, skip_dirs)      every .sql file under root -> results (id = path relative to root)

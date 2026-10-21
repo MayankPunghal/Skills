@@ -1,6 +1,6 @@
 """Scheduled and background jobs of a source tree: what runs on a schedule or in the background, what triggers it, how often,
 what it runs and whether the scheduler is Windows-only. Standard library only; shared by the codebase-documenter
-(build-and-run operations section) and the migration-assessment scanner (scheduled jobs table and export).
+(build-and-run operations section) and the modernization-assessment scanner (scheduled jobs table and export).
 
     import scheduled_jobs as SJ
     jobs = SJ.scan(root)    # [{scheduler, name, schedule, target, file, line, windows_only, configured_by}]

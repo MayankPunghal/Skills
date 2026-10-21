@@ -3,7 +3,7 @@
 Executive summary, scope and method, application inventory, architecture, findings by category, database, per-application plans, effort and timeline, risks and questions, testing and merge, appendices.
 This sample predates the v4 coding-only estimate and the dual / PostgreSQL scenarios; use it for structure and tone, not for scenario names or hour figures.
 -->
-# eShop (public sample) — AWS Migration & Modernization Assessment
+# eShop (public sample) — AWS Modernization Assessment
 
 | | |
 |---|---|

@@ -224,7 +224,7 @@ def main():
               "VMware Cloud on AWS fits a VMware source; Rehost is chosen." if it.get("current_hosting") == "VMware" else
               ("Relocate means VMware Cloud on AWS; the source is " + ans(it, "current_hosting") + ".") if given(it, "current_hosting") else "Applies only to a VMware source; the current hosting is UNKNOWN."],
              ["All workloads", "Replatform", "Rejected as the primary disposition", "Adds change without removing a blocker." + (" The framework retarget is folded into Rehost." if "retarget" in sel else "")],
-             ["All workloads", "Refactor", "Deferred", "A separate modernisation effort (migration-assessment)."],
+             ["All workloads", "Refactor", "Deferred", "A separate modernisation effort (modernization-assessment)."],
              ["All workloads", "Repurchase", "Rejected", "No purchasable substitute is named."]], [16, 14, 24, 46])
     d.p(f"NOTE: Rehost all {len(wl)} workloads; Replatform only as the optional framework retarget; Refactor explicitly deferred.")
 

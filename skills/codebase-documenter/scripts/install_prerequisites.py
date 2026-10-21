@@ -1,4 +1,4 @@
-"""Check and install everything codebase-documenter (and migration-assessment, which builds on it) needs, at user level
+"""Check and install everything codebase-documenter (and modernization-assessment, which builds on it) needs, at user level
 (no admin rights, no system changes).
 
     python <skill>/scripts/install_prerequisites.py              # check, then install what is missing

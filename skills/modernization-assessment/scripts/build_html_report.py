@@ -8,7 +8,7 @@ modernization, packages (incompatible / deprecated / framework-specific / upgrad
 third-party & integrations, data, security, hosting, delivery, all findings, plan, architecture map, risks & questions,
 method, appendices. Global search filters every table and shows matches per tab; every table sorts, filters, expands and
 downloads as CSV. Works offline (no external libraries). Layout and wording: references/html-layout.json.
-Output: assessment/report/<Client>-AWS-Migration-Assessment.html
+Output: assessment/report/<Client>-AWS-Modernization-Assessment.html (AWS-Migration-Assessment for lift-and-shift)
 """
 import argparse
 import base64
@@ -319,14 +319,14 @@ def main():
             if t["id"] == "overview":  # the report title leads the first tab; its "Overview" heading stays for screen readers only
                 today = datetime.date.today()
                 note = brand.get("confidential_note", "").replace("{client}", client)
-                cover = (f'<div class="cover"><h1>{html.escape(cfg.get("engagement", "AWS Migration & Modernization Assessment"))}</h1>'
+                cover = (f'<div class="cover"><h1>{html.escape(cfg.get("engagement", "AWS Modernization Assessment"))}</h1>'
                          f'<div class="meta">Prepared for <b>{html.escape(client)}</b>{" by <b>" + html.escape(company) + "</b>" if company else ""} · {today.day} {MONTHS[today.month - 1]} {today.year} · '
                          f'target {html.escape(BR.pretty_tfm(cfg.get("target_dotnet", "net10.0")))} on AWS</div>'
                          + (f'<div class="conf">{ICON["lock"]}<span>{html.escape(note)}</span></div>' if note else "") + "</div>")
                 h2cls = ' class="sr"'
             body.append(f'<section class="tab" id="tab-{t["id"]}">{cover}<h2{h2cls}>{html.escape(t["title"])}</h2>' + (f'<p class="intro">{html.escape(t.get("intro", ""))}</p>' if t.get("intro") else "") + inner + "</section>")
     css = font_faces() + "\n" + CSS.replace("ACCENTDARK", brand.get("accent_dark", "#5ccfcf")).replace("ACCENT", brand.get("accent", "#0b6e74"))
-    title = f"{client} — {cfg.get('engagement', 'AWS Migration & Modernization Assessment')}"
+    title = f"{client} — {cfg.get('engagement', 'AWS Modernization Assessment')}"
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
 <title>{html.escape(client)} AWS Assessment</title><style>{css}</style></head>
@@ -336,7 +336,7 @@ def main():
 <script type="application/json" id="data">{json.dumps(d, ensure_ascii=False).replace("</", "<\\/")}</script>
 <script>window.GLOSSARY = {json.dumps(layout.get("glossary", []), ensure_ascii=False).replace("</", "<\\/")};</script>
 <script>{JS}</script></body></html>"""
-    name = a.out or f"{slug(client).title().replace('-', '')}-AWS-Migration-Assessment.html"
+    name = a.out or f"{slug(client).title().replace('-', '')}-AWS-{'Migration' if BR.lift(cfg) else 'Modernization'}-Assessment.html"
     path = os.path.join(OUT, "report", name)
     page = BR.tags(page)  # {{f:RULE}} / {{v:path}} tags anywhere (narratives, decisions, review notes)
     write_text(path, page)

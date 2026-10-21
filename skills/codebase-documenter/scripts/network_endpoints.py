@@ -1,6 +1,6 @@
 """Network endpoints of a source tree: every outbound destination the code or its configuration names, every inbound
 listener it opens, and the code that makes outbound calls. Standard library only; shared by the codebase-documenter
-adapter generic-endpoints (docs/reference/network-endpoints.md) and the migration-assessment scanner (network allow-list).
+adapter generic-endpoints (docs/reference/network-endpoints.md) and the modernization-assessment scanner (network allow-list).
 
     import network_endpoints as NE
     net = NE.scan(root)            # {"outbound": [...], "inbound": [...], "clients": [...], "files_scanned": n}

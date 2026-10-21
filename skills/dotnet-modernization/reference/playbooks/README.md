@@ -1,6 +1,6 @@
 # Playbooks
 
-Claude's clean-up after the porting engine, one playbook per kind of change. `residue_scan.py` and `linux_readiness.py` name the playbook for every hit; the migration-assessment execution plan groups the clean-up the same way. Apply one playbook per commit, rebuild after each, rerun the scans.
+Claude's clean-up after the porting engine, one playbook per kind of change. `residue_scan.py` and `linux_readiness.py` name the playbook for every hit; the modernization-assessment execution plan groups the clean-up the same way. Apply one playbook per commit, rebuild after each, rerun the scans.
 
 | Playbook | Covers | Residue rules | DevTx KB | AWS Transform |
 |---|---|---|---|---|

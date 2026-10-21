@@ -56,7 +56,7 @@ Package: <name>
 - [ ] 10. report.py build; reviewer sign-off
 ```
 
-1. **Plan entry.** `assessment/execution-plan.json` from the migration-assessment skill lists, per package, every
+1. **Plan entry.** `assessment/execution-plan.json` from the modernization-assessment skill lists, per package, every
    finding with its stream (engine, claude, db, aws-native, outside), playbook and files. No plan? Run the residue
    scan on the original and use its playbook column instead.
 2. **Branch and baseline.** `git switch -c modernize/<package>` in the copy. `python scripts/verify.py baseline <sln>`.
