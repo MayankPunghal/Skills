@@ -1,0 +1,617 @@
+{
+ "_doc": "What must not be left after the port (read by residue_scan.py). level: block = the gate fails while it remains (unless waived); warn = review, may be acceptable; info = context. where: code (.cs/.vb), project (.csproj/.vbproj), config (.config/.json), file (the file's existence), sql (string literals in code that look like SQL; scope \"line\" = the whole line holding such a literal, for concatenation). when: always, postgresql (only when the database target is PostgreSQL only), dual (only with a dual-database target), linux (always on Linux targets). playbook = the dotnet-modernization playbook that fixes it; kb = DevTx knowledge-base files. group: port = residue of the .NET Framework port; linux = Linux readiness (also run alone with --only linux for applications already on modern .NET).",
+ "rules": [
+  {
+   "id": "PROJ-LEGACY",
+   "where": "project",
+   "level": "block",
+   "pattern": "<Project\\s+ToolsVersion=|<TargetFrameworkVersion>v4",
+   "message": "Legacy (non SDK-style) project file or .NET Framework target",
+   "playbook": "build-and-packages",
+   "kb": [
+    "01"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "PROJ-NETFX-TFM",
+   "where": "project",
+   "level": "block",
+   "pattern": "<TargetFrameworks?>[^<]*\\bnet4\\d",
+   "message": ".NET Framework target framework still listed",
+   "playbook": "build-and-packages",
+   "kb": [
+    "01"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "PROJ-PACKAGES-CONFIG",
+   "where": "file",
+   "level": "block",
+   "pattern": "(^|/)packages\\.config$",
+   "message": "packages.config still present (use PackageReference)",
+   "playbook": "build-and-packages",
+   "kb": [
+    "01",
+    "06"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "PROJ-WEB-TARGETS",
+   "where": "project",
+   "level": "block",
+   "pattern": "Microsoft\\.WebApplication\\.targets|WebApplicationProjectGuid|\\{349c5851-65df-11da-9384-00065b846f21\\}",
+   "message": "Visual Studio web application targets (Windows-only build)",
+   "playbook": "build-and-packages",
+   "kb": [
+    "01"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "PROJ-HINTPATH-NETFX",
+   "where": "project",
+   "level": "warn",
+   "pattern": "<HintPath>[^<]*(net4\\d|\\\\lib\\\\net4|Framework64|v4\\.0\\.30319)",
+   "message": "Binary reference built for .NET Framework",
+   "playbook": "build-and-packages",
+   "kb": [
+    "27"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WEB-SYSTEMWEB-NS",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bSystem\\.Web\\.(UI|Mvc|Http(?!Utility)|Security|SessionState|Hosting|Caching|Routing|Optimization|Services|Script|Compilation|Configuration|Handlers|Profile)\\b",
+   "message": "System.Web namespace that does not exist on .NET 10",
+   "playbook": "systemweb-residue",
+   "kb": [
+    "02"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WEB-HTTPCONTEXT-CURRENT",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bHttpContext\\.Current\\b|\\bHttpRuntime\\.",
+   "message": "HttpContext.Current / HttpRuntime (inject IHttpContextAccessor or pass HttpContext)",
+   "playbook": "systemweb-residue",
+   "kb": [
+    "02"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WEB-HANDLER-IFACE",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bI(Http(Async)?Handler|HttpModule)\\b",
+   "message": "IHttpHandler / IHttpAsyncHandler / IHttpModule (endpoint or middleware)",
+   "playbook": "http-handlers-and-modules",
+   "kb": [
+    "14"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WEB-FORMS-FILE",
+   "where": "file",
+   "level": "block",
+   "pattern": "\\.(aspx|ascx|master|ashx|asmx|asax|svc)$",
+   "message": "Web Forms / handler / ASMX / WCF host file still present",
+   "playbook": "webforms-ui",
+   "kb": [
+    "25",
+    "26"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "WEB-SOAP-PROXY",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bSoapHttpClientProtocol\\b|\\bSoapDocumentMethodAttribute\\b|\\[System\\.Web\\.Services\\.",
+   "message": "ASMX 'Web Reference' proxy (regenerate with dotnet-svcutil or move to the REST API)",
+   "playbook": "asmx-and-soap-clients",
+   "kb": [
+    "20"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "CFG-WEBCONFIG-APP",
+   "where": "config",
+   "level": "warn",
+   "pattern": "<appSettings>|<connectionStrings>|<system\\.web>",
+   "message": "Settings still in web.config / app.config (move to appsettings.json, environment, Secrets Manager)",
+   "playbook": "config-and-secrets",
+   "kb": [
+    "11"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "CFG-PROTECTED",
+   "where": "config",
+   "level": "block",
+   "pattern": "configProtectionProvider|RsaProtectedConfigurationProvider|DataProtectionConfigurationProvider",
+   "message": "Protected configuration section (machine key container does not exist in a Linux container)",
+   "playbook": "config-and-secrets",
+   "kb": [
+    "11"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "CFG-CONFIGMANAGER",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bConfigurationManager\\.(AppSettings|ConnectionStrings|GetSection)\\b",
+   "message": "ConfigurationManager (works with the compat package; target is IConfiguration / IOptions)",
+   "playbook": "config-and-secrets",
+   "kb": [
+    "11"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "API-CALLCONTEXT",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bCallContext\\.|System\\.Runtime\\.Remoting\\b",
+   "message": ".NET Remoting / CallContext (AsyncLocal<T> or request-scoped services)",
+   "playbook": "ambient-context-and-remoting",
+   "kb": [
+    "28"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "API-BINARYFORMATTER",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bBinaryFormatter\\b|\\bSoapFormatter\\b|\\bNetDataContractSerializer\\b|\\bLosFormatter\\b|\\bObjectStateFormatter\\b",
+   "message": "BinaryFormatter-family serializer (removed in .NET 9+)",
+   "playbook": "ambient-context-and-remoting",
+   "kb": [
+    "28"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-ENTERPRISESERVICES",
+   "where": "code",
+   "level": "block",
+   "pattern": "System\\.EnterpriseServices\\b|\\bServicedComponent\\b",
+   "message": "COM+ / EnterpriseServices",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-MSMQ",
+   "where": "code",
+   "level": "block",
+   "pattern": "System\\.Messaging\\b|\\bMessageQueue\\b",
+   "message": "MSMQ (System.Messaging) - move to Amazon SQS",
+   "playbook": "aws-managed-services",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-COM",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\[ComImport\\]|Marshal\\.GetActiveObject|Type\\.GetTypeFromProgID|\\bInterop\\.\\w+\\b",
+   "message": "COM interop (no COM on Linux)",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-REGISTRY",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bMicrosoft\\.Win32\\.Registry\\b|\\bRegistry\\.(LocalMachine|CurrentUser|GetValue)\\b|\\bRegistryKey\\b",
+   "message": "Windows registry",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-EVENTLOG",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bEventLog\\.|\\bnew\\s+EventLog\\b",
+   "message": "Windows Event Log (log through ILogger to stdout)",
+   "playbook": "logging",
+   "kb": [
+    "12"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-PERFCOUNTER",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bPerformanceCounter\\b",
+   "message": "Performance counters (Windows only; use EventCounters / metrics)",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-WINDOWS-IDENTITY",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bWindowsIdentity\\b|\\bWindowsPrincipal\\b|\\bWindowsImpersonationContext\\b",
+   "message": "Windows identity / impersonation",
+   "playbook": "auth",
+   "kb": [
+    "08"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-PINVOKE",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\[DllImport\\(\"(kernel32|user32|advapi32|shell32|ole32|gdi32|netapi32|winmm|ntdll)",
+   "message": "P/Invoke into a Windows DLL",
+   "playbook": "windows-only-apis",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-DRAWING",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bSystem\\.Drawing\\.(Bitmap|Graphics|Image|Font)\\b|\\bnew\\s+Bitmap\\(",
+   "message": "System.Drawing (Windows only on .NET 7+; ImageSharp / SkiaSharp)",
+   "playbook": "windows-only-apis",
+   "kb": [
+    "21"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "API-WEAK-CRYPTO",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\b(DESCryptoServiceProvider|TripleDESCryptoServiceProvider|RC2CryptoServiceProvider|MD5CryptoServiceProvider|SHA1Managed|RijndaelManaged)\\b|\\bDES\\.Create\\(",
+   "message": "Obsolete or weak crypto provider (keep wire compatibility, plan the upgrade)",
+   "playbook": "windows-only-apis",
+   "kb": [
+    "22"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "TZ-WINDOWS-ID",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\"(Eastern|Central|Mountain|Pacific|GMT|W\\. Europe|India|China|Tokyo|AUS Eastern|Arabian) Standard Time\"",
+   "message": "Windows time-zone id (works on .NET 6+ with ICU, but confirm the image has tzdata and ICU)",
+   "playbook": "time-and-culture",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "TZ-LOCAL",
+   "where": "code",
+   "level": "info",
+   "pattern": "\\bDateTime\\.Now\\b|\\.ToLocalTime\\(\\)",
+   "message": "Local time: containers run UTC; check business-time assumptions",
+   "playbook": "time-and-culture",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "FILE-DRIVE",
+   "where": "code",
+   "level": "block",
+   "pattern": "@?\"[A-Za-z]:\\\\\\\\",
+   "message": "Drive-letter path in code",
+   "playbook": "linux-and-containers",
+   "kb": [
+    "19"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "FILE-UNC",
+   "where": "code",
+   "level": "block",
+   "pattern": "@\"\\\\\\\\[A-Za-z0-9]|\"\\\\\\\\\\\\\\\\[A-Za-z0-9]",
+   "message": "UNC share path in code (S3 / EFS)",
+   "playbook": "aws-managed-services",
+   "kb": [
+    "19"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "FILE-BACKSLASH-JOIN",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\+\\s*@?\"\\\\\\\\?\\\\\\\\\"|\"\\\\\\\\\\\\\\\\\"\\s*\\+",
+   "message": "Path built with a backslash (use Path.Combine)",
+   "playbook": "linux-and-containers",
+   "kb": [
+    "19"
+   ],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "FILE-MAPPATH",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bServer\\.MapPath\\b|\\bHostingEnvironment\\.MapPath\\b",
+   "message": "Server.MapPath (IWebHostEnvironment.ContentRootPath / WebRootPath)",
+   "playbook": "systemweb-residue",
+   "kb": [
+    "02"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "HOST-MACHINE-NAME",
+   "where": "code",
+   "level": "info",
+   "pattern": "\\bEnvironment\\.MachineName\\b|\\bDns\\.GetHostName\\(",
+   "message": "Machine name: a container's host name changes per task",
+   "playbook": "linux-and-containers",
+   "kb": [],
+   "group": [
+    "port",
+    "linux"
+   ]
+  },
+  {
+   "id": "SVC-SMTP-HOST",
+   "where": "config",
+   "level": "warn",
+   "pattern": "<smtp\\b|<network\\s+host=|\\bSmtpHost\\b|\\bSmtpServer\\b",
+   "message": "SMTP server setting (Amazon SES SMTP endpoint, credentials from Secrets Manager)",
+   "playbook": "aws-managed-services",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SVC-AEROSPIKE",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bAerospikeClient\\b|using\\s+Aerospike\\.Client",
+   "message": "Aerospike client still used (ElastiCache Valkey / DynamoDB, or confirmed kept self-managed)",
+   "playbook": "aws-managed-services",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SVC-ENYIM",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bMemcachedClient\\b|using\\s+Enyim\\.Caching",
+   "message": "Enyim Memcached client (.NET Framework build): EnyimMemcachedCore / ElastiCache",
+   "playbook": "aws-managed-services",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SVC-MONGO-LEGACY",
+   "where": "code",
+   "level": "block",
+   "pattern": "\\bMongoServer\\b|\\bMongoCollection<|WriteConcern\\.Unacknowledged",
+   "message": "MongoDB driver 1.x legacy API (current driver, DocumentDB, or remove)",
+   "playbook": "aws-managed-services",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SVC-HOSTED-LOG",
+   "where": "code",
+   "level": "warn",
+   "pattern": "\\bLoggly\\w*\\b|\\bSplunk\\w*\\b|\\bSumoLogic\\w*\\b",
+   "message": "Hosted log service in code (CloudWatch Logs via stdout)",
+   "playbook": "aws-managed-services",
+   "kb": [
+    "12"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SQLCLIENT",
+   "where": "code",
+   "level": "block",
+   "when": "postgresql",
+   "pattern": "\\bSqlConnection\\b|\\bSqlCommand\\b|\\bSqlDataAdapter\\b|System\\.Data\\.SqlClient|Microsoft\\.Data\\.SqlClient",
+   "message": "SQL Server client in code with a PostgreSQL-only target (Npgsql)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SYSTEM-SQLCLIENT",
+   "where": "code",
+   "level": "block",
+   "pattern": "using\\s+System\\.Data\\.SqlClient\\b",
+   "message": "System.Data.SqlClient is deprecated (Microsoft.Data.SqlClient for the SQL Server path)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-SQLERROR-NUMBER",
+   "where": "code",
+   "level": "warn",
+   "when": "postgresql|dual",
+   "pattern": "\\bSqlException\\b[^;\\n]*\\.Number\\b|\\.Number\\s*==\\s*(1205|2627|2601|547|-2)\\b",
+   "message": "SQL Server error numbers (map PostgreSQL SQLSTATE codes too)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "DB-XMLREADER",
+   "where": "code",
+   "level": "warn",
+   "when": "postgresql|dual",
+   "pattern": "\\bExecuteXmlReader\\b",
+   "message": "FOR XML result read through ExecuteXmlReader (no PostgreSQL equivalent)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-TSQL-IN-STRING",
+   "where": "sql",
+   "level": "block",
+   "when": "postgresql|dual",
+   "pattern": "\\bTOP\\s*\\(?\\d|\\bGETDATE\\s*\\(|\\bISNULL\\s*\\(|\\bWITH\\s*\\(\\s*NOLOCK|@@IDENTITY|\\bSCOPE_IDENTITY\\s*\\(|\\[dbo\\]\\.|\\bNEWID\\s*\\(|\\bDATEADD\\s*\\(|\\bCONVERT\\s*\\(\\s*(varchar|nvarchar|datetime|int)\\b|\\bLEN\\s*\\(|\\bFOR\\s+XML\\b|\\bOUTPUT\\s+INSERTED\\b",
+   "message": "T-SQL-only syntax in a SQL string (PostgreSQL rejects it; move to the dialect resource for the PostgreSQL path)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-CROSS-DB",
+   "where": "sql",
+   "level": "block",
+   "when": "postgresql|dual",
+   "pattern": "\\b\\w+\\.dbo\\.\\w+|\\{\\w*\\}\\.dbo\\.|^\\$?@?\\\"\\s*\\.dbo\\.\\w+",
+   "message": "Three-part (cross-database) name in SQL, written out or built as <db> + \".dbo.table\"",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [],
+   "group": [
+    "port"
+   ]
+  },
+  {
+   "id": "SQL-CONCAT-VALUE",
+   "where": "sql",
+   "level": "warn",
+   "pattern": "(=|<>|<|>|\\bIN\\s*\\(|\\bLIKE)\\s*'?\\s*\\\"\\s*\\+\\s*[\\w(]",
+   "message": "Value concatenated into SQL text (parameterise)",
+   "playbook": "raw-sql-and-data-access",
+   "kb": [
+    "07"
+   ],
+   "scope": "line",
+   "group": [
+    "port"
+   ]
+  }
+ ]
+}

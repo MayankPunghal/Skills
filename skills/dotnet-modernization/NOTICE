@@ -1,0 +1,12 @@
+dotnet-modernization skill
+
+reference/kb/ is a copy of the .NET migration knowledge base from the AWS DevTx Version Upgrade Toolkit
+(version-upgrade-toolkit-on-aws, transformer/common/migration-knowledge/dotnet, commit f372bba).
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Licensed under the Apache License, Version 2.0: reference/kb/LICENSE-Apache-2.0.txt
+Changes to the copy: sample passwords in connection strings and the Kestrel certificate example are replaced by the
+placeholder <password>; nothing else is modified. Corrections to their samples (container user, health check, secrets in the image) are
+written in reference/playbooks/linux-and-containers.md and reference/linux-readiness.md, not in the KB files.
+
+The rest of this skill (SKILL.md, reference/*.md outside kb/, reference/playbooks/, scripts/) is written for this skill.
+The DB porting agent and its skills are referred to and summarised, not copied.
