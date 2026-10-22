@@ -237,7 +237,7 @@ def scan(root, library_sources=(), facts=None, choices=None, factors=None, catal
             continue
         def calls_into(lib):
             ts = lib_types[lib.name]
-            rx = re.compile(r"(?:" + "|".join(sorted(map(re.escape, ts))) + r")") if ts else None
+            rx = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, ts))) + r")\b") if ts else None
             return bool(rx and any(rx.search(t) for _, _, t in sites))
         # a library's wrapper counts when this repository calls into it, or (no wrapper here) only configures it
         used_libs = [l for l in libs if lib_prov[l.name] and (calls_into(l) or (not prov and cfg))]

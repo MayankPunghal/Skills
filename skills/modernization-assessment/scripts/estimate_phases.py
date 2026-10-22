@@ -359,6 +359,10 @@ def finish(I, f, inp):
             line(I, "S", f"S{n}", f"{svc['label']} -> {opt['aws']} ({opt['change']})", [(1, "option", tuple(opt["hours"]))],
                  f"aws_native.py rates x AI factor ({opt['factor']}); wrapper: {svc['client_code']}", "VERIFIED", opt["work"])
             I[-1]["drivers"] = ["; ".join(x for x in ev if x) + f": manual-equivalent {opt['manual_hours'][0]:g}-{opt['manual_hours'][1]:g} h"]
+    # extra work items found in review that no quantity covers: estimate-inputs.json "extra_items" [{id, stage, label, low, high, basis}]
+    for x in (inp.get("extra_items") or {}).get("value", []):
+        I.append({"stage": x.get("stage", "B"), "id": x["id"], "label": x["label"], "low": x["low"], "high": x["high"], "drivers": [x.get("drivers", "")] if x.get("drivers") else [],
+                  "basis": x.get("basis", "review"), "status": x.get("status", "INFERRED"), "note": x.get("note", ""), "tool": None})
     for x in I:
         x["tool"] = owner(x["id"], x["stage"], inp)
     return I
@@ -503,6 +507,7 @@ def inputs_for(repo, f, cfg, d):
                                             and not any(re.match(rx, b["assembly"], re.I) for rx in svc_pkgs)}),
                            "status": "INFERRED", "note": "DLLs that become a current nuget.org package (the scan's DLL table); clients of server-hosted services are priced in stage S."},
         "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
+        "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis}]; added to the main estimate."},
         "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources and networking (DevOps)", "status": "INFERRED", "note": ""},
         "buffer": {"value": 0.15, "status": "INFERRED", "note": "Planning buffer on the subtotal."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},

@@ -23,6 +23,7 @@ Writes:
                sites by file and line (+-3 lines); RaSQL rows not matched are explained (comment, log text, LINQ,
                wrapper definition); what raw_sql.py found that RaSQL did not
   assessment/atf/<repo>/atf.md (+ .html)            the same, for people
+  assessment/atf/radnet-report.html, rasql-report.html   every scanner row grouped and explained (atf_report.py)
 """
 import argparse
 import csv
@@ -159,7 +160,7 @@ def why_not_sql(snippet):
     s = snippet.strip()
     if s.startswith(("#region", "#endregion", "//", "/*", "*")):
         return "comment / region"
-    if re.search(r"from\s+\w+\s+in[\s\S]*select", s):
+    if re.search(r"\bfrom\s+\w+\s+in\b[\s\S]*\bselect\b", s):
         return "LINQ query expression (C#, not SQL)"
     if re.search(r"(Log\w*|Exception|Write(Line)?|Trace|Debug|Info|Error)\s*\(", s) and not re.search(r"Execute|CommandText|Sql", s):
         return "log / exception message text"
@@ -236,6 +237,8 @@ def render(repo, res):
         miss = [e for e in rq["execute_calls"]["rows"] + rq["inline_sql"]["rows"] if not e["matched"] and e["reason"] == "not matched: review"]
         if miss:
             L += ["Rows to review (ATF found them, this skill did not):", ""] + [f"- `{m['file']}:{m['line']}` {m['subtype']}" for m in miss[:40]] + [""]
+    if rn or rq:
+        L += ["Readable scanner reports (every row, grouped): " + ", ".join(f"[{p} report](../{p}-report.html)" for p, x in (("radnet", rn), ("rasql", rq)) if x) + ".", ""]
     if not rn and not rq:
         L += ["The scanner has not run for this repository.", ""]
     write_pair(os.path.join(ATF, repo, "atf.md"), "\n".join(L))
@@ -268,6 +271,9 @@ def reconcile(root, repos):
               + (f"RaSQL {rq['rows']} rows, inline {rq['inline_sql']['matched']}/{rq['inline_sql']['atf']} and execute "
                  f"{rq['execute_calls']['matched']}/{rq['execute_calls']['atf']} matched" if rq else "RaSQL none")
               + ("" if scan else " (scan_repo.py not run yet: re-run with --reconcile-only after it)"))
+    import atf_report
+    for p in atf_report.build():
+        print(f"readable report: {p}")
 
 
 def main():

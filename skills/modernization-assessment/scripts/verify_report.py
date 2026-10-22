@@ -164,10 +164,17 @@ def main():
     for inv in invs.values():
         vals |= secret_values(inv["root"])
     htmls = glob.glob(os.path.join(OUT, "report", "*.html"))
-    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))
+    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))         + glob.glob(os.path.join(OUT, "report", "*.xlsx"))
     leaks = []
+    def text_of(p):  # an .xlsx is a zip of XML parts: check the cell text, with XML escapes undone
+        if p.lower().endswith(".xlsx"):
+            import html
+            import zipfile
+            with zipfile.ZipFile(p) as z:
+                return html.unescape(" ".join(z.read(n).decode("utf-8", "ignore") for n in z.namelist() if n.endswith(".xml")))
+        return open(p, encoding="utf-8-sig", errors="ignore").read()
     for p in outputs:
-        t = open(p, encoding="utf-8-sig", errors="ignore").read()
+        t = text_of(p)
         for v in vals:
             # a plain short word (letters only) right after a slash or joined to other letters by a dot or hyphen (host label, URL path, hyphenated name) is a coincidence, not a leak;
             # anything longer or with digits/symbols must not appear at all as a standalone token
@@ -179,7 +186,7 @@ def main():
                 break
     url_cred = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:(?!\*\*\*)[^\s/@\"'<>]+@")  # scheme://user:password@host
     for p in outputs:
-        if url_cred.search(open(p, encoding="utf-8-sig", errors="ignore").read()):
+        if url_cred.search(text_of(p)):
             leaks.append(os.path.basename(p))
     results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))
     # 7 structure

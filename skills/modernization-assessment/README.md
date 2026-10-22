@@ -174,6 +174,14 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.2.4
+
+- **Readable AWS Transform scanner pages (`atf_report.py`).** `atf/radnet-report.html` (projects with decoded project types, executable lines by file type and largest files, NuGet packages joined with the package check, local DLLs joined with the DLL check, framework assemblies marked when missing or Windows-only on .NET 10, COM / P/Invoke / EDMX, cross-check) and `atf/rasql-report.html` (database code per file, stored procedures called, inline SQL and execute calls with the cross-check reason, parameters per file, transactions). Filterable, sortable, light and dark, masked snippets. `atf_scan.py` writes them on every run.
+- **Fixed: two regexes held a literal backspace instead of `\b` (word boundary).** `atf_scan.py` never recognised C# LINQ query expressions as "not SQL", and `aws_native.py`'s whole-word type match never matched.
+- **Tracking workbook (`build_tracker.py`, step 8.15).** One `<Client>-Modernization-Tracker.xlsx` with every finding, Windows-only API use (one row per evidence line), Linux readiness hit, phased work item, package, DLL, AWS managed-service swap, open question and application; every tracking sheet ends with Status / Owner / Notes.
+- **Secret check covers .xlsx (`verify_report.py`).** Workbooks in the report folder are checked like the other outputs.
+- **Review-found work in the estimate (`estimate_phases.py`).** `estimate-inputs.json` `extra_items` adds work that no quantity covers (for example a page that reads only from a store being removed) to the main estimate; scenarios can set it too.
+
 ## Changed in 3.2.3
 
 - **Claude-first operating model is the default.** The porting engine or Claude writes every line of code and SQL; nothing is hand-written. Hours are engineer time to run the tools, read the diff where the risk is, run build and test loops, decide and sign off.
