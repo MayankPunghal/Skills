@@ -89,6 +89,14 @@ ENV_TOKENS = re.compile(r"(?i)(^|[.\-])(intra|intranet|internal|corp|lan|uat|sit
 PLACEHOLDER_HOSTS = {"url", "host", "hostname", "server", "servername", "yourserver", "myserver", "domain", "site", "webapihelppage", "your-domain", "yourdomain", "foo", "bar", "test", "example", "machine", "computer", "localhost"}
 
 
+def minified(text):
+    """A minified or bundled script (long lines): third-party code whose test strings and URLs are not the client's."""
+    if len(text) < 4000:
+        return False
+    lines = text.splitlines() or [""]
+    return max(len(x) for x in lines) > 2000 or len(text) / len(lines) > 250
+
+
 def host_kind(host):
     h = host.lower().strip("[]")
     if IP_RX.fullmatch(h):
@@ -231,6 +239,9 @@ class Scan:
                 except OSError:
                     continue
                 self.facts["files_scanned"][ftype] += 1
+                if ftype == "js" and minified(text):  # a bundle or third-party SDK: its strings are not the client's code
+                    self.facts.setdefault("skipped_bundles", []).append(rp)
+                    continue
                 self.scan_text(rp, path, ftype, text)
 
     def scan_text(self, rp, path, ftype, text):
@@ -322,7 +333,7 @@ class Scan:
                         if not later:
                             continue
                         host = later.group(1)
-                    if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS:
+                    if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS or ("." not in host and len(host) < 3):
                         continue
                     self.endpoint(host, scheme, rp, project, i, line, ftype)
             if IP_RX.search(line) and not IP_SKIP_LINE.search(line):

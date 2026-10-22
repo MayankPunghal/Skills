@@ -2,7 +2,7 @@
 name: dotnet-modernization
 description: Carries out the modernization of legacy .NET Framework applications to .NET 10 on Linux containers on AWS, after an assessment. Runs one porting engine per project (AWS DevTx Version Upgrade Toolkit or AWS Transform for .NET), then has Claude clean up what the engine leaves, playbook by playbook (System.Web, Web Forms, WCF/ASMX, Windows-only APIs, auth, config and secrets, time zones, logging, containers, AWS managed services), moves the data-access code to PostgreSQL with the DB porting agent or Claude using the DB porting skills, and proves the result with gates: build, tests, residue scan, a 337-check Linux readiness scan, container run and request/response parity. Writes an execution report. Use when the user wants to port, upgrade, modernize, migrate or containerize a .NET Framework / ASP.NET / WCF app to .NET 8/10, Linux, Docker, ECS or PostgreSQL, run DevTx or AWS Transform, clean up after them, check Linux readiness of an already-modern app, or verify a port, even if they don't say "modernization".
 metadata:
-  version: 1.1.1
+  version: 1.1.2
 user-invocable: true
 argument-hint: "[help · modernize-package · resume · intake · baseline · port · residue · cleanup · data-access · aws-native · linux-readiness · container · verify · report] [package or folder]"
 allowed-tools:

@@ -11,7 +11,7 @@ import json
 import os
 import re
 
-from _common import skip_dir, read_text, rel
+from _common import skip_dir, mask, read_text, rel
 
 MANIFESTS = {"package.json": "Node.js", "requirements.txt": "Python", "pyproject.toml": "Python", "setup.py": "Python", "pipfile": "Python",
              "pom.xml": "Java", "build.gradle": "Java", "build.gradle.kts": "Java", "go.mod": "Go", "gemfile": "Ruby",
@@ -136,7 +136,7 @@ def coupling(repo_root, np, dotnet_projects, skip=SKIP, n_node=1):
 
     def add(kind, file, line, text):
         if len(signals) < 40:
-            signals.append({"kind": kind, "file": rel(file, repo_root) if os.path.isabs(file) else file, "line": line, "text": text.strip()[:160]})
+            signals.append({"kind": kind, "file": rel(file, repo_root) if os.path.isabs(file) else file, "line": line, "text": mask(text)[:160]})
 
     ndir = np["abs"]
     pdirs = [(os.path.normpath(os.path.dirname(os.path.join(repo_root, p["path"]))), p) for p in dotnet_projects]

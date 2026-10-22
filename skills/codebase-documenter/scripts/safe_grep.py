@@ -32,6 +32,15 @@ PROVIDER = re.compile(r"\b(pk_live_|sk_live_|rk_live_|pk_test_|sk_test_|whsec_|g
 SAFE_VALUE = re.compile(r"(?i)^(true|false|null|none|\{\{.*\}\}|\$\{.*\}|%\w+%|\*+|<[^>]*>|x+|\.\.\.|string|int|bool|"
                         r"[A-Za-z_][\w.]*\(.*|[A-Za-z_]\w*\s*\+.*)$")
 
+# credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"). Each is (prefix)(value)(suffix).
+CODE_CREDENTIALS = [
+    re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
+    re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
+    re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+]
+
 
 def mask(line):
     """The line with every secret-looking value replaced by ***; (masked line, kinds found)."""
@@ -49,6 +58,10 @@ def mask(line):
         kinds.append(m.group(1).rstrip("_-.").lower() + " key")
         return m.group(1) + "***"
     out = PROVIDER.sub(prov, out)
+    for rx in CODE_CREDENTIALS:
+        if rx.search(out):
+            kinds.append("credential in code")
+            out = rx.sub(lambda m: m.group(1) + "***" + m.group(3), out)
     return out, kinds
 
 

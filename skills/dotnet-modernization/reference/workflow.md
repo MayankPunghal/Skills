@@ -59,6 +59,10 @@ Package: <name>
 1. **Plan entry.** `assessment/execution-plan.json` from the modernization-assessment skill lists, per package, every
    finding with its stream (engine, claude, db, aws-native, outside), playbook and files. No plan? Run the residue
    scan on the original and use its playbook column instead.
+   - `extra_items` ("Work found in review"): work a reviewer added by hand, each with its stream. Do it with the package.
+   - A package in mode `static` has no compiled code: publish its files to S3 + CloudFront, port nothing.
+   - The data-access note may name libraries outside the repository (`DEP-OUTSIDE-REPO`). The package cannot build
+     on .NET 10 until those libraries are ported or replaced: get their source and port them first, or stop and ask.
 2. **Branch and baseline.** `git switch -c modernize/<package>` in the copy. `python scripts/verify.py baseline <sln>`.
    Record goldens with `parity.py record` from a running original (test environment). Log it:
    `report.py log --step baseline --engine human --status done`.

@@ -9,7 +9,7 @@ Gates (each PASS or FAIL; exit code 1 when one fails):
   headings       the section and subsection headings of the reference document are present, in its order
   hours          the total and every estimate line in the document equal estimate_hours.json
   status         DRAFT (or FINAL with who confirmed) is stated; the environment warning is present while environments are unconfirmed
-  no secrets     no secret-looking assignment and none of the secret settings' values appear in the text
+  no secrets     no secret-looking assignment, none of the secret settings' values and no unmasked credential from code appear in the text
   length         prose outside tables stays short (the document is tables and counts, not narrative)
 """
 import os
@@ -18,7 +18,7 @@ import sys
 import zipfile
 import xml.dom.minidom
 
-from _common import skip_dir, OUT, load_config, read_json, utf8_stdout
+from _common import CODE_CREDENTIALS, skip_dir, OUT, load_config, read_json, utf8_stdout
 import _xlsx
 
 SECRET_PAIRS = [re.compile(r"(?i)\b(?:password|pwd)\s*=\s*([^;\"'<>\s&]{4,})"),
@@ -124,7 +124,8 @@ def main():
     wb_text = "\n".join(str(c) for rows in wb.values() for r in rows for c in r)
     haystack = text + "\n" + wb_text
     leaked = [v for v in secret_values(cfg) if re.search(r"(?<![\w.-])" + re.escape(v) + r"(?![\w-])", haystack)]  # whole tokens only; the values are never printed, only counted
-    gate("no secrets", not bad and not leaked, f"{len(bad)} secret-like assignments, {len(leaked)} leaked values")
+    code_creds = sum(1 for rx in CODE_CREDENTIALS for m in rx.finditer(haystack) if m.group(2) != "***")  # credentials written in code, unmasked
+    gate("no secrets", not bad and not leaked and not code_creds, f"{len(bad)} secret-like assignments, {len(leaked)} leaked values, {code_creds} credentials from code")
     prose = re.sub(r"<w:tbl>.*?</w:tbl>", "", doc_xml, flags=re.S)
     words = len(text_of(prose).split())
     limit = PROSE_WORD_LIMIT + PROSE_PER_SOLUTION * len((read_json(os.path.join(OUT, "solutions", "index.json"), {}) or {}).get("solutions", []))

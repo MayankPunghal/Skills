@@ -216,7 +216,17 @@ def usable_host(host):
         return False
     if IP.match(h) and (h.endswith(".0.0") or all(int(o) < 10 for o in h.split("."))):
         return False  # version-like dotted numbers (2.3.2.0, 1.1.0.1)
+    if "." not in h and len(h) < 3:
+        return False  # one- or two-letter names (a, x, db) come from URL-parser tests and samples, not real hosts
     return "{" not in h and "$" not in h and "%" not in h and not h.endswith((".dll", ".exe", ".cs", ".json", ".xml", ".js", ".css"))
+
+
+def minified(text):
+    """A minified or bundled script (long lines): third-party code whose URLs are not the client's."""
+    if len(text) < 4000:
+        return False
+    lines = text.splitlines() or [""]
+    return max(len(x) for x in lines) > 2000 or len(text) / len(lines) > 250
 
 
 def scheme_for(path):
@@ -305,6 +315,8 @@ class Scan:
                         continue
                     text = open(path, encoding="utf-8-sig", errors="replace").read()
                 except OSError:
+                    continue
+                if ext in (".js", ".mjs", ".cjs") and minified(text):  # a bundle or third-party SDK: its URLs and test strings are not the client's
                     continue
                 self.files += 1
                 self.file(rp, fn, ext, text)

@@ -23,6 +23,11 @@ It does what a senior business analyst, architect and technical writer would do,
 8. **Package**: one zip with a single README that any agent can follow to install the project skill.
 
 
+## Changed in 1.16.4
+
+- **Credentials written in code are masked (safe_grep.py).** `GetBytes("user:password")`, `"Basic <base64>"` / `"Bearer <token>"`, `NetworkCredential(...)` and `AuthenticationHeaderValue(...)` show `***`, reported as "credential in code".
+- **No minified bundles or one-letter hosts in the endpoint list (network_endpoints.py).** Bundled third-party scripts are skipped and names such as `a` or `x` from URL-parser samples are not reported as servers.
+
 ## Changed in 1.16.3
 
 - **T-SQL in other file extensions (sql_parse.py).** Database script repositories often save procedures as `.txt`, `.prc`, `.tab`, `.viw`, `.fnc`, `.trg` or `.udf`. These are now read when their start looks like T-SQL (UTF-16 included); prose files are not. Files over 2 MB (data loads) are left out and listed under `skipped` in the output. New options: `--ext`, `--sniff`, `--max-bytes`.

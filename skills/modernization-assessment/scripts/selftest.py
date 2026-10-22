@@ -18,6 +18,8 @@ scripts end to end, then checks the cases field runs got wrong.
      xp_cmdshell.
 3. A no-code estate (SqlScripts alone): the report, summary and tracker build, and verify_report's scope gate passes.
 4. raw_sql.py on a folder with no C# exits with guidance, not a traceback.
+5. Sibling skills: the scripts shared with lift-and-shift-assessment, codebase-documenter (network_endpoints) and
+   dotnet-modernization (linux_readiness) are still the same file, and their own mask() hides credentials in code.
 Run it after changing a scanner rule, the package map, classification, estimation or report scripts. Exit 1 on any
 failure. Fixtures go to a temporary folder (deleted unless --keep). Needs the sibling linux-readiness and
 codebase-documenter skills; standard library only.
@@ -34,6 +36,12 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+
+# Scripts lift-and-shift-assessment keeps as copies of this skill's (build_open_questions and verify_doc differ only in
+# the estimate file name: estimate_hours.json here, estimate.json there). SKILL.md "Maintaining this skill" lists them.
+SHARED_WITH_LIFT_AND_SHIFT = ["_buildwhy", "_complexity", "_config", "_docx", "_docx_brand", "_infra", "_loc", "_scope", "_servers", "_where",
+                              "_xlsx", "branch_evidence", "branch_list", "build_mapping_sheet", "build_open_questions", "clone_repos",
+                              "code_text", "gitlab_projects", "network_endpoints", "scheduled_jobs", "vendor_files", "verify_doc"]
 
 # Fake values only: the test fails if any of them reaches an output.
 FAKE_SECRETS = ("S3cr3tPw!x", "Hunter22pw", "dXNlcjpwYXNzd29yZA==")
@@ -373,6 +381,39 @@ def main():
     # 4. raw_sql with no C#
     code_, out_ = py("raw_sql.py", "--root", os.path.join(repos, "SqlScripts"), "--out", os.path.join(base, "rawsql"), cwd=ws2)
     check("Traceback" not in out_ and code_ != 0 or "no .cs" in out_.lower(), "raw_sql.py with no C# exits with guidance", out_)
+
+    # 5. copies shared with the sibling skills stay the same file, and every sibling's masking hides credentials in code
+    skills = os.path.dirname(os.path.dirname(HERE))
+    same = {"lift-and-shift-assessment": SHARED_WITH_LIFT_AND_SHIFT, "codebase-documenter": ["network_endpoints"],
+            "dotnet-modernization": ["linux_readiness"]}
+    for sk, names in same.items():
+        if not os.path.isdir(os.path.join(skills, sk)):
+            continue
+        drift = []
+        for n in names:
+            a_, b_ = (os.path.join(skills, x, "scripts", n + ".py") for x in ("modernization-assessment", sk))
+            norm = lambda p: open(p, encoding="utf-8").read().replace("\r\n", "\n").replace("estimate_hours.json", "estimate.json")  # noqa: E731
+            if not os.path.exists(b_) or norm(a_) != norm(b_):
+                drift.append(n)
+        check(not drift, f"scripts shared with {sk} are the same file (drifted: {drift or 'none'})")
+    sib = {"lift-and-shift-assessment": ("_common", lambda m, t: m.mask(t)), "codebase-documenter": ("safe_grep", lambda m, t: m.mask(t)[0]),
+           "dotnet-modernization": ("residue_scan", lambda m, t: m.mask(t))}
+    import importlib.util
+    for sk, (mod, fn) in sib.items():
+        p = os.path.join(skills, sk, "scripts", mod + ".py")
+        if not os.path.exists(p):
+            continue
+        sys.path.insert(0, os.path.dirname(p))
+        try:
+            spec = importlib.util.spec_from_file_location(f"_sib_{sk.replace('-', '_')}", p)
+            m_ = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m_)
+            out = "\n".join(fn(m_, ln) for ln in code.splitlines())
+            check(not [s for s in FAKE_SECRETS if s in out], f"{sk} {mod}.mask() hides credentials written in code")
+        except Exception as e:  # noqa: BLE001
+            check(False, f"{sk} {mod}.mask() hides credentials written in code", repr(e))
+        finally:
+            sys.path.remove(os.path.dirname(p))
 
     print(f"\n{'PASS' if not fails else 'FAIL'}: {len(fails)} failed. Fixtures: {base}{'' if a.keep else ' (deleted)'}")
     if not a.keep:

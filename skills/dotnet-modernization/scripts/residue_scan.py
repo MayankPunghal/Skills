@@ -45,9 +45,22 @@ LIT = re.compile(r'\$?@\$?"(?:[^"]|"")*"|\$?"(?:\\.|[^"\\\n])*"')
 SECRET_RX = re.compile(r"(?i)\b(password|pwd|passwd|secret|apikey|api_key|accesskey|token|sharedkey|accountkey)(\w*\s*[=:]\s*[\"']?)[^;,\"'\s<>]+")
 
 
+# credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"). Each is (prefix)(value)(suffix).
+CODE_CREDENTIALS = [
+    re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
+    re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
+    re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+]
+
+
 def mask(text):
     """Never copy a secret value into a report: keep the key, replace the value."""
-    return SECRET_RX.sub(lambda m: m.group(1) + m.group(2) + "***", text)
+    text = SECRET_RX.sub(lambda m: m.group(1) + m.group(2) + "***", text)
+    for rx in CODE_CREDENTIALS:
+        text = rx.sub(lambda m: m.group(1) + "***" + m.group(3), text)
+    return text
 
 
 def rules(db_target, only=None):

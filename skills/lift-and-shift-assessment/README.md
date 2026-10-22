@@ -5,6 +5,12 @@ A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, 
 It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
 
+## Changed in 1.1.4
+
+Fixes from five modernization-assessment field runs that apply here too:
+- **Credentials written in code are masked (_common.py).** `GetBytes("user:password")`, `"Basic <base64>"` / `"Bearer <token>"`, `NetworkCredential("user", "password")` and `AuthenticationHeaderValue("Basic", "...")` show `***` in evidence, and `verify_doc.py` fails if one reaches the document or the workbook. `password = new ...` / `null` is no longer masked as if it were a value. `_scope.py` masks its coupling snippets.
+- **Fewer false findings (scan_repo.py, network_endpoints.py).** Minified bundles are not scanned; one- and two-letter host names are ignored; CFG-HARDCODED-SECRET skips DOM ids and key names (`"#txtPassword"`, `"client_secret"`).
+
 ## Changed in 1.1.3
 
 - **Branch check without GitLab (branch_evidence.py).** With no token, no GitLab origin or a GitLab error, the branch check reads the local clone's git history instead (branches, tags, recent merges) and says so, rather than leaving the repository without branch evidence. Same file as modernization-assessment.

@@ -52,6 +52,12 @@ evals/evals.md              test prompts and expected behaviour
 
 `reference/kb/` is Apache-2.0 (Amazon), see `NOTICE`. The rest belongs to the skill owner.
 
+## Changed in 1.1.2
+
+- **The plan's new parts are read.** Work added in review (`extra_items`), static-content packages (publish, nothing to port) and libraries outside the repository (port those first) are handled in the plan-entry step (modernization-assessment 3.3.1).
+- **Credentials written in code are masked** in residue-scan output (`GetBytes("user:password")`, `"Basic <base64>"`, `NetworkCredential`, `AuthenticationHeaderValue`), as in the assessment.
+- `scripts/linux_readiness.py` is again the same file as modernization-assessment's (a repository name maps to its folder in an assessment workspace).
+
 ## Changed in 1.1.1
 
 - The Linux readiness scanner and its catalogue now exist once, in the linux-readiness skill (installed with this one). `scripts/linux_readiness.py` is a thin entry point that loads it, so the copied catalogue and self-test are gone and a change to a check reaches every skill at once. `reference/linux-readiness.md` is now a short page on how this skill uses the check.

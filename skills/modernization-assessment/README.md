@@ -177,6 +177,13 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.3.2
+
+- **The same fixes reach the sibling skills.** lift-and-shift-assessment, codebase-documenter and dotnet-modernization get the code-credential masking, the minified-bundle and short-host filters and the secret false-positive pattern where they have their own copy.
+- **No minified bundles or one-letter hosts in the endpoint map (`network_endpoints.py`).** Also in lift-and-shift-assessment and codebase-documenter.
+- **`verify_doc.py`** fails when a credential written in code reaches the .docx or the workbook unmasked.
+- **`selftest.py` section 5** fails when a script shared with a sibling skill drifts, or when a sibling's own `mask()` misses a credential in code. The shared-copies list in SKILL.md is corrected: `_scope` is shared; `build_open_questions` and `verify_doc` differ only in the estimate file name.
+
 ## Changed in 3.3.1
 
 Fixes from five field runs (a static content repository, a Bot Framework v3 app, two class-library repositories and a SQL scripts repository). `scripts/selftest.py` now rebuilds each case and fails if it comes back.
