@@ -198,6 +198,10 @@ APPSETTING_SECRET = re.compile(r'(?i)(<add\s+key="[^"]*(?:pass|pwd|secret|token|
 URL_USERINFO = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:)([^\s/@\"'<>]+)(@)")  # scheme://user:password@host
 URL_USER_CONCAT = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:\"\s*\+\s*[\w.]*\(\s*)(\"[^\"]*\")")  # "ftp://user:" + Encode("password") + "@host"
 
+# a request header compared with a value written in the code: Headers["X"] == "value" / "value" == Headers["X"]
+HEADER_LITERAL = re.compile(r'(Headers(?:\.Get\(\s*"[\w-]+"\s*\)|\[\s*"[\w-]+"\s*\])\s*[!=]=\s*")([^"]+)(")')
+HEADER_LITERAL_REV = re.compile(r'(")([^"]{6,})("\s*[!=]=\s*[\w.]*Headers\[)')
+
 
 def mask(line):
     """Remove secret VALUES from an evidence snippet, keep the key names. Snippets never carry credentials."""
@@ -206,6 +210,7 @@ def mask(line):
     s = XML_SECRET_ATTR.sub(lambda m: m.group(1) + (_mask_conn(m.group(2)) if m.group(1).lower().startswith("connectionstring") else ("***" if m.group(2) else "")) + m.group(3), s)
     s = SQL_SECRET_PAIR.sub(lambda m: m.group(1) + "***" + m.group(3), s)
     s = SECRET_VALUE.sub(lambda m: m.group(1) + "***", s)
+    s = HEADER_LITERAL_REV.sub(lambda m: m.group(1) + "***" + m.group(3), HEADER_LITERAL.sub(lambda m: m.group(1) + "***" + m.group(3), s))
     return s.strip()[:220]
 
 

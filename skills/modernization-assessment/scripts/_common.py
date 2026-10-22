@@ -223,6 +223,9 @@ SECRET_VALUE = re.compile(r"(?i)(\b\w*" + SECRET_WORDS + r"\w*\s*[=:]\s*@?)(\"[^
 SQL_SECRET_PAIR = re.compile(r"(?i)('[^']*" + SECRET_WORDS + r"[^']*'\s*,\s*N?')([^']*)(')")
 XML_SECRET_ATTR = re.compile(r'(?i)((?:password|pwd|secret|apikey|api_key|token|decryptionKey|validationKey|accountKey|connectionString)\s*=\s*")([^"]*)(")')
 APPSETTING_SECRET = re.compile(r'(?i)(<add\s+key="[^"]*(?:pass|pwd|secret|token|apikey|api_key|key|credential)[^"]*"\s+value=")([^"]*)(")')
+# a request header compared with a value written in the code: Headers["X"] == "value" / "value" == Headers["X"]
+HEADER_LITERAL = re.compile(r'(Headers(?:\.Get\(\s*"[\w-]+"\s*\)|\[\s*"[\w-]+"\s*\])\s*[!=]=\s*")([^"]+)(")')
+HEADER_LITERAL_REV = re.compile(r'(")([^"]{6,})("\s*[!=]=\s*[\w.]*Headers\[)')
 
 
 URL_USERINFO = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:)([^\s/@\"'<>]+)(@)")  # scheme://user:password@host
@@ -236,6 +239,7 @@ def mask(line):
     s = XML_SECRET_ATTR.sub(lambda m: m.group(1) + (_mask_conn(m.group(2)) if m.group(1).lower().startswith("connectionstring") else ("***" if m.group(2) else "")) + m.group(3), s)
     s = SQL_SECRET_PAIR.sub(lambda m: m.group(1) + "***" + m.group(3), s)
     s = SECRET_VALUE.sub(lambda m: m.group(1) + "***", s)
+    s = HEADER_LITERAL_REV.sub(lambda m: m.group(1) + "***" + m.group(3), HEADER_LITERAL.sub(lambda m: m.group(1) + "***" + m.group(3), s))
     return s.strip()[:220]
 
 
