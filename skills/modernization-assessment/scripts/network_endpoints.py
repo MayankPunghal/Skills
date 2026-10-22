@@ -177,6 +177,7 @@ ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match
     (r"^https?\b", "HTTP service / API"),
 ]
 ROLE_RX = [(re.compile(p, re.I), r) for p, r in ROLES]
+SERVICE_CONFIG_FILE = re.compile(r"(?i)^(redis|memcached?|aerospike|mongo\w*|rabbitmq|kafka|elasticsearch)$")  # a service's own config file
 
 
 # a host found in a service reference (WSDL, discovery file, generated proxy) is a SOAP service, whatever its operation names say
@@ -186,7 +187,9 @@ SOAP_FILE = re.compile(r"(?i)\.(wsdl|disco|discomap|svcmap|xsd)$|(^|/)Reference\
 def role_of(scheme, source, key, hint, file=""):
     if SOAP_FILE.search((file or "").replace("\\", "/")) and not re.match(r"(?i)(sqlserver|postgres|mysql|mongodb|redis|memcached|aerospike)", scheme or ""):
         return "SOAP / WCF service"
-    text = f"{scheme} {source} {key} {hint}"
+    stem, ext = os.path.splitext(os.path.basename((file or "").replace("\\", "/")))
+    own = stem if ext.lower() in (".config", ".json", ".xml", ".yaml", ".yml") and SERVICE_CONFIG_FILE.match(stem) else ""  # redis.config names its service
+    text = f"{scheme} {source} {key} {hint} {own}"
     for rx, r in ROLE_RX:
         if rx.search(text):
             return r

@@ -174,7 +174,7 @@ full per-repository reports are listed under the table. -->
 
 {{block:app-plans}}
 
-### 7.3 Optional modernizations (not in the estimate)
+### 7.3 AWS managed-service swaps and optional modernizations
 
 {{block:optional}}
 

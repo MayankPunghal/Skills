@@ -174,6 +174,22 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.2.5
+
+One sweep of the whole report for contradictions; every fix below ships together.
+
+- **Timeline and sprint plan had no application work (`estimate_effort.py`).** A loop variable overwrote each work package's kind, so the applications dropped out of section 8.4 and the sprint plan (only the database lane was planned).
+- **AWS managed-service swaps counted once and consistently.** Only the chosen server swaps go into the parametric total and the sprints (not every optional idea); both models read the same choices (`estimate-inputs.json` overrides assessment.json); the execution plan's swap stream has their hours; section 7.3 separates "swaps (in the estimate)" from "optional modernizations (not in it)".
+- **One planning figure everywhere.** At a glance leads with the phased estimate (the figure in the summary and 8.1), then the parametric cross-check and the engineer-paced comparison; report, summary and at a glance use the same day length and team size. Narratives can use `{{v:phased.low}}`, `{{v:phased.high}}`, `{{v:phased.scenarios[<name>].low}}`, `{{v:phased.phases.P4.high}}` and more, so their numbers no longer go stale.
+- **Key risks:** one row per issue (refs joined, projects named) instead of the same finding twice.
+- **Section 4.9 in a modernization:** "On AWS in this plan" (the chosen AWS option, the database scenario) instead of lift-and-shift text; a store aws_native traced through its wrapper is "confirmed", not "use not traced".
+- **Endpoints:** a database host is one row (not an endpoint row plus "host / -"); bare IPs in redis.config / memcached.config are named Redis / Memcached.
+- **Packages:** a package whose nuget.org version list declares no frameworks falls back to its own frameworks, so a .NET Framework-only package is "replace", not "keep".
+- **aws_native:** a method counts as a store's wrapper only when the client call is inside its body.
+- **ATF RadNet page:** the cross-check shows each difference.
+- **Titles:** "Landing on AWS (network, hosting and co-located services)"; 7.3 "AWS managed-service swaps and optional modernizations".
+- Same `network_endpoints.py` / `_config.py` fixes ported to lift-and-shift-assessment 1.1.1 and codebase-documenter 1.16.1.
+
 ## Changed in 3.2.4
 
 - **Readable AWS Transform scanner pages (`atf_report.py`).** `atf/radnet-report.html` (projects with decoded project types, executable lines by file type and largest files, NuGet packages joined with the package check, local DLLs joined with the DLL check, framework assemblies marked when missing or Windows-only on .NET 10, COM / P/Invoke / EDMX, cross-check) and `atf/rasql-report.html` (database code per file, stored procedures called, inline SQL and execute calls with the cross-check reason, parameters per file, transactions). Filterable, sortable, light and dark, masked snippets. `atf_scan.py` writes them on every run.

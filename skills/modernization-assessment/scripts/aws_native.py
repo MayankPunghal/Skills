@@ -142,7 +142,10 @@ def providers(src, det):
             for j in range(i, max(-1, i - 400), -1):
                 m = _METHOD.match(ns[j])
                 if m:
-                    methods.add(m.group(1))
+                    # only when the hit is inside that method's body: a hit after the method has closed (a nested class with
+                    # the client's attributes, a field) does not make the method above it a wrapper
+                    if j == i or sum(ns[k].count("{") - ns[k].count("}") for k in range(j, i)) > 0:
+                        methods.add(m.group(1))
                     break
         service_named = bool(kw.search(os.path.basename(f)))
         out[f] = {"lines": [i + 1 for i in hits][:50], "client_lines": len(hits), "loc": sum(1 for x in ns if x.strip()),

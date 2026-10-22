@@ -199,8 +199,8 @@
   },
   {
    "id": "aws-landing",
-   "title": "Landing on AWS (lift-and-shift)",
-   "brief": "Lift-and-shift: what changes when the same servers move to Amazon EC2",
+   "title": "Landing on AWS (network, hosting and co-located services)",
+   "brief": "What changes when the applications run on AWS (EC2 or containers): addresses, mail, file shares, licences, co-located services",
    "scanned": "SMTP on port 25, UDP broadcast/multicast, IP allow-lists, caller-IP logic, listeners bound to fixed IPs, hosts-file reliance, localhost calls between services, NFS/SMB mounts, licence servers",
    "segment": "landing"
   }

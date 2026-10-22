@@ -314,15 +314,19 @@ def radnet(path, out):
         rn = (xc.get(a.lower()) or {}).get("radnet")
         if rn:
             lo = rn["loc_exec"]
-            xrows += [[a, "Executable lines", lo["total"], lo.get("ours_loc_exec", ""), ""],
+            def diff(x, y):
+                if not isinstance(y, int):
+                    return "not counted by this skill"
+                return "same" if x == y else f"{y - x:+,} ({100 * (y - x) / x:+.1f}%)" if x else f"{y - x:+,}"
+            xrows += [[a, "Executable lines", lo["total"], lo.get("ours_loc_exec", ""), diff(lo["total"], lo.get("ours_loc_exec"))],
                       [a, "Local DLLs", len(rn["local_dlls"]["atf"]), len(rn["local_dlls"]["atf"]) - len(rn["local_dlls"]["atf_only"]) + len(rn["local_dlls"]["ours_only"]),
                        "; ".join(filter(None, [f"only ATF: {', '.join(rn['local_dlls']['atf_only'])}" if rn["local_dlls"]["atf_only"] else "",
                                                f"only this skill: {', '.join(rn['local_dlls']['ours_only'])}" if rn["local_dlls"]["ours_only"] else ""])) or "same"],
                       [a, "NuGet references", rn["nuget"]["atf"], rn["nuget"]["ours"],
                        "; ".join(filter(None, [f"only ATF: {', '.join(rn['nuget']['atf_only'])}" if rn["nuget"]["atf_only"] else "",
                                                f"only this skill: {', '.join(rn['nuget']['ours_only'])}" if rn["nuget"]["ours_only"] else ""])) or "same"],
-                      [a, "COM occurrences", rn["com"]["atf"], rn["com"]["ours_occurrences"], ""],
-                      [a, "DllImport occurrences", rn["dllimport"]["atf"], rn["dllimport"]["ours_occurrences"], ""]]
+                      [a, "COM occurrences", rn["com"]["atf"], rn["com"]["ours_occurrences"], diff(rn["com"]["atf"], rn["com"]["ours_occurrences"])],
+                      [a, "DllImport occurrences", rn["dllimport"]["atf"], rn["dllimport"]["ours_occurrences"], diff(rn["dllimport"]["atf"], rn["dllimport"]["ours_occurrences"])]]
     pg.table("crosscheck", "Cross-check with this skill's scan", "The same facts counted by both tools. Differences are listed; none means the two agree.",
              ["Application", "Fact", "AWS Transform", "This skill", "Differences"], xrows, empty="Not cross-checked yet: run atf_scan.py --reconcile-only after scan_repo.py.")
     return pg.write(out, path)

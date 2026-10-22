@@ -4,6 +4,13 @@ A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, 
 
 It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
+
+## Changed in 1.1.1
+
+- **Network endpoints name the store, not the port guess (network_endpoints.py).** MongoDB connection strings are MongoDB on 27017 (they also say Server=...), Memcached and Aerospike have their own roles and ports (11211, 3000) instead of Redis on 6379, and a host in a store's own config file (redis.config, memcached.config) takes that store's role.
+- **Hosts in service references are SOAP services.** A host found in a WSDL, discovery file or generated Reference.cs is labelled SOAP / WCF, whatever its operation names suggest (no more payment gateway or message broker guesses).
+- **Config map ports (_config.py).** A connection string for MongoDB, Memcached, Aerospike or Redis gets that store's default port, not SQL Server's 1433.
+
 ## What it does
 
 - Inventories solutions, projects, deployables and workloads (solution x environment).

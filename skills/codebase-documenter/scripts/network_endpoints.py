@@ -30,6 +30,28 @@ import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
+
+def nuget_folder(path):
+    """A restored NuGet packages folder (repositories.config, or packages/<Id>.<version>/*.nupkg), not application source in a folder named Packages."""
+    try:
+        if os.path.exists(os.path.join(path, "repositories.config")):
+            return True
+        for sub in os.listdir(path)[:8]:
+            q = os.path.join(path, sub)
+            if os.path.isdir(q) and any(f.lower().endswith(".nupkg") for f in os.listdir(q)):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def skip_dir(parent, name, skip, fold=True):
+    """True when a walk should not enter folder `name` under `parent`: its name is in `skip`. A folder named packages is skipped only when it
+    is a NuGet restore folder: application source can live in a folder of that name."""
+    if name.lower() == "packages":
+        return "packages" in skip and nuget_folder(os.path.join(parent, name))
+    return (name.lower() if fold else name) in skip
+
 MAX_BYTES = 2_500_000
 SKIP_DIRS = {".git", ".vs", ".idea", "bin", "obj", "node_modules", "packages", "dist", "build", "out", "target", "vendor", ".venv",
              "venv", "__pycache__", "coverage", "graphify-out", "testresults", "artifacts", "publish"}
@@ -51,7 +73,7 @@ COMMENT_OF = {".cs": "c", ".fs": "c", ".java": "c", ".kt": "c", ".go": "c", ".ph
 
 SCHEME_PORT = {"http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21, "ftps": 990, "sftp": 22, "ssh": 22, "ldap": 389,
                "ldaps": 636, "amqp": 5672, "amqps": 5671, "mqtt": 1883, "mqtts": 8883, "redis": 6379, "rediss": 6380,
-               "mongodb": 27017, "postgres": 5432, "postgresql": 5432, "mysql": 3306, "sqlserver": 1433, "smtp": 25, "smtps": 465,
+               "mongodb": 27017, "memcached": 11211, "aerospike": 3000, "postgres": 5432, "postgresql": 5432, "mysql": 3306, "sqlserver": 1433, "smtp": 25, "smtps": 465,
                "net.tcp": 808, "grpc": 443, "smb": 445, "aspnet-state": 42424, "kafka": 9092, "nats": 4222, "imap": 143, "imaps": 993, "pop3": 110, "pop3s": 995}
 URL = re.compile(r"(?i)(?<![\w.+-])(https?|wss?|net\.tcp|ftps?|sftp|ssh|ldaps?|amqps?|mqtts?|rediss?|mongodb(?:\+srv)?|postgres(?:ql)?|"
                  r"mysql|sqlserver|smtps?|grpc|kafka|nats|imaps?|pop3s?|tcp)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9_.\-]+|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?")
@@ -85,9 +107,10 @@ HOST_KEY = re.compile(r"(?i)(^|[_.\-])(host|hostname|host_?name|hosts|server|ser
 SELF_KEY = re.compile(r"(?i)(^|[:._\-])(cookie\w*|domain|redirect\w*|callback\w*|return\w*|postlogout\w*|signedout\w*|logout\w*|"
                       r"allowedorigins?|cors\w*|origins?|allowedhosts|publicurl|siteurl|site_?url|appurl|app_?url|applicationurl|"
                       r"frontendurl|clienturl|selfurl|publicorigin)(:|$)|(^|:)(urls|kestrel)(:|$)")
-SCHEME_HINT = [(re.compile(r"(?i)smtp|mail|email"), "smtp"), (re.compile(r"(?i)redis|cache"), "redis"),
+SCHEME_HINT = [(re.compile(r"(?i)smtp|mail|email"), "smtp"), (re.compile(r"(?i)memcache"), "memcached"),
+               (re.compile(r"(?i)aerospike"), "aerospike"), (re.compile(r"(?i)mongo"), "mongodb"), (re.compile(r"(?i)redis|cache"), "redis"),
                (re.compile(r"(?i)rabbit|amqp"), "amqp"), (re.compile(r"(?i)kafka|bootstrap"), "kafka"),
-               (re.compile(r"(?i)mongo"), "mongodb"), (re.compile(r"(?i)ldap|activedirectory|\bad\b"), "ldap"),
+               (re.compile(r"(?i)ldap|activedirectory|\bad\b"), "ldap"),
                (re.compile(r"(?i)sftp"), "sftp"), (re.compile(r"(?i)unc|share|fileserver|filesrv|files"), "smb"), (re.compile(r"(?i)ftp"), "ftp"), (re.compile(r"(?i)elastic|opensearch"), "https"),
                (re.compile(r"(?i)postgres|npgsql|pgsql"), "postgresql"), (re.compile(r"(?i)mysql"), "mysql"),
                (re.compile(r"(?i)sql|database|\bdb\b"), "sqlserver"), (re.compile(r"(?i)mqtt"), "mqtt"), (re.compile(r"(?i)nats"), "nats")]
@@ -123,7 +146,7 @@ KEY_IN_CODE = re.compile(r"""(?:Configuration|config|_config|_configuration|cfg|
                          r"""(?:GetValue\s*<[^>]+>|GetValue\s*\(\s*Of\s+\w+\s*\)|GetSection|GetConnectionString|GetRequiredSection|"""
                          r"""AppSettings|ConnectionStrings)\s*\(\s*["']([\w:.\-]+)["']""", re.I)  # VB: AppSettings("Key")
 # \\server\share (also escaped "\\\\server\\share" in C# literals): SMB to a file server
-UNC = re.compile(r"(?<![\w\\])\\{2,4}([A-Za-z0-9][A-Za-z0-9.\-]{1,62})\\{1,2}[\w$.\-]+")
+UNC = re.compile(r"(?<![\w\\])(?P<lead>\\{2,4})(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]{1,62})(?P<sep>\\{1,2})[\w$.\-]+")
 INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|Local)?IP\s*\(\s*(\d{2,5})|\.Listen\s*\(\s*IPAddress\.\w+\s*,\s*(\d{2,5})|"""
                           r"""\bapp\.Run\s*\(\s*["'](https?://[^"']+)["']|\.listen\s*\(\s*(\d{2,5})""")
 
@@ -139,7 +162,9 @@ ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match
     (r"reportserver|reportservice|reportexecution|ssrs|/reports?\b|crystal", "Report server (SSRS / reporting)"),
     (r"^aspnet-state\b|session-state", "Session state server (ASP.NET)"),
     (r"^(sqlserver|postgres(ql)?|mysql|mongodb(\+srv)?)\b", "Database"),
-    (r"^rediss?\b|redis|memcache|elasticache", "Cache (Redis)"),
+    (r"^memcached\b|memcache", "Cache (Memcached)"),
+    (r"^aerospike\b|aerospike", "Cache (Aerospike)"),
+    (r"^rediss?\b|redis|elasticache", "Cache (Redis)"),
     (r"^(amqps?|kafka|mqtts?|nats)\b|rabbit|servicebus|kafka|activemq|\bqueue|\bsqs\b|\bsns\b|eventhub", "Message broker / queue"),
     (r"authority|identity|oidc|oauth|openid|\bsts\b|adfs|\blogin\.|\bsso\b|saml|issuer|okta|auth0|keycloak|cognito", "Identity provider"),
     (r"elastic|opensearch|\bseq\b|splunk|loki|datadog|newrelic|applicationinsights|logstash|graylog|sentry|otlp|opentelemetry", "Logging / monitoring"),
@@ -152,10 +177,19 @@ ROLES = [  # (pattern over scheme / source / key / URL path, role) - first match
     (r"^https?\b", "HTTP service / API"),
 ]
 ROLE_RX = [(re.compile(p, re.I), r) for p, r in ROLES]
+SERVICE_CONFIG_FILE = re.compile(r"(?i)^(redis|memcached?|aerospike|mongo\w*|rabbitmq|kafka|elasticsearch)$")  # a service's own config file
 
 
-def role_of(scheme, source, key, hint):
-    text = f"{scheme} {source} {key} {hint}"
+# a host found in a service reference (WSDL, discovery file, generated proxy) is a SOAP service, whatever its operation names say
+SOAP_FILE = re.compile(r"(?i)\.(wsdl|disco|discomap|svcmap|xsd)$|(^|/)Reference\.(cs|vb)$|(^|/)(Web|Service|Connected) References?/")
+
+
+def role_of(scheme, source, key, hint, file=""):
+    if SOAP_FILE.search((file or "").replace("\\", "/")) and not re.match(r"(?i)(sqlserver|postgres|mysql|mongodb|redis|memcached|aerospike)", scheme or ""):
+        return "SOAP / WCF service"
+    stem, ext = os.path.splitext(os.path.basename((file or "").replace("\\", "/")))
+    own = stem if ext.lower() in (".config", ".json", ".xml", ".yaml", ".yml") and SERVICE_CONFIG_FILE.match(stem) else ""  # redis.config names its service
+    text = f"{scheme} {source} {key} {hint} {own}"
     for rx, r in ROLE_RX:
         if rx.search(text):
             return r
@@ -226,7 +260,7 @@ class Scan:
             return
         self.seen.add(k)
         self.outbound.append({"host": host, "port": port, "scheme": scheme, "kind": host_kind(host), "source": source, "key": key,
-                              "file": file, "line": line, "port_default": default, "role": role_of(scheme, source, key, f"{host} {hint}"),
+                              "file": file, "line": line, "port_default": default, "role": role_of(scheme, source, key, f"{host} {hint}", file),
                               "third_party": file in self.vendored})
         if key:
             self.dest_keys.add(key)
@@ -255,7 +289,7 @@ class Scan:
     # ------------------------------------------------------------ walk
     def run(self):
         for d, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(x for x in dirs if x.lower() not in self.skip and not x.startswith("."))
+            dirs[:] = sorted(x for x in dirs if not skip_dir(d, x, self.skip) and not x.startswith("."))
             for fn in sorted(files):
                 ext = os.path.splitext(fn)[1].lower()
                 if ext not in TEXT_EXT and not NAMES.match(fn):
@@ -295,7 +329,9 @@ class Scan:
         for i, line in enumerate(text.splitlines(), 1):
             if "\\\\" in line and not (cm and cm.match(line)) and ext not in (".md", ".sql"):
                 for m in UNC.finditer(line):
-                    h = m.group(1)
+                    h = m.group("host")
+                    if ext in (".cs", ".vb") and len(m.group("lead")) == 2 and len(m.group("sep")) == 2:
+                        continue  # "\\Folder\\file.xml" in a regular string is one escaped backslash: a relative path, not \\server\share
                     if not re.fullmatch(r"(?i)\?|\.|localhost|wsl\$|wsl\.localhost|tsclient|[a-z]", h) and not re.fullmatch(r"\d+", h):
                         self.out(h, None, "smb", "unc-path", rp, i)
             if ext in (".cs", ".vb") and not (cm and cm.match(line)):
@@ -334,7 +370,7 @@ class Scan:
             return
         u = UNC.search(value)
         if u:
-            self.out(u.group(1), None, "smb", "unc-path", rp, line, key)
+            self.out(u.group("host"), None, "smb", "unc-path", rp, line, key)
             return
         leaf = re.split(r"[:.]", key)[-1]
         if not HOST_KEY.search(leaf):
@@ -360,7 +396,7 @@ class Scan:
                 return self.connection_string(rp, line, name, inner.group(1).replace("&quot;", ""), provider)
         server = next((v for k, v in parts.items() if CONN_HOST.match(k)), "")
         if not server:
-            first = cs.split(",")[0].strip()  # StackExchange.Redis: "host:6379,password=…,ssl=True"
+            first = cs.split(",")[0].strip()  # StackExchange.Redis: "host:6379 then key=value options"
             if HOSTLIKE.match(first) or re.fullmatch(r"[A-Za-z][\w\-]+:\d{2,5}", first):
                 h, p = split_host_port(first)
                 self.out(h, p, "redis" if re.search(r"(?i)redis|cache", name + cs) else scheme_for(name), "connection-string", rp, line, name)
@@ -374,7 +410,10 @@ class Scan:
         m = re.match(r"^(.*?)[,:](\d{2,5})$", hostpart)
         if m:
             hostpart, port = m.group(1), m.group(2)
-        if re.search(r"(?i)npgsql|postgres", provider + name) or ("host" in parts and ("username" in parts or "port" in parts)):
+        nonsql = re.search(r"(?i)mongo|memcache|aerospike|redis", f"{provider} {name} {cs}")
+        if nonsql:  # Server=...;Database=... is not only SQL Server: the key or provider names the store
+            scheme = {"mongo": "mongodb", "memcache": "memcached", "aerospike": "aerospike", "redis": "redis"}[nonsql.group(0).lower()]
+        elif re.search(r"(?i)npgsql|postgres", provider + name) or ("host" in parts and ("username" in parts or "port" in parts)):
             scheme = "postgresql"
         elif re.search(r"(?i)mysql", provider + name) or "uid" in parts and "port" in parts and "initial catalog" not in parts:
             scheme = "mysql"

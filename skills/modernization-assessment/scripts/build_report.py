@@ -14,6 +14,7 @@ import argparse
 import csv
 import datetime
 import json
+import math
 import os
 import re
 import shutil
@@ -78,6 +79,14 @@ class Ctx:
         VALUES.update({"estimate": self.est, "classification": self.cls, "inventory": self.inv, "scan": self.scan,
                        "graph": {r: g or {} for r, g in self.graph.items()},
                        "findings": {"total": len(self.findings), **{s.lower(): n for s, n in Counter(f["severity"] for f in self.findings).items()}}})
+        p = phased(self)  # {{v:phased.low}}-{{v:phased.high}} h, {{v:phased.scenarios[Engineer-paced rates].low}}: the planning figure in narratives
+        if p:
+            VALUES["phased"] = {"low": p["total"][0], "high": p["total"][1], "days_low": round(p["total"][0] / p["hpd"]), "days_high": round(p["total"][1] / p["hpd"]),
+                                "weeks_low": p["weeks"][0], "weeks_high": p["weeks"][1], "engineers": p["engineers"], "profile": p["profile"],
+                                "buffer_pct": int(round(p["buffer"] * 100)),
+                                "phases": {k: {"low": round(v[0]), "high": round(v[1])} for k, v in p["phases"].items()},
+                                "scenarios": {k: {"low": v[0], "high": v[1], "delta_low": v[0] - p["total"][0], "delta_high": v[1] - p["total"][1]}
+                                              for k, v in p["scenarios"].items()}}
         FINDING_REFS.clear()  # rule -> findings, for {{f:RULE}} tags in narratives (F-numbers change whenever findings change)
         for f in self.findings:
             FINDING_REFS.setdefault(f["rule"].lower(), []).append(f)
@@ -95,12 +104,12 @@ def b_headline(c):
             ("Lines of code (C#, VB.NET, markup)", f"{loc:,}"),
             ("Recommended path (7R)", ", ".join(f"{k} {v}" for k, v in r7.most_common()) or "-"),
             ("Findings", ", ".join(f"{k} {sev[k]}" for k in SEVS if sev[k]) or "none"),
-            *(H.headline_rows(hrs) if hrs else [
+            *(H.headline_rows(hrs) if hrs else headline_effort(c, t) or [
             ("Effort" + (" (AI-assisted delivery)" if c.est.get("ai_assisted") else ""),
              f"likely (P50) {t.get('likely_hours', '-')} h / {t['likely_days']} d; 80% range (P10–P90) {hd(t['total_days'], t.get('total_hours'))}"
              + (f"; commitment (P80) {t['p80_hours']} h" if t.get("p80_hours") else "") if t.get("total_days") else "not estimated"),
             ("Manual-equivalent effort (for comparison)", hd(t["manual_equivalent_days"], t.get("manual_equivalent_hours")) if t.get("manual_equivalent_days") else "-"),
-            ("Indicative duration", f"~{t.get('duration_weeks')} weeks at P50" + (f", ~{t['duration_weeks_p80']} weeks at P80" if t.get("duration_weeks_p80") else "")
+            ("Indicative duration", f"~{weeks_text(t.get('duration_weeks'))} at P50" + (f", ~{weeks_text(t['duration_weeks_p80'])} at P80" if t.get("duration_weeks_p80") else "")
              + f" with {c.est.get('engineers')} engineers" + sprint_note(c.est.get("sprints") or {}) if t.get("duration_weeks") else "-")]),
             ("Target platform", "Amazon EC2 with the same operating systems as today (Windows to Windows, Linux to Linux)" if lift(c.cfg)
              else f"{pretty_tfm(c.cfg.get('target_dotnet', 'net10.0'))} (LTS, supported to 2028-11-14) on Linux, AWS")]
@@ -114,10 +123,37 @@ def b_headline(c):
     return table(["Measure", "Value"], rows)
 
 
+def headline_effort(c, t):
+    """At-a-glance effort rows led by the phased planning figure (the same number as the summary and section 8.1); None without it."""
+    p = phased(c)
+    if not p:
+        return None
+    lo, hi = p["total"]
+    rows = [(f"Effort (planning figure, {p['profile']})", f"**{lo:,}–{hi:,} h** ({lo / p['hpd']:.0f}–{hi / p['hpd']:.0f} dev-days of {p['hpd']:g} h), {int(round(p['buffer'] * 100))}% buffer included "
+             "(phased estimate, section 8.1)")]
+    if t.get("likely_hours"):
+        rows.append(("Cross-check (parametric model)", f"likely {t['likely_hours']} h; P10–P90 {rng(t.get('total_hours', [0, 0]), ' h')}"))
+    ep = next((v for k, v in p["scenarios"].items() if k.lower().startswith("engineer-paced")), None)
+    if ep:
+        rows.append(("Engineer-paced comparison", f"{ep[0]:,}–{ep[1]:,} h if engineers review every line and hand-fix"))
+    rows.append(("Indicative duration", (f"~{p['weeks'][0]}–{p['weeks'][1]} weeks" if p["weeks"][1] != p["weeks"][0] else f"~{weeks_text(p['weeks'][0])}")
+                 + f" with {p['engineers']} engineers (planning figure; the sprint plan in 8.5 follows the parametric cross-check)"))
+    return rows
+
+
 def b_key_risks(c):
     keep = scope_of(c) if lift(c.cfg) else None  # a lift-and-shift report leads with what blocks the move, not with Linux work
-    top = [f for f in c.findings if f["severity"] in ("Blocker", "High") and in_scope(f, keep)][:8]
-    return table(["Ref", "Severity", "Finding", "Where"], [(f["ref"], f["severity"], f["title"], ", ".join(c.apps[a]["name"] for a in f.get("apps", []) if a in c.apps) or f["repo"]) for f in top])
+    groups = {}  # one row per issue: the same rule found in several projects is one risk, listed with every project it is in
+    for f in c.findings:
+        if f["severity"] in ("Blocker", "High") and in_scope(f, keep):
+            g = groups.setdefault((f["severity"], f["title"]), {"refs": [], "where": []})
+            g["refs"].append(f["ref"])
+            proj = os.path.splitext(os.path.basename(f.get("project") or ""))[0] if not str(f.get("project") or "(").startswith("(") else ""
+            w = proj or ", ".join(c.apps[a]["name"] for a in f.get("apps", []) if a in c.apps) or f["repo"]
+            if w not in g["where"]:
+                g["where"].append(w)
+    rows = [(", ".join(g["refs"]), sev, title, ", ".join(g["where"])) for (sev, title), g in list(groups.items())[:8]]
+    return table(["Ref", "Severity", "Finding", "Where"], rows)
 
 
 def b_scope(c):
@@ -492,16 +528,23 @@ def b_wiring(c):
 def b_dependencies(c):
     rows = []
     for r in c.repos:
+        conns = A.connection_rows(c.scan[r])
+        db_hosts = {(cs.get("host") or "").lower(): cs for cs in conns if cs.get("host") and not cs.get("database")}
         for e in c.scan[r].get("endpoints", []):
+            if e["host"] in db_hosts:
+                continue  # the database row below is the same host with what it is (engine, provider)
             kind = {"internal": "On-prem / internal", "external": "External service", "external-ip": "Public IP"}.get(e["kind"], e["kind"])
             ev = e["evidence"][0] if e.get("evidence") else {}
             rows.append((kind, e["host"], ", ".join(e["schemes"]), e["occurrences"], f"{ev.get('file')}:{ev.get('line')}" if ev else "", r))
-        for cs in A.connection_rows(c.scan[r]):
-            rows.append((f"Database ({cs['engine_name']})", f"{cs.get('host') or '-'} / {cs.get('database') or '-'}",
+        for cs in conns:
+            rows.append((f"Database ({cs['engine_name']})", f"{cs.get('host') or '-'}" + (f" / {cs['database']}" if cs.get("database") else ""),
                          f"{cs.get('provider') or ('SqlClient' if cs['engine'] == 'sqlserver' else cs['engine_name'])}; auth {cs.get('auth')}" + ("; LocalDB (dev)" if cs.get("localdb") else ""),
                          cs["count"], f"{cs['file']}:{cs['line']}", r))
     rows.sort(key=lambda x: (x[0] != "On-prem / internal", x[0], x[1]))
     return table(["Kind", "System", "Protocol / details", "References", "First evidence", "Repository"], rows)
+
+
+SERVICE_OF = {"smtp": "smtp", "mongodb": "mongodb", "redis": "redis", "memcached": "memcached", "aerospike": "aerospike"}  # infra type -> aws_native service id
 
 
 def _infra_view(c):
@@ -513,10 +556,33 @@ def b_server_deps(c):
     if not v or not v.get("rows"):
         return "_Server dependencies were not mapped (run map_infra.py after scan_repo.py)._"
     note = (f"Linked to the client's infrastructure list ({v['server_list']}). " if v.get("server_list") else "No infrastructure list was imported, so dependencies are not linked to servers. ")
-    rows = [(r["repo"], r["label"], r["strength"], r["hosts_in_code"] or "-", r["link_status"], r["matched_servers"] or (f"{r['candidate_servers']} candidate(s): {r['candidate_envs']}" if r["candidate_servers"] else "-"),
-             r["lift_and_shift"]) for r in v["rows"] if r["strength"] != "local-dev only"]
+    aws = {r: {s["id"]: s for s in (read_json(os.path.join(OUT, "effort", r, "aws-native.json"), {}) or {}).get("services", [])} for r in c.repos}
+    db = (c.est.get("scenario") or {}).get("database", "none")
+    in_scope = (c.cfg.get("intake") or {}).get("aws_native") == "now"
+
+    def strength(r):
+        s = (aws.get(r["repo"]) or {}).get(SERVICE_OF.get(r["type"], r["type"]))
+        if s and s.get("consumer_sites") and r["strength"].startswith(("likely (library", "possible")):
+            return f"confirmed (library and {s['consumer_sites']} call site{'' if s['consumer_sites'] == 1 else 's'} through its wrapper)"
+        return r["strength"]
+
+    def target(r):
+        """Modernization: where this server ends up in this plan (the chosen AWS option), not what a lift-and-shift would carry."""
+        if r["type"] == "sql-server":
+            return {"dual": "SQL Server stays (Amazon RDS for SQL Server or EC2) while the code runs dual; PostgreSQL (Amazon RDS / Aurora) is added",
+                    "postgresql": "Moves to PostgreSQL (Amazon RDS / Aurora PostgreSQL)"}.get(db, "Stays on SQL Server (Amazon RDS for SQL Server or EC2)")
+        s = (aws.get(r["repo"]) or {}).get(SERVICE_OF.get(r["type"], r["type"]))
+        o = next((x for x in (s or {}).get("options", []) if x.get("chosen")), None)
+        if o:
+            return o["aws"] + ("" if in_scope else " (option; not in scope at intake)")
+        return r.get("aws_option") or r["lift_and_shift"]
+
+    lifted = lift(c.cfg)
+    rows = [(r["repo"], r["label"], strength(r), r["hosts_in_code"] or "-", r["link_status"], r["matched_servers"] or (f"{r['candidate_servers']} candidate(s): {r['candidate_envs']}" if r["candidate_servers"] else "-"),
+             r["lift_and_shift"] if lifted else target(r)) for r in v["rows"] if r["strength"] != "local-dev only"]
     local = [r for r in v["rows"] if r["strength"] == "local-dev only"]
-    out = note + "Evidence is file:line in `assessment/infra/<repo>.json`; configuration values are never copied.\n\n" + table(["Repository", "Server type", "How sure", "Hosts named in code", "Link to the list", "Servers", "What moves in a lift-and-shift"], rows)
+    out = note + "Evidence is file:line in `assessment/infra/<repo>.json`; configuration values are never copied. \"Servers\" are the servers of that type in the list (with their environment) when the code names no host.\n\n" + table(
+        ["Repository", "Server type", "How sure", "Hosts named in code", "Link to the list", "Servers", "What moves in a lift-and-shift" if lifted else "On AWS in this plan"], rows)
     if local:
         out += "\n\nOnly in docker-compose files (local development, not production): " + "; ".join(f"{r['repo']}: {r['label']}" for r in local) + "."
     cov = [r for r in v.get("server_coverage", []) if "ask DevOps" in r["note"]]
@@ -955,11 +1021,11 @@ def b_scenarios(c):
     out = ["**Code-side options** (database scenario: " + (c.est.get("scenario", {}).get("database_label") or "") + "; coding effort only)\n"]
     out.append(table(["Option", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual likely", "Duration", "Notes"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), hd(x["total_days"], x["total_hours"]), f"{x['likely_hours']} h / {x['likely_days']} d",
-                       f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks", " ".join(x.get("notes", []))[:300]) for x in comp if x["kind"] == "hosting"]))
+                       f"{x['manual_likely_hours']} h", f"~{weeks_text(x['duration_weeks'])}", " ".join(x.get("notes", []))[:300]) for x in comp if x["kind"] == "hosting"]))
     out.append("\n**Database code options** (code scenario: " + (c.est.get("scenario", {}).get("hosting_label") or "") + ")\n")
     out.append(table(["Option", "Database work (P10–P90)", "Total effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual likely", "Duration"],
                      [(("**" if x["selected"] else "") + x["label"] + (" (selected)**" if x["selected"] else ""), rng(x.get("database_hours", [0, 0]), " h"), hd(x["total_days"], x["total_hours"]),
-                       f"{x['likely_hours']} h / {x['likely_days']} d", f"{x['manual_likely_hours']} h", f"~{x['duration_weeks']} weeks") for x in comp if x["kind"] == "database"]))
+                       f"{x['likely_hours']} h / {x['likely_days']} d", f"{x['manual_likely_hours']} h", f"~{weeks_text(x['duration_weeks'])}") for x in comp if x["kind"] == "database"]))
     return "\n".join(out)
 
 
@@ -968,15 +1034,22 @@ def b_optional(c):
     items = c.est.get("optional") or []
     if not items:
         return "_No optional modernization opportunities were detected (SMTP / SMS, Kafka / message queues, local file storage, in-process caches and schedulers, custom authentication, file logging, self-hosted search)._"
-    rows = [(o["title"], o["aws"], o["count"], ", ".join(f"`{f['file']}:{f['line']}`" for f in o["files"][:2]) + (f" +{o['count'] - 2} more" if o["count"] > 2 else ""),
-             rng(o["hours"], " h"), o["why"]) for o in items]
-    t = (c.est.get("totals") or {}).get("optional_hours", [0, 0])
-    lead = ("The client chose to replace these servers with AWS managed services in this engagement (intake), so **their hours are included in the effort estimate**."
-            if (c.est.get("totals") or {}).get("optional_in_scope") else
-            "These are improvements the client may choose; none is needed to run on Linux or AWS and **none is included in the effort estimate**.")
-    return (lead + " Hours are AI-assisted coding hours per item.\n\n" +
-            table(["Opportunity", "Suggested AWS service", "Files", "Evidence", "Coding effort", "Why consider it"], rows) +
-            f"\n\nIf every item were adopted: {rng(t, ' h')} of additional coding.")
+    def rows_of(xs):
+        return [(o["title"], o["aws"], o["count"], ", ".join(f"`{f['file']}:{f['line']}`" for f in o["files"][:2]) + (f" +{o['count'] - 2} more" if o["count"] > 2 else ""),
+                 rng(o["hours"], " h"), o["why"]) for o in xs]
+    cols = ["Opportunity", "AWS service", "Files", "Evidence", "Coding effort", "What changes / why"]
+    swaps = [o for o in items if o.get("in_estimate")]
+    rest = [o for o in items if not o.get("in_estimate")]
+    t = c.est.get("totals") or {}
+    out = []
+    if swaps:
+        out.append("**AWS managed-service swaps (in the estimate).** The client chose to replace these servers with AWS managed services in this engagement "
+                   f"(intake), so their hours are in the totals: {rng(t.get('aws_swap_hours', [0, 0]), ' h')} here (parametric), and phase P5 of the phased plan. "
+                   "Hours are AI-assisted coding hours per item.\n\n" + table(cols, rows_of(swaps)))
+    if rest:
+        out.append("**Optional modernizations (not in the estimate).** Improvements the client may choose; none is needed to run on Linux or AWS. "
+                   f"If every one were adopted: {rng(t.get('optional_hours', [0, 0]), ' h')} of additional coding.\n\n" + table(cols, rows_of(rest)))
+    return "\n\n".join(out)
 
 
 def b_app_plans(c):
@@ -1015,13 +1088,39 @@ def b_hybrid(c):
     return table(["Shared library", "Used by", "Current TFM", "Stays on .NET Framework", "Moves to .NET 10", "Plan", "Note"], rows)
 
 
-def phased_lead(c):
-    """When estimate_phases.py ran, its tool-run hours are the planning figure: say so above the parametric table."""
+def phased(c):
+    """The phased estimate (estimate_phases.py) summed over the repositories, or None when it has not run: the planning figure."""
     ph = [(r, read_json(os.path.join(OUT, "effort", r, "estimate.json"), {}) or {}) for r in c.repos]
     ph = [(r, e) for r, e in ph if e.get("total")]
     if not ph:
-        return ""
+        return None
+    sc, phs = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0.0, 0.0])
+    for _, e in ph:
+        for x in e.get("phases", []):
+            phs[x["id"]][0] += x.get("low") or 0
+            phs[x["id"]][1] += x.get("high") or 0
+        for s in e.get("scenarios", []):
+            if s.get("total"):
+                sc[s["name"]][0] += s["total"][0]
+                sc[s["name"]][1] += s["total"][1]
+    eng = c.est.get("engineers") or 3
+    hpd = ph[0][1].get("hours_per_day", 6)  # the phased model's productive hours per developer-day (efficiency already in it)
+    per_week = eng * 5 * hpd
     lo, hi = sum(e["total"][0] for _, e in ph), sum(e["total"][1] for _, e in ph)
+    return {"repos": ph, "total": [lo, hi], "profile": ph[0][1].get("rate_profile", "claude-first"), "buffer": ph[0][1].get("buffer", 0), "hpd": hpd,
+            "scenarios": dict(sc), "phases": dict(phs), "engineers": eng, "weeks": [max(1, math.ceil(lo / per_week)), max(1, math.ceil(hi / per_week))]}
+
+
+def weeks_text(w):
+    return f"{w} week" + ("" if w == 1 else "s")
+
+
+def phased_lead(c):
+    """When estimate_phases.py ran, its tool-run hours are the planning figure: say so above the parametric table."""
+    p = phased(c)
+    if not p:
+        return ""
+    ph, (lo, hi) = p["repos"], p["total"]
     t = c.est.get("totals", {})
     return (f"**Planning figure: {lo:,.0f}-{hi:,.0f} h** from the phased estimate (estimate_phases.py: a {ph[0][1].get('rate_profile', 'claude-first')} port in six phases, item by item, "
             f"{int(round(ph[0][1].get('buffer', 0) * 100))}% buffer included; per repository in `effort/<repo>/estimate.html`). "

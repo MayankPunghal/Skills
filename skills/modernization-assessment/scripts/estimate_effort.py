@@ -206,6 +206,15 @@ def db_work_items(d):
     return [(f"{d['repo']}: {label}", o["likely_hours"] * w / tot) for label, w in weights if w > 0]
 
 
+def aws_choices(cfg, repo):
+    """AWS managed-service options chosen for a repository: assessment.json aws_native_choices, overridden by the repository's
+    effort/<repo>/estimate-inputs.json (the same choices the phased estimate uses, so the two models price the same targets)."""
+    ch = dict(cfg.get("aws_native_choices") or {})
+    inp = read_json(os.path.join(OUT, "effort", repo, "estimate-inputs.json"), {}) or {}
+    ch.update(((inp.get("aws_native_choices") or {}).get("value")) or {})
+    return ch
+
+
 def sprint_plan(app_queue, db_work, engineers, est, start_date=None, p80_ratio=1.0):
     """Coding sprints from the day of codebase access. app_queue: [(name, P50 hours)] in dependency order; db_work: [(name, hours)]
     run in its own lane (estimation.json sprints.db_engineers) when there are 2+ engineers, else after the application work.
@@ -353,7 +362,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         if repo not in OPTIONAL_CACHE:  # the scan does not depend on the scenario; compute() runs once per scenario
             # server-hosted services (caches, search, SMTP, SFTP, queues, MongoDB, hosted logging) priced from their wrapper,
             # call sites and settings (aws_native.py); they replace the flat generic item for the same service
-            svc_rows = AN.optional_rows(AN.scan(inv["root"], choices=cfg.get("aws_native_choices") or {}))
+            svc_rows = AN.optional_rows(AN.scan(inv["root"], choices=aws_choices(cfg, repo)))
             gone = {x for r in svc_rows for x in r["supersedes"]}
             OPTIONAL_CACHE[repo] = [o for o in O.scan_repo(inv["root"], inv) if o["id"] not in gone] + svc_rows
         optional += [dict(o, repo=repo) for o in OPTIONAL_CACHE[repo]]
@@ -380,9 +389,9 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 h, hred = scale(h, rscale), scale(hred, rscale)
                 hmech = [max(h[i] - hred[i], 0.0) for i in (0, 1)]
                 code_manual = add(code_manual, h)
-                for kind, part in (("code", hmech), ("red", hred)):
+                for item_kind, part in (("code", hmech), ("red", hred)):  # not `kind`: that is the work package's own kind
                     if part[1] > 0:
-                        items.append({"pkg": wp_id, "lo": part[0], "hi": part[1], "kind": kind, "pos": rpos})
+                        items.append({"pkg": wp_id, "lo": part[0], "hi": part[1], "kind": item_kind, "pos": rpos})
                 red_manual = add(red_manual, hred)
                 lines.append({"item": f"Port {p['name']} ({p['type']}, {p.get('loc_code', 0):,} lines) to {cfg.get('target_dotnet')}", "manual_hours": r1(h),
                               "kloc": round(kloc, 2), "markup_kloc": round((p.get("loc_markup") or 0) / 1000.0, 2), "complexity_factor": cf,
@@ -518,11 +527,6 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                        "weeks": max(1, math.ceil(sum(p["likely_hours"] for p in repo_wide) / per_week_h))})
     if retired:
         phases.append({"phase": "Remove: " + ", ".join(p["name"] for p in retired) + " (after client confirmation)", "start": 0, "weeks": 1})
-    queue = [(p["name"], p["likely_hours"]) for p in shared + repo_wide + apps_wp + retired]
-    db_work = [w for d in db_packages if d["selected"] != "none" for w in db_work_items(d)]
-    sprints = sprint_plan(queue, db_work, engineers, est, start_date, ai_t["p80"] / likely_h if likely_h else 1.0)
-    end = sprints["weeks_p50"] if sprints["plan"] else max([p["start"] + p["weeks"] for p in phases] or [0])
-    kloc_all = sum((p.get("loc_code") or 0) for r in F.repos(root) for p in (F.load_inventory(root, r) or {"projects": []})["projects"]) / 1000.0
     opt_rows = []
     for o in optional:
         if o.get("factor"):  # aws_native row: manual-equivalent hours already built from its evidence
@@ -531,18 +535,29 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             assisted = [manual[i] * fac[i] for i in (0, 1)]
         else:
             manual, assisted = O.hours(o, code_f)
-        opt_rows.append(dict(o, manual_hours=r1(manual), hours=r1(assisted), likely_hours=round(lk(assisted, pos), 1)))
-    opt_tot = [round(sum(o["hours"][i] for o in opt_rows)) for i in (0, 1)]
-    rng_h, rng_man = [ai_t["p10"], ai_t["p90"]], [man_t["p10"], man_t["p90"]]
+        opt_rows.append(dict(o, manual_hours=r1(manual), hours=r1(assisted), likely_hours=round(lk(assisted, pos), 1),
+                             in_estimate=False))
     opt_in = (cfg.get("intake") or {}).get("aws_native") == "now"  # intake: replace servers with AWS managed services in this engagement
-    if opt_in and opt_rows:
-        opt_likely = sum(o["likely_hours"] for o in opt_rows)
-        rng_h = [rng_h[0] + opt_tot[0], rng_h[1] + opt_tot[1]]
-        likely_h += opt_likely
-        ai_t = dict(ai_t, p80=ai_t["p80"] + lk(opt_tot, 0.8))
-        grand_h = add(grand_h, opt_tot)
-        notes.append(f"AWS managed-service replacements are in scope (intake): {opt_tot[0]}-{opt_tot[1]} h added to the total "
-                     f"(likely {round(opt_likely)} h); the sprint plan does not include them yet.")
+    swaps = [o for o in opt_rows if opt_in and o["id"].startswith("AWS-")]  # the server swaps chosen at intake; the other ideas stay optional
+    for o in swaps:
+        o["in_estimate"] = True
+    swap_tot = [round(sum(o["hours"][i] for o in swaps), 1) for i in (0, 1)]
+    opt_tot = [round(sum(o["hours"][i] for o in opt_rows if not o["in_estimate"])) for i in (0, 1)]
+    queue = [(p["name"], p["likely_hours"]) for p in shared + repo_wide + apps_wp + retired]
+    queue += [(f"{o['repo']}: {o['title']} -> {o['aws']}", o["likely_hours"]) for o in swaps]
+    db_work = [w for d in db_packages if d["selected"] != "none" for w in db_work_items(d)]
+    swap_likely = sum(o["likely_hours"] for o in swaps)
+    sprints = sprint_plan(queue, db_work, engineers, est, start_date, ai_t["p80"] / likely_h if likely_h else 1.0)
+    end = sprints["weeks_p50"] if sprints["plan"] else max([p["start"] + p["weeks"] for p in phases] or [0])
+    kloc_all = sum((p.get("loc_code") or 0) for r in F.repos(root) for p in (F.load_inventory(root, r) or {"projects": []})["projects"]) / 1000.0
+    rng_h, rng_man = [ai_t["p10"], ai_t["p90"]], [man_t["p10"], man_t["p90"]]
+    if swaps:
+        rng_h = [rng_h[0] + swap_tot[0], rng_h[1] + swap_tot[1]]
+        likely_h += swap_likely
+        ai_t = dict(ai_t, p80=ai_t["p80"] + lk(swap_tot, 0.8))
+        grand_h = add(grand_h, swap_tot)
+        notes.append(f"AWS managed-service swaps are in scope (intake): {round(swap_tot[0])}-{round(swap_tot[1])} h added to the total "
+                     f"(likely {round(swap_likely)} h) and planned in the sprints; other optional modernizations ({opt_tot[0]}-{opt_tot[1]} h) are not.")
     app_t = MC.summary(MC.total(sim, [p["id"] for p in packages]) or [0.0])
     db_t = MC.summary(MC.total(sim, [d["options"][d["selected"]]["pkg"] for d in db_packages if d["selected"] != "none"]) or [0.0])
     totals = {"total_hours": [round(x) for x in rng_h], "likely_hours": round(likely_h), "total_days": [round(x / HPD, 1) for x in rng_h],
@@ -555,7 +570,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
               "duration_weeks": end, "duration_weeks_p80": sprints.get("weeks_p80", end),
               "person_months_likely": round(likely_h / HPD / 20.0, 1),
               "kloc": round(kloc_all, 1), "likely_hours_per_kloc": round(likely_h / kloc_all, 2) if kloc_all else 0,
-              "optional_hours": opt_tot, "optional_in_scope": bool(opt_in and opt_rows)}
+              "optional_hours": opt_tot, "optional_in_scope": bool(swaps), "aws_swap_hours": [round(x) for x in swap_tot],
+              "aws_swap_likely_hours": round(swap_likely)}
     return {"packages": packages, "databases": db_packages, "totals": totals, "timeline": phases, "sprints": sprints, "notes": notes, "optional": opt_rows,
             "factors": {"code": code_f, "db": db_f, "redesign": red_f}, "scale": scale_by_repo, "likely_position": pos_by_repo, "explain": explain_rows}
 

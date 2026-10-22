@@ -265,7 +265,7 @@ def collect(c, cfg):
 # blocks that need a heading on their card (the Markdown report has its own section headings)
 BLOCK_TITLES = {"estimate": "Effort (developer hours)", "sprints": "Coding sprint plan", "multipliers": "How the hours are built", "assumptions": "Estimate assumptions",
                 "methodology": "How the estimate was calculated",
-                "optional": "Optional modernizations", "estate-extrapolation": "Whole estate (estimated from the assessed sample)",
+                "optional": "AWS service swaps and optional modernizations", "estate-extrapolation": "Whole estate (estimated from the assessed sample)",
                 "aws-native": "Replacing servers with AWS managed services", "findings-future": "Linux and .NET modernization findings, for later",
                 "intake": "What the client asked for", "appendix-linux-checklist": "Linux readiness checklist (confirmed by a person)", "landing-summary": "What must change for the move"}
 

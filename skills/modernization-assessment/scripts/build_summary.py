@@ -9,6 +9,7 @@ full assessment report, the per-repository effort inputs, estimates, Linux readi
 detail behind it; the last section links them.
 """
 import argparse
+import math
 import os
 import re
 from collections import Counter, defaultdict
@@ -64,9 +65,10 @@ def main():
     if reps:
         tot = est.get("total", [0, 0])
         hpd = next(iter(reps.values())).get("hours_per_day", 6)
-        weeks2 = [round(tot[0] / (2 * hpd * 5), 1), round(tot[1] / (2 * hpd * 5), 1)]
+        eng = c.est.get("engineers") or 2  # the same team size as the report's at-a-glance duration
+        weeks2 = [max(1, math.ceil(tot[0] / (eng * hpd * 5))), max(1, math.ceil(tot[1] / (eng * hpd * 5)))]
         engines = sorted({v["engine"] for v in reps.values()})
-        L.append(f"- **Effort: {h(*tot)}** (planning grade, +-25%, buffer included): about {weeks2[0]}-{weeks2[1]} weeks for two developers. "
+        L.append(f"- **Effort: {h(*tot)}** (planning grade, +-25%, buffer included): about {weeks2[0]}-{weeks2[1]} weeks for a team of {eng}. "
                  f"Port by {', '.join(engines)}; Claude cleans up what the engine leaves; {next(iter(reps.values()))['db_tool']} adds the PostgreSQL path.")
     elif c.est.get("totals"):
         t = c.est["totals"]

@@ -72,6 +72,9 @@ BLOCK_COMMENT = {"cs": re.compile(r"/\*.*?\*/", re.S), "js": re.compile(r"/\*.*?
 
 URL_RX = re.compile(r"(?i)\b(https?|net\.tcp|net\.pipe|ftp|sftp|ldaps?|amqps?|tcp)://(?:[^\s/@\"'<>]+@)?([A-Za-z0-9_.\-]+|\[[0-9a-f:]+\])(:\d+)?([^\s\"'<>)]*)")
 IP_RX = re.compile(r"(?<![\w.])((?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})(?![\w.])")
+# a bare IP in a service's own config file or under a service-named key: name the service instead of "ip"
+IP_SERVICE_HINT = re.compile(r"(?i)(?<![a-z])(redis|memcached?|aerospike|mongo(?:db)?|rabbitmq|kafka|elasticsearch|smtp|ldap)(?![a-z])")
+IP_SERVICE_NAME = {"memcache": "memcached", "mongo": "mongodb"}
 SKIP_HOSTS = re.compile(r"(?i)^(localhost|127\.0\.0\.1|0\.0\.0\.0|\+|\*|example\.(com|org)|.*\.example\.com|tempuri\.org|schemas\.(microsoft|xmlsoap|openxmlformats)\.(com|org)|"
                         r"www\.w3\.org|w3\.org|go\.microsoft\.com|aka\.ms|json-schema\.org|purl\.org|xmlns\.com|docs\.(microsoft|oasis-open)\.(com|org)|"
                         r"msdn\.microsoft\.com|learn\.microsoft\.com|www\.asp\.net|asp\.net|github\.com|raw\.githubusercontent\.com|.*\.githubusercontent\.com|"
@@ -401,7 +404,8 @@ class Scan:
                     octets = [int(x) for x in ip.split(".")]
                     if ip.startswith(("0.", "127.", "255.")) or ip.endswith(".0.0") or all(o < 10 for o in octets):
                         continue  # version-like dotted numbers (2.3.2.0, 1.1.0.1) are not addresses
-                    self.endpoint(ip, "ip", rp, project, i, line, ftype)
+                    svc = IP_SERVICE_HINT.search(os.path.basename(rp) + " " + line)  # redis.config, memcached.config, <add key="Mongo..." value="10.0.0.5">
+                    self.endpoint(ip, IP_SERVICE_NAME.get(svc.group(1).lower(), svc.group(1).lower()) if svc else "ip", rp, project, i, line, ftype)
 
     def endpoint(self, host, scheme, rp, project, line_no, line, ftype):
         e = self.facts["endpoints"].setdefault(host.lower(), {"host": host.lower(), "kind": host_kind(host), "schemes": [], "files": [], "occurrences": 0, "evidence": []})
@@ -1346,8 +1350,11 @@ def recommend(row, meta, target):
     cur = max(row["versions"], key=ver_tuple)
     cm = by_v.get(cur) or next((m for m in reversed(meta) if ver_tuple(m["v"]) <= ver_tuple(cur)), None)
 
+    pkg_tfms = ((row.get("nuget") or {}).get("frameworks") or [])  # frameworks of the package itself (lib/ folders), when versions_meta has none
+
     def compat(m):
-        cls = {tfm_class(t, tmaj) for t in m["tfms"]} - {None}
+        tfms = m["tfms"] or (pkg_tfms if m["v"] == (row.get("nuget") or {}).get("latest") or not (row.get("nuget") or {}).get("supports_modern") else [])
+        cls = {tfm_class(t, tmaj) for t in tfms} - {None}
         return "ok" if "ok" in cls else "windows" if "windows" in cls else "netfx" if "netfx" in cls else None
 
     def problems(m):

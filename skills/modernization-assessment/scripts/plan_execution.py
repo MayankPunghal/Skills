@@ -169,6 +169,9 @@ def main():
     for d in est.get("databases", []):
         o = (d.get("options") or {}).get(d.get("selected")) or {}
         by_stream["db"] += o.get("likely_hours") or 0
+    for o in est.get("optional", []):
+        if o.get("in_estimate"):  # AWS managed-service swaps chosen at intake: their own work, not inside any work package
+            by_stream["aws-native"] += o.get("likely_hours") or 0
     plan["hours_by_stream"] = {k: round(v) for k, v in by_stream.most_common()}
     json.dump(plan, open(os.path.join(root, OUT, "execution-plan.json"), "w", encoding="utf-8"), indent=1)
 
@@ -227,7 +230,7 @@ def main():
         L += ["", "## AWS managed-service swaps (Claude)", "", "| Repository | Service | AWS target | Hours | Where |", "|---|---|---|---|---|"]
         for s in plan["aws_native"]:
             h = s.get("hours") or [0, 0]
-            L.append(f"| {s['repo']} | {s['service']} | {s['target']} | {h[0]:g}-{h[1]:g} | {', '.join('`' + x + '`' for x in s['files'][:2])} |")
+            L.append(f"| {s['repo']} | {s['service']} | {s['target']} | {h[0]:g}-{h[1]:g} | {', '.join('`' + x + '`' for x in list(dict.fromkeys(s['files']))[:3])} |")
     md = os.path.join(root, OUT, "report", "execution-plan.md")
     hp = write_pair(md, "\n".join(L) + "\n")
     print(f"execution plan: {len(plan['packages'])} work packages, engine {engine}, db tool {db_tool}; hours by stream {plan['hours_by_stream']} -> {md}, {hp}")

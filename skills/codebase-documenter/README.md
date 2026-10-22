@@ -22,6 +22,13 @@ It does what a senior business analyst, architect and technical writer would do,
 7. **Agent layer**: `AGENTS.md`, a project Q&A skill (`<product>-docs`), `llms.txt`, an entity index and `lookup.py` (prints clickable `doc:` / `src:` `path:line` locations, with `--find` inside source files).
 8. **Package**: one zip with a single README that any agent can follow to install the project skill.
 
+
+## Changed in 1.16.1
+
+- **Network endpoints name the store, not the port guess (network_endpoints.py).** MongoDB connection strings are MongoDB on 27017 (they also say Server=...), Memcached and Aerospike have their own roles and ports (11211, 3000) instead of Redis on 6379, and a host in a store's own config file (redis.config, memcached.config) takes that store's role.
+- **Hosts in service references are SOAP services.** A host found in a WSDL, discovery file or generated Reference.cs is labelled SOAP / WCF, whatever its operation names suggest (no more payment gateway or message broker guesses).
+- **Folders named packages are scanned unless they are a NuGet restore folder** (repositories.config or <Id>.<version>/*.nupkg), so application source in a Packages folder is no longer skipped.
+
 ## Install
 
 ```bash

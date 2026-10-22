@@ -105,7 +105,10 @@ def _items(key, value, section, company_domains, host_kind, private_ip):
         if DB_FILE.search(host) or host.lower() in seen or host in (".", "(local)", "localhost", "127.0.0.1") or host.lower().startswith(("(localdb)", "|datadirectory|")) or SKIP_HOSTS.match(host):
             continue
         seen.add(host.lower())
-        port = int(m.group(2)) if m.group(2) else (1433 if re.search(r"(?i)initial catalog|database=|integrated security", v) else None)
+        store = re.search(r"(?i)mongo|memcache|aerospike|redis", f"{key} {v}")  # Server=...;Database=... is not only SQL Server
+        port = int(m.group(2)) if m.group(2) else (
+            {"mongo": 27017, "memcache": 11211, "aerospike": 3000, "redis": 6379}[store.group(0).lower()] if store else
+            1433 if re.search(r"(?i)initial catalog|database=|integrated security", v) else None)
         out.append(("connection string host", host, port, "tcp", classify_target(host, company_domains, host_kind, private_ip)))
     for m in IP_RX.finditer(v):
         ip = m.group(1)

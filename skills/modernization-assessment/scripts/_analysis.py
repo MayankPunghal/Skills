@@ -339,6 +339,12 @@ def third_party(c):
         for cs in connection_rows(c.scan[r]):  # one row per server / database / engine
             if cs.get("host") and not cs.get("localdb") and cs["host"] not in (".", "(local)", "localhost"):
                 sql = cs["engine"] == "sqlserver"
+                same = next((x for x in onprem if x["repo"] == r and x["system"] == cs["host"].lower()), None)
+                if same and not cs.get("database"):  # the endpoint row already lists this host: say what it is there, not twice
+                    same["system"] += f" ({cs['engine_name']})"
+                    same["needs"] = (f"{cs['engine_name']} server: network path from AWS, or move it to the AWS managed equivalent "
+                                     "(not part of the SQL Server conversion)") if not sql else same["needs"]
+                    continue
                 onprem.append({"system": f"{cs['host']} / {cs.get('database') or '-'}", "protocols": "sql" if sql else cs["engine"],
                                "used_by": ", ".join(apps_for_files([cs["file"]], inv, apps)) or "-", "references": cs["count"],
                                "evidence": f"{cs['file']}:{cs['line']}", "repo": r,
