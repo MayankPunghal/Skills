@@ -1,5 +1,5 @@
 {
- "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-checks, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, binaries-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, block:optional (optional modernizations), gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
+ "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-checks, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, binaries-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, block:optional (optional modernizations), gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, next-steps, pilot, waves, order-table, repo-order, projects-7r, project-graph, deployable-needs, graph-links, work-items, auth, package-actions (developer screens: migration order, per-project 7R and difficulty, dependencies, code graph, work items, sign-in and access, package actions), narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
  "brand": {
   "company": "",
   "accent": "#0b6e74",
@@ -8,52 +8,105 @@
  },
  "groups": [
   {
-   "title": "Summary",
+   "title": "Start here",
    "tabs": [
     {
      "id": "overview",
      "title": "Overview",
-     "intro": "What we found, what we recommend, how long it takes and the main risks.",
+     "intro": "What to do first, what we recommend, how long it takes and the main risks. Each line under 'What to do first' opens the screen that has the detail.",
      "items": [
       "kpis",
+      "next-steps",
       "narrative:executive-summary",
-      "chart:segments",
       "chart:r7",
       "chart:severity",
+      "chart:segments",
       "block:key-risks"
      ]
     },
     {
-     "id": "applications",
-     "title": "Applications & 7R",
-     "intro": "Every application, how we recommend moving it, and the effort. Click a row for the reasoning.",
+     "id": "order",
+     "title": "Migration order",
+     "intro": "Which project to move first and why. A project moves once everything it depends on has moved; projects many others depend on (high blast radius) move early and are retested with every deployable that uses them. Select a project for its 7R, difficulty and dependencies.",
      "items": [
-      "apps-table"
-     ]
-    },
-    {
-     "id": "effort",
-     "title": "Effort & timeline",
-     "intro": "Coding effort in hours and person-days for the selected scenario (AI-assisted delivery, manual equivalent alongside), the code-side and database-code scenarios side by side, optional modernizations, the phased plan, the coding sprint plan from the day of codebase access, and licensing. Ranges are P10–P90 (80% confidence); likely is P50. The last section explains how the estimate was calculated, step by step.",
-     "items": [
-      "effort-summary",
-      "block:scenarios",
-      "workpackages-table",
-      "block:optional",
-      "gantt",
-      "block:sprints",
-      "block:multipliers",
-      "block:cost",
-      "narrative:cost",
-      "block:assumptions",
-      "block:methodology"
+      "pilot",
+      "waves",
+      "order-table",
+      "repo-order"
      ]
     }
    ]
   },
   {
-   "title": "Assessment",
+   "title": "Projects",
    "tabs": [
+    {
+     "id": "projects",
+     "title": "Projects & 7R",
+     "intro": "Every project, class libraries and test projects included: what kind it is, how hard it is to port (APIs, class libraries and console / worker projects are easy; Web Forms and desktop UIs are hard), and its own 7R. Below, the deployable applications with effort and the full reasoning.",
+     "items": [
+      "projects-7r",
+      "apps-table"
+     ]
+    },
+    {
+     "id": "dependencies",
+     "title": "Dependencies",
+     "intro": "What each deployable needs ported first, the project dependency map by wave, and how applications, data and external systems connect.",
+     "items": [
+      "deployable-needs",
+      "project-graph",
+      "architecture-map",
+      "narrative:dependencies",
+      "block:workflows",
+      "block:db-dependents",
+      "block:db-coupling",
+      "dependencies-table"
+     ]
+    },
+    {
+     "id": "code",
+     "title": "Code graph",
+     "intro": "Explore the code itself: blast radius of a class or file, dependency paths, hubs, call flows and the generated wiki. The explorer opens in a new tab and works offline.",
+     "items": [
+      "graph-links",
+      "narrative:architecture",
+      "block:graph-insights",
+      "block:wiring"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "What to change",
+   "tabs": [
+    {
+     "id": "work",
+     "title": "Work items",
+     "intro": "Everything to change, grouped by project in migration order: what to do, why, and where in the code. Blocker and High first.",
+     "items": [
+      "work-items"
+     ]
+    },
+    {
+     "id": "security",
+     "title": "Sign-in & access",
+     "intro": "How each application signs users and callers in, how it decides what they may do, and the recommended replacement on ASP.NET Core and AWS, with the developer steps and the questions for the client. All security findings follow.",
+     "items": [
+      "auth",
+      "findings:security"
+     ]
+    },
+    {
+     "id": "packages",
+     "title": "Packages",
+     "intro": "What to do with every NuGet package: upgrade for a security advisory, replace, remove, upgrade, get the source, check the licence, or keep. Select a tile to filter. DLLs referenced outside NuGet follow.",
+     "items": [
+      "package-actions",
+      "binaries-table",
+      "findings:packages"
+     ]
+    },
     {
      "id": "linux",
      "title": "Linux readiness",
@@ -75,19 +128,8 @@
      ]
     },
     {
-     "id": "packages",
-     "title": "Packages",
-     "intro": "Every NuGet package grouped by what has to happen to it: incompatible, deprecated, framework-specific, upgrade, licence, private, compatible. Click a group to filter. Below it, every DLL referenced outside NuGet, with its nuget.org match and the action.",
-     "items": [
-      "package-groups",
-      "packages-table",
-      "binaries-table",
-      "findings:packages"
-     ]
-    },
-    {
      "id": "integrations",
-     "title": "Third-party & integrations",
+     "title": "Integrations & AWS landing",
      "intro": "External services and APIs the code calls, on-premises systems it depends on, service SDKs, identity providers, email and file transfer, and the network allow-list (outbound destinations with ports, inbound listeners) for the AWS VPC.",
      "items": [
       "integrations-summary",
@@ -110,14 +152,6 @@
      ]
     },
     {
-     "id": "security",
-     "title": "Identity & security",
-     "intro": "Authentication, secrets, configuration and security posture.",
-     "items": [
-      "findings:security"
-     ]
-    },
-    {
      "id": "hosting",
      "title": "Hosting & operations",
      "intro": "Scheduled and background jobs (what runs when, configured how, Windows-only schedulers), iIS, session and state, scaling, background jobs, logging and machine coupling.",
@@ -136,15 +170,6 @@
       "narrative:testing-and-merge",
       "findings:delivery"
      ]
-    },
-    {
-     "id": "findings",
-     "title": "All findings",
-     "intro": "Every finding with evidence. Filter by segment, severity, category or application; click a row for the details and the fix.",
-     "items": [
-      "chart:categories",
-      "findings:all"
-     ]
     }
    ]
   },
@@ -152,37 +177,31 @@
    "title": "Plan",
    "tabs": [
     {
+     "id": "effort",
+     "title": "Effort & timeline",
+     "intro": "Coding effort in hours and person-days for the selected scenario (AI-assisted delivery, manual equivalent alongside), the code-side and database-code scenarios side by side, optional modernizations, the phased plan, the coding sprint plan from the day of codebase access, and licensing. Ranges are P10–P90 (80% confidence); likely is P50. The last section explains how the estimate was calculated, step by step.",
+     "items": [
+      "effort-summary",
+      "block:scenarios",
+      "workpackages-table",
+      "block:optional",
+      "gantt",
+      "block:sprints",
+      "block:multipliers",
+      "block:cost",
+      "narrative:cost",
+      "block:assumptions",
+      "block:methodology"
+     ]
+    },
+    {
      "id": "plan",
-     "title": "Modernization plan",
-     "intro": "The approach, the order of work, shared libraries (hybrid path) and the decision per application.",
+     "title": "Application plans",
+     "intro": "The approach, shared libraries kept on .NET Standard 2.0 while others move (hybrid path), and the decision per application.",
      "items": [
       "narrative:application-plans",
       "block:hybrid",
       "app-plans"
-     ]
-    },
-    {
-     "id": "architecture",
-     "title": "Architecture",
-     "intro": "How the applications, shared code, data and external systems connect.",
-     "items": [
-      "narrative:architecture",
-      "architecture-map",
-      "block:graph-insights",
-      "block:wiring",
-      "dependencies-table"
-     ]
-    },
-    {
-     "id": "dependency-map",
-     "title": "Dependencies",
-     "intro": "What depends on what: project references and port order, the workflows (entry points) and what each one touches, and database object dependencies.",
-     "items": [
-      "narrative:dependencies",
-      "block:project-deps",
-      "block:workflows",
-      "block:db-dependents",
-      "block:db-coupling"
      ]
     },
     {
@@ -201,6 +220,15 @@
    "title": "Reference",
    "tabs": [
     {
+     "id": "findings",
+     "title": "All findings",
+     "intro": "Every finding with evidence. Filter by segment, severity, category or application; click a row for the details and the fix.",
+     "items": [
+      "chart:categories",
+      "findings:all"
+     ]
+    },
+    {
      "id": "method",
      "title": "Scope & method",
      "intro": "What we looked at, how, what could not be assessed from code, and the glossary.",
@@ -217,6 +245,7 @@
      "intro": "Complete lists for the delivery team.",
      "items": [
       "projects-table",
+      "block:project-deps",
       "winapi-table",
       "block:appendix-raw",
       "block:appendix-linux-checklist",
@@ -290,6 +319,22 @@
   [
    ".NET 10 (LTS)",
    "The current long-term-support version of .NET, supported until November 2028; runs on Linux."
+  ],
+  [
+   "Wave",
+   "A group of projects that can move together: everything they depend on moved in an earlier wave. Projects in a dependency cycle share a wave."
+  ],
+  [
+   "Blast radius",
+   "How much breaks or must be retested when a project changes: the projects and deployables that depend on it, directly or through others, plus how often other files use its code."
+  ],
+  [
+   "Difficulty (Easy / Medium / Hard)",
+   "How hard a project is to port. Easy: APIs, class libraries, console and worker projects. Medium: service hosts, MVC UIs, or easy projects with blockers. Hard: Web Forms and desktop UIs (rewritten), Windows-bound code, very large projects."
+  ],
+  [
+   "Pilot",
+   "The first deployable to move: easy, few projects before it, little depends on it. It proves the build, container, deploy and test pipeline."
   ]
  ]
 }

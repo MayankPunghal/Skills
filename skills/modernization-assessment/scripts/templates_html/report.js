@@ -18,7 +18,7 @@ const TYPE = {'aspnet-core':'ASP.NET Core','aspnet-mvc':'ASP.NET MVC','aspnet-we
   'windows-desktop':'Windows desktop app','winforms':'WinForms','wpf':'WPF'};
 const typeName = s => TYPE[s] || String(s ?? '').replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
 // Filter menu wording ("All 7R decisions", not "All 7r") for columns whose label does not pluralise on its own
-const FLABEL = {r7:'7R decisions', type:'types', risk:'risk levels', repo:'repositories', kind:'kinds', status:'statuses', size:'sizes', level:'readiness levels', vulnerable:'advisory states', reviewed:'decision states', area:'areas', service:'services', severity:'severities', confidence:'confidence levels'};
+const FLABEL = {r7:'7R decisions', type:'types', risk:'risk levels', repo:'repositories', kind:'kinds', status:'statuses', size:'sizes', level:'readiness levels', vulnerable:'advisory states', reviewed:'decision states', area:'areas', service:'services', severity:'severities', confidence:'confidence levels', wave:'waves', difficulty:'difficulty levels', action:'actions'};
 const TABLES = [];
 const SMOOTH = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
@@ -33,8 +33,11 @@ function DataTable(host, opt) {
       r = r.slice().sort((a,b) => { const A = sv(a), B = sv(b); const o = (typeof A === 'number' && typeof B === 'number') ? A - B : String(A).localeCompare(String(B), undefined, {numeric:true}); return st.asc ? o : -o; }); }
     return r;
   }
-  function render() {
-    const fa = document.activeElement, keep = fa && wrap.contains(fa) ? (fa.dataset.k ? `th[data-k="${CSS.escape(fa.dataset.k)}"]` : fa.dataset.id !== undefined ? `tr.row[data-id="${CSS.escape(fa.dataset.id)}"]` : fa.dataset.a ? `[data-a="${fa.dataset.a}"]` : null) : null;
+  // The table scrolls inside its own box: redrawing it would put that box (and so the row just clicked) back at the top.
+  // Every redraw keeps the page and the sideways scroll; expand / collapse (keep = true) also keeps the box's own scroll.
+  function render(keep = false) {
+    const tw0 = wrap.querySelector('.tablewrap'), pos = [tw0 ? tw0.scrollTop : 0, tw0 ? tw0.scrollLeft : 0, window.scrollX, window.scrollY];
+    const fa = document.activeElement, kf = fa && wrap.contains(fa) ? (fa.dataset.k ? `th[data-k="${CSS.escape(fa.dataset.k)}"]` : fa.dataset.id !== undefined ? `tr.row[data-id="${CSS.escape(fa.dataset.id)}"]` : fa.dataset.a ? `[data-a="${fa.dataset.a}"]` : null) : null;
     const r = rows(); const pages = Math.max(1, Math.ceil(r.length / st.size)); st.page = Math.min(st.page, pages - 1);
     const view = r.slice(st.page * st.size, (st.page + 1) * st.size);
     const sel = (opt.filters || []).map(k => { const c = opt.cols.find(c => c.key === k) || {label: k}; const vals = [...new Set(base().map(x => String(x[k])))].sort((a,b)=> (SEV.indexOf(a) - SEV.indexOf(b)) || a.localeCompare(b));
@@ -48,11 +51,12 @@ function DataTable(host, opt) {
      </tbody></table></div>${pages > 1 ? `<div class="pager"><button class="btn" data-a="prev" ${st.page ? '' : 'disabled'}>Previous</button><span>Page ${st.page+1} of ${pages}</span><button class="btn" data-a="next" ${st.page + 1 < pages ? '' : 'disabled'}>Next</button></div>` : ''}`;
     wrap.querySelectorAll('select[data-f]').forEach(s => s.onchange = () => { st.filters[s.dataset.f] = s.value; st.page = 0; render(); });
     wrap.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => { if (st.sort === th.dataset.k) st.asc = !st.asc; else { st.sort = th.dataset.k; st.asc = true; } render(); });
-    if (opt.detail) wrap.querySelectorAll('tr.row').forEach(tr => tr.onclick = e => { if (e.target.closest('a')) return; const id = tr.dataset.id; st.open.has(id) ? st.open.delete(id) : st.open.add(id); render(); });
+    if (opt.detail) wrap.querySelectorAll('tr.row').forEach(tr => tr.onclick = e => { if (e.target.closest('a')) return; const id = tr.dataset.id; st.open.has(id) ? st.open.delete(id) : st.open.add(id); render(true); });
     wrap.querySelector('[data-a=csv]').onclick = () => csv(opt.csvCols || opt.cols, rows(), opt.name);
-    const ex = wrap.querySelector('[data-a=expand]'); if (ex) ex.onclick = () => { if (st.open.size) st.open.clear(); else rows().forEach((x,i) => st.open.add(String(opt.id ? opt.id(x) : i))); render(); };
+    const ex = wrap.querySelector('[data-a=expand]'); if (ex) ex.onclick = () => { if (st.open.size) st.open.clear(); else rows().forEach((x,i) => st.open.add(String(opt.id ? opt.id(x) : i))); render(true); };
     const pv = wrap.querySelector('[data-a=prev]'); if (pv) { pv.onclick = () => { st.page = Math.max(0, st.page-1); render(); }; wrap.querySelector('[data-a=next]').onclick = () => { st.page++; render(); }; }
-    if (keep) { const el = wrap.querySelector(keep); if (el) el.focus({preventScroll: true}); }
+    const tw = wrap.querySelector('.tablewrap'); if (tw) { tw.scrollTop = keep ? pos[0] : 0; tw.scrollLeft = pos[1]; } window.scrollTo(pos[2], pos[3]);
+    if (kf) { const el = wrap.querySelector(kf); if (el) el.focus({preventScroll: true}); }
     return r.length;
   }
   const t = {render, rows, opt, st, host: wrap, openRow(id) { st.open.add(String(id)); st.filters = {}; const r = rows(); const i = r.findIndex(x => String(opt.id(x)) === String(id)); if (i >= 0) st.page = Math.floor(i / st.size); render(); }};
@@ -157,7 +161,113 @@ const C = {
   'projects-table': h => DataTable(h, {name:'projects', title:'Projects', rows: D.projects, filters:['type','format','repo'], sort:'loc', cols: [{key:'project',label:'Project'},{key:'type',label:'Type'},{key:'tfm',label:'TFM'},{key:'format',label:'Format'},{key:'packages',label:'Packages'},{key:'language',label:'Language'},{key:'loc',label:'LOC',cls:'num'},{key:'support',label:'Support status'}]}),
   'winapi-table': h => DataTable(h, {name:'windows-and-legacy-api-usage', title:'Every Windows-only and legacy API occurrence', rows: D.winapi, filters:['api'], sort:'ref', asc:true, cols: [{key:'ref',label:'Ref',html:x=>`<a class="fref" href="#finding-${esc(x.ref)}">${esc(x.ref)}</a>`},{key:'api',label:'API / technology',flabel:'APIs'},{key:'loc',label:'Location'},{key:'code',label:'Code',html:x=>`<code>${hl(x.code)}</code>`}]}),
   'glossary': h => card(h, `<h3>Glossary</h3><div class="tablewrap"><table class="md glossary"><tbody>${(window.GLOSSARY||[]).map(g => `<tr><th>${esc(g[0])}</th><td>${esc(g[1])}</td></tr>`).join('')}</tbody></table></div>`),
+  // ---- developer screens: what to do first, in which order, per project
+  'next-steps': h => { const P = D.P || {projects: [], waves: []}; const pil = P.pilot; const draft = D.apps.filter(a => a.reviewed !== 'reviewed').length; const sev = D.sev || {};
+     const authHi = (D.auth || []).filter(a => ['Blocker','High'].includes(a.worst)).length; const pk = D.packages.filter(p => !['Keep'].includes(p.action)).length;
+     const items = [
+       pil && ['order', `Start with ${pil.name}`, pil.why + (pil.needs_first.length ? ` Port first: ${pil.needs_first.join(', ')}.` : '')],
+       P.waves.length && ['order', `${P.waves.length} migration wave${P.waves.length === 1 ? '' : 's'}, ${P.projects.length} projects`, P.waves.map(w => `Wave ${w.wave}: ${w.projects.slice(0, 4).join(', ')}${w.projects.length > 4 ? ' +' + (w.projects.length - 4) : ''}`).join(' · ')],
+       ['work', `${(sev.Blocker||0) + (sev.High||0)} blocker / high findings to fix`, 'Grouped by project in migration order, each with what to change and where.'],
+       (D.auth || []).length && ['security', `Sign-in and access rules: ${authHi} application${authHi === 1 ? '' : 's'} with high-risk auth`, (D.auth || []).map(a => `${a.app}: ${a.who}`).join(' · ')],
+       ['packages', `${pk} package${pk === 1 ? '' : 's'} to change`, 'Replace, remove or upgrade, with the target version.'],
+       ['risks', `${D.questions.length} questions for the client${draft ? `, ${draft} 7R decision${draft === 1 ? '' : 's'} still draft` : ''}`, 'Answers change the plan: ask them first.']].filter(Boolean);
+     card(h, `<h3>What to do first</h3><ol class="next">${items.map(([t, a, b]) => `<li><a href="#${t}" data-goto="${t}"><b>${esc(a)}</b></a><span>${esc(b)}</span></li>`).join('')}</ol>`);
+     h.querySelectorAll('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); show(a.dataset.goto); }); },
+  'pilot': h => { const p = (D.P || {}).pilot; if (!p) { h.remove(); return; } const x = D.P.projects.find(y => y.key === p.key) || {};
+     card(h, `<h3>Pilot: ${esc(p.name)}</h3><p>${esc(p.why)}</p><div class="row2"><span class="pill ${esc(p.difficulty)}">${esc(p.difficulty)}</span><span class="tag">${esc(x.kind || '')}</span><span class="tag">${esc(x.r7 || '')}</span><span class="tag">wave ${x.wave}</span></div>
+       ${p.needs_first.length ? `<p><b>Port first:</b> ${p.needs_first.map(esc).join(', ')}</p>` : '<p class="muted">Nothing else in the estate has to move before it.</p>'}`); },
+  'waves': h => { const P = D.P; if (!P || !P.projects.length) { card(h, '<p class="muted">No projects inventoried.</p>'); return; }
+     card(h, `<h3>Migration waves</h3><p class="muted small">Left to right: a project starts when everything it depends on (to its left) has moved. Colour = difficulty; ▣ = deployable. Select a project for its details.</p>
+       <div class="waves">${P.waves.map(w => `<div class="wave"><h4>Wave ${w.wave}</h4><div class="muted small">${esc(w.summary)}</div>${P.projects.filter(x => x.wave === w.wave).map(x => `<button type="button" class="pnode ${esc(x.difficulty)}" data-k="${esc(x.key)}" title="${esc(x.kind + ' · ' + x.r7 + ' · blast radius ' + x.blast.level)}"><span class="pn">${x.deployable ? '▣ ' : ''}${esc(x.name)}</span><span class="ps">${esc(x.kind)} · ${esc(x.r7)}</span><span class="ps">${esc(x.difficulty)} · blast ${esc(x.blast.level)}${x.blast.transitive ? ' (' + x.blast.transitive + ')' : ''}</span></button>`).join('')}</div>`).join('')}</div>`);
+     h.querySelectorAll('.pnode').forEach(b => b.onclick = () => openProject(b.dataset.k)); },
+  'order-table': h => { const P = D.P || {projects: []}; DataTable(h, {name:'migration-order', title:'Migration order (every project)', rows: P.projects, filters:['wave','difficulty','r7','kind','repo'], sort:'order', asc:true, id: x => x.key,
+     cols: [{key:'order',label:'#',cls:'num'},{key:'wave',label:'Wave',cls:'num'},{key:'name',label:'Project',html:x=>`${x.deployable ? '▣ ' : ''}<b>${hl(x.name)}</b><div class="muted small">${esc(x.repo)}</div>`},{key:'kind',label:'Kind'},
+            {key:'difficulty',label:'Difficulty',html:x=>pill(x.difficulty),sortv:x=>['Easy','Medium','Hard'].indexOf(x.difficulty)},{key:'r7',label:'7R'},
+            {key:'needs',label:'Port first',cls:'mid',html:x=>hl(x.needs_first.join(', ') || '—'),csv:x=>x.needs_first.join(', ')},{key:'users',label:'Used by',cls:'mid',html:x=>hl(x.used_by.map(u=>u.name).join(', ') || '—'),csv:x=>x.used_by.map(u=>u.name).join(', ')},
+            {key:'blast',label:'Blast radius',html:x=>`${pill(x.blast.level === 'High' ? 'High' : x.blast.level === 'Medium' ? 'Medium' : 'Low')} <span class="muted small">${x.blast.transitive} project(s)${x.blast.fan_in ? ', fan-in ' + x.blast.fan_in : ''}</span>`,csv:x=>x.blast.level,sortv:x=>x.blast.transitive * 1000 + x.blast.fan_in}],
+     detail: projectDetail, text: x => [x.name, x.kind, x.r7, x.target, x.repo, x.needs_first.join(' '), x.r7_why.join(' ')].join(' ')}); },
+  'projects-7r': h => { const P = D.P || {projects: []}; const cnt = {}; P.projects.forEach(x => cnt[x.r7] = (cnt[x.r7] || 0) + 1); const dif = {}; P.projects.forEach(x => dif[x.difficulty] = (dif[x.difficulty] || 0) + 1);
+     h.innerHTML = `<div class="tiles">${['Easy','Medium','Hard'].map(d => `<div class="tile"><div class="l"><span class="pill ${d}">${d}</span></div><div class="v">${dif[d] || 0}</div><div class="s">${{Easy:'APIs, class libraries, console / worker: the logic moves intact',Medium:'service hosts, MVC UIs, or easy projects with blockers',Hard:'Web Forms / desktop UIs (rewritten), Windows-bound code, very large'}[d]}</div></div>`).join('')}
+       ${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k, v]) => `<div class="tile"><div class="l">${esc(k)}</div><div class="v">${v}</div><div class="s">project${v === 1 ? '' : 's'}</div></div>`).join('')}</div>`;
+     const host = document.createElement('div'); h.appendChild(host);
+     DataTable(host, {name:'projects-7r', title:'Every project: kind, difficulty and 7R (class libraries included)', rows: P.projects, filters:['kind','difficulty','r7','repo'], sort:'order', asc:true, id: x => x.key,
+       cols: [{key:'name',label:'Project',html:x=>`${x.deployable ? '▣ ' : ''}<b>${hl(x.name)}</b><div class="muted small">${esc(x.repo)} · ${esc(x.tfm)}</div>`},{key:'kind',label:'Kind'},{key:'loc',label:'Lines',cls:'num',html:x=>(x.loc||0).toLocaleString()},
+              {key:'difficulty',label:'Difficulty',html:x=>pill(x.difficulty),sortv:x=>['Easy','Medium','Hard'].indexOf(x.difficulty)},{key:'r7',label:'7R'},{key:'target',label:'Target',cls:'mid',html:x=>hl(x.target.split(' - ')[0])},
+              {key:'wave',label:'Wave',cls:'num'},{key:'findings',label:'Findings',cls:'num'}], detail: projectDetail}); },
+  'project-graph': h => { const P = D.P; if (!P || !P.projects.length) { card(h, '<p class="muted">No projects inventoried.</p>'); return; }
+     const waves = [...new Set(P.projects.map(x => x.wave))].sort((a,b)=>a-b);
+     const repos = [...new Set(P.projects.map(x => x.repo))].sort();
+     card(h, `<h3>Project dependency map</h3><div class="tools">${repos.length > 1 ? `<select class="prepo" aria-label="Show one repository"><option value="">All repositories</option>${repos.map(r => `<option>${esc(r)}</option>`).join('')}</select>` : ''}<span class="muted small">Columns are waves: arrows point from a project to what it needs. Hover a project to see what it needs (left) and what needs it (right). Colour = difficulty.</span></div>
+       <div class="amap pmap"><svg></svg><div class="cols" style="grid-template-columns:repeat(${waves.length},minmax(170px,1fr));min-width:${waves.length * 210}px">${waves.map(w => `<div class="col"><h4>Wave ${w}</h4>${P.projects.filter(x => x.wave === w).map(x => `<div class="node" tabindex="0" data-id="${esc(x.key)}" data-repo="${esc(x.repo)}" style="--c:var(--${x.difficulty === 'Easy' ? 'ready' : x.difficulty === 'Medium' ? 'medium' : 'blocker'})"><div>${x.deployable ? '▣ ' : ''}${esc(x.name)}</div><div class="s">${esc(x.kind)} · ${esc(x.r7)}</div></div>`).join('')}</div>`).join('')}</div></div>`);
+     const M = {edges: P.edges.map(e => [e.from_key, e.to_key, e.how])};
+     const box = h.querySelector('.amap'), svg = box.querySelector('svg'), inner = box.querySelector('.cols');
+     function lines() { if (box.offsetParent === null) return; const b = inner.getBoundingClientRect(); svg.setAttribute('width', inner.scrollWidth); svg.setAttribute('height', inner.scrollHeight);
+       svg.innerHTML = '<defs><marker id="pm-ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L8,4L0,8z"/></marker></defs>' + M.edges.map(([a, z, k]) => { const A = box.querySelector(`.node[data-id="${CSS.escape(a)}"]`), Z = box.querySelector(`.node[data-id="${CSS.escape(z)}"]`); if (!A || !Z || A.style.display === 'none' || Z.style.display === 'none') return '';
+         // a project points at what it needs: usually a column to its left; same column = a cycle (they move together)
+         const ra = A.getBoundingClientRect(), rz = Z.getBoundingClientRect(), y1 = ra.top + ra.height/2 - b.top, y2 = rz.top + rz.height/2 - b.top; let d;
+         if (Math.abs(rz.left - ra.left) < 5) { const x = ra.left - b.left; d = `M${x},${y1} C${x-40},${y1} ${x-40},${y2} ${x},${y2}`; }
+         else { const back = rz.left < ra.left, x1 = (back ? ra.left : ra.right) - b.left, x2 = (back ? rz.right : rz.left) - b.left, dx = (x2 - x1) / 2; d = `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`; }
+         return `<path marker-end="url(#pm-ar)" data-a="${esc(a)}" data-z="${esc(z)}" d="${d}"><title>${esc(k)}</title></path>`; }).join(''); }
+     box.querySelectorAll('.node').forEach(n => { n.onmouseenter = () => { const id = n.dataset.id; const linked = new Set([id]); M.edges.forEach(([a,z]) => { if (a === id) linked.add(z); if (z === id) linked.add(a); });
+         box.querySelectorAll('.node').forEach(o => o.classList.toggle('dim', !linked.has(o.dataset.id))); svg.querySelectorAll('path').forEach(p => { const on = p.dataset.a === id || p.dataset.z === id; p.classList.toggle('hl', on); p.classList.toggle('dim', !on); }); };
+       n.onmouseleave = () => { box.querySelectorAll('.node').forEach(o => o.classList.remove('dim')); svg.querySelectorAll('path').forEach(p => p.classList.remove('hl','dim')); };
+       n.onfocus = n.onmouseenter; n.onblur = n.onmouseleave; n.onclick = () => openProject(n.dataset.id); });
+     // one repository: its projects plus what they need from, and give to, other repositories
+     const pr = h.querySelector('.prepo'); if (pr) pr.onchange = () => { const r = pr.value; const keep = new Set(P.projects.filter(x => !r || x.repo === r).map(x => x.key));
+       if (r) M.edges.forEach(([a, z]) => { const ra = P.projects.find(x => x.key === a), rz = P.projects.find(x => x.key === z); if (ra && ra.repo === r) keep.add(z); if (rz && rz.repo === r) keep.add(a); });
+       box.querySelectorAll('.node').forEach(n => n.style.display = keep.has(n.dataset.id) ? '' : 'none'); lines(); };
+     window.addEventListener('resize', lines); h._draw = lines; },
+  'deployable-needs': h => { const P = D.P || {projects: []}; const ord = P.projects.map(x => x.name); const bins = D.binaries || [];
+     const rows = P.projects.filter(x => x.deployable).map(x => ({...x, needs: x.needs_first.slice().sort((a,b) => ord.indexOf(a) - ord.indexOf(b)),
+       dlls: [...new Set(x.depends_on.filter(d => d.how.startsWith('DLL from')).map(d => d.name + ' (' + d.repo + ')'))], ext: [...new Set(bins.filter(b => b.repo === x.repo && b.project === x.path).map(b => b.assembly))]}));
+     DataTable(h, {name:'deployable-needs', title:'What each deployable needs ported first', rows, filters:['repo'], sort:'order', asc:true, id: x => x.key, empty:'No deployables.',
+       cols: [{key:'name',label:'Deployable',html:x=>`<b>${hl(x.name)}</b><div class="muted small">${esc(x.kind)}</div>`},{key:'wave',label:'Wave',cls:'num'},{key:'needs',label:'Port first, in this order',cls:'wide',html:x=>x.needs.length ? x.needs.map((n,i)=>`<span class="tag">${i+1}. ${hl(n)}</span>`).join(' ') : '<span class="muted">nothing</span>',csv:x=>x.needs.join(' > ')},
+              {key:'dlls',label:'DLLs from other repositories',cls:'mid',html:x=>hl(x.dlls.join(', ') || '—'),csv:x=>x.dlls.join(', ')},{key:'ext',label:'Other DLLs (no NuGet)',cls:'mid',html:x=>hl(x.ext.join(', ') || '—'),csv:x=>x.ext.join(', ')},
+              {key:'difficulty',label:'Difficulty',html:x=>pill(x.difficulty)}]}); },
+  'repo-order': h => { const R = (D.P || {}).repos || []; if (R.length < 2 || !R.some(r => r.after.length)) { h.remove(); return; }
+     DataTable(h, {name:'repository-order', title:'Repository order (DLLs built by one repository and used by another)', rows: R, sort:'step', asc:true, cols:[{key:'step',label:'Step',cls:'num'},{key:'repo',label:'Repository'},{key:'after',label:'Moves after',cls:'wide',html:x=>hl(x.after.join(', ') || '—'),csv:x=>x.after.join(', ')}]}); },
+  'graph-links': h => { const G = D.graphs || []; if (!G.length) { card(h, '<p class="muted">No code graph yet (map_graphs.py).</p>'); return; }
+     card(h, `<h3>Explore the code</h3><p>Each repository has an explorer for blast radius (what depends on a class, file or package), dependencies and paths between two pieces of code, plus graphify's own interactive graph, code tree, call flows and wiki. Run <code>graph_ui.py --serve</code> in the workspace to also ask free-text questions.</p>
+       ${G.map(g => `<div class="plan"><h4>${esc(g.repo)} <span class="muted small">${(g.nodes||0).toLocaleString()} code elements · ${(g.edges||0).toLocaleString()} relationships · ${g.communities} clusters</span></h4><p>${g.pages.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</p>
+       ${g.files.length ? `<p class="small"><b>Most depended-on files</b> (other files using them): ${g.files.map(([f, n]) => `<code>${esc(f)}</code> ${n}`).join(' · ')}</p>` : ''}
+       <p class="small muted">Query from the workspace: <code>graphify query "&lt;question&gt;" --graph ${esc(g.graph)}</code></p></div>`).join('')}`); },
+  'work-items': h => { const P = D.P || {projects: []}; const order = new Map(P.projects.map(x => [x.repo + ':' + x.path, x]));
+     const groups = new Map(); D.findings.forEach(f => { const k = f.repo + ':' + f.project; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); });
+     const keys = [...groups.keys()].sort((a, b) => ((order.get(a) || {order: 1e9}).order) - ((order.get(b) || {order: 1e9}).order));
+     const st = {min: 'Medium'}; const lv = s => SEV.indexOf(s);
+     function draw() { const q = Q.toLowerCase();
+       h.innerHTML = `<div class="card"><h3>Work items by project</h3><p class="muted small">Projects in migration order. Each line: what to change, why, and where (first occurrences; the finding has all of them).</p><div class="tools"><label class="small">Show <select class="wmin"><option value="High" ${st.min==='High'?'selected':''}>Blocker and High</option><option value="Medium" ${st.min==='Medium'?'selected':''}>down to Medium</option><option value="Info" ${st.min==='Info'?'selected':''}>everything</option></select></label></div>
+       ${keys.map(k => { const x = order.get(k); const fs = groups.get(k).filter(f => lv(f.severity) <= lv(st.min)).filter(f => !q || findingText(f).toLowerCase().includes(q)).sort((a,b) => lv(a.severity) - lv(b.severity)); if (!fs.length) return '';
+         return `<details class="wi" ${fs.some(f => lv(f.severity) <= 1) ? 'open' : ''}><summary><b>${esc(x ? x.name : k.split(':').pop())}</b> <span class="muted small">${x ? `#${x.order} · wave ${x.wave} · ${esc(x.kind)} · ` : ''}${fs.length} item${fs.length === 1 ? '' : 's'}</span> ${x ? pill(x.difficulty) : ''}</summary>
+           <ol>${fs.map(f => `<li>${pill(f.severity)} <b>${hl(f.title)}</b> <a class="fref" href="#finding-${esc(f.ref)}">${esc(f.ref)}</a><div class="small"><b>Do:</b> ${hl(f.fix)}</div><div class="small muted">${hl(f.why)}</div><div class="small mono">${f.evidence.slice(0,3).map(e => esc(e.loc)).join(' · ')}${f.count > 3 ? ` · +${f.count - 3} more` : ''}</div></li>`).join('')}</ol></details>`; }).join('') || '<p class="muted">Nothing at this level.</p>'}</div>`;
+       h.querySelector('.wmin').onchange = e => { st.min = e.target.value; draw(); }; }
+     draw(); h._redraw = draw; WORK.push(draw); },
+  'auth': h => { const A = D.auth || []; if (!A.length) { card(h, '<p class="muted">No applications classified yet.</p>'); return; }
+     const AREA = {authn:'Sign-in', authz:'Access rules', secrets:'Secrets', session:'Session'};
+     h.innerHTML = `<div class="tiles">${A.map(a => `<div class="tile"><div class="l">${esc(a.app)}</div><div class="v small-v">${esc(a.who)}</div><div class="s">${esc(a.authn.join(', ') || 'no sign-in found in code')}</div></div>`).join('')}</div>` +
+       A.map(a => `<div class="card auth"><h3>${esc(a.app)} <span class="muted small">${esc(a.repo)} · ${esc(a.who)}</span></h3>
+         <div class="callout"><b>Recommended on AWS:</b> ${hl(a.aws)}.<br><b>On ASP.NET Core:</b> ${hl(a.core)}.<br><span class="muted">${hl(a.why)}</span></div>
+         ${a.mechanisms.length ? `<div class="tablewrap"><table class="md"><thead><tr><th>Area</th><th>Today</th><th>How it works now</th><th>On ASP.NET Core</th><th>AWS options (first = recommended)</th><th>Where</th></tr></thead><tbody>${a.mechanisms.map(m => `<tr><td>${esc(AREA[m.area] || m.area)}</td><td><b>${hl(m.label)}</b> ${pill(m.severity)}</td><td>${hl(m.today)}</td><td>${hl(m.core)}</td><td><ol class="tight">${m.aws.map(x => `<li>${hl(x)}</li>`).join('')}</ol></td><td class="small mono">${m.where.slice(0,3).map(esc).join('<br>')}<br>${m.refs.map(r => `<a class="fref" href="#finding-${esc(r)}">${esc(r)}</a>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No sign-in or access check found in this application\'s code.</p>'}
+         <h4>Steps for the developer</h4><ol>${a.steps.map(s => `<li>${hl(s)}</li>`).join('')}</ol>${a.questions.length ? `<h4>Ask the client</h4><ul>${a.questions.map(q => `<li>${hl(q)}</li>`).join('')}</ul>` : ''}</div>`).join(''); },
+  'package-actions': h => { const acts = D.pkgActions || []; const cnt = {}; D.packages.forEach(p => cnt[p.action] = (cnt[p.action] || 0) + 1);
+     h.innerHTML = `<div class="tiles">${acts.filter(([a]) => cnt[a]).map(([a, d]) => `<div class="tile" data-a="${esc(a)}" tabindex="0" role="button" aria-pressed="false"><div class="l">${esc(a)}</div><div class="v">${cnt[a]}</div><div class="s">${esc(d)}</div></div>`).join('')}</div>`;
+     const host = document.createElement('div'); h.appendChild(host);
+     const ord = acts.map(a => a[0]);
+     const t = DataTable(host, {name:'package-actions', title:'Packages: what to do with each', rows: D.packages, filters:['action','repo'], sort:'action', asc:true, id: x => x.repo + x.id,
+       cols: [{key:'action',label:'Action',html:x=>`<b>${esc(x.action)}</b>`,sortv:x=>ord.indexOf(x.action)},{key:'id',label:'Package'},{key:'versions',label:'In use'},{key:'rec_version',label:'Target version',html:x=>esc(x.rec_version || x.latest || '')},
+              {key:'replacement',label:'What to do',cls:'wide',html:x=>hl(x.replacement || x.note || '')},{key:'advisories',label:'Advisories',html:x=>x.advisories?`<span class="pill High">${esc(x.advisories)}</span>`:''},{key:'projects',label:'Projects',cls:'num'}],
+       detail: x => `<p>${hl(x.note)}</p>${x.rec_why ? `<p><b>Why:</b> ${esc(x.rec_why)}</p>` : ''}${x.rec_risks ? `<p><b>Risks:</b> ${esc(x.rec_risks)}</p>` : ''}${x.frameworks ? `<p class="muted">Latest targets: ${esc(x.frameworks)}</p>` : ''}${x.licence ? `<p class="muted">Licence: ${esc(x.licence)}${x.licence_change ? ' · ' + esc(x.licence_change) : ''}</p>` : ''}`});
+     t.st.filters.action = ''; t.render();
+     h.querySelectorAll('.tile').forEach(tl => tl.onclick = () => { const on = tl.classList.toggle('sel'); h.querySelectorAll('.tile').forEach(o => { if (o !== tl) o.classList.remove('sel'); o.setAttribute('aria-pressed', o.classList.contains('sel')); }); t.st.filters.action = on ? tl.dataset.a : ''; t.st.page = 0; t.render(); }); },
 };
+const WORK = [];
+const projectDetail = x => `<div class="cols2"><div><h5>7R: ${esc(x.r7)}</h5><p><b>Target:</b> ${hl(x.target)}</p>${list(x.r7_why)}<h5>Difficulty: ${esc(x.difficulty)}</h5>${list(x.difficulty_why)}</div>
+  <div><h5>Port first (${x.needs_first.length})</h5>${list(x.depends_on.map(d => d.name + ' — ' + d.how + (d.repo !== x.repo ? ' (' + d.repo + ')' : '')))}<h5>Used by (${x.used_by.length})</h5>${list(x.used_by.map(u => u.name + ' — ' + u.how))}
+  <h5>Blast radius: ${esc(x.blast.level)}</h5><p>${x.blast.transitive ? x.blast.transitive + ' project' + (x.blast.transitive === 1 ? ' depends' : 's depend') + ' on it' : 'No other project depends on it'}${x.blast.deployables.length ? '; deployables to retest: ' + x.blast.deployables.map(esc).join(', ') : ''}${x.blast.fan_in ? '; ' + x.blast.fan_in + ' uses of its code from other files' : ''}.</p></div></div>
+  ${x.blockers.length ? '<h5>Blocker / high findings</h5>' + list(x.blockers) : ''}${x.cycle.length ? `<div class="callout warn">In a dependency cycle with ${x.cycle.map(esc).join(', ')}: they move together.</div>` : ''}
+  ${(D.graphs || []).some(g => g.repo === x.repo) ? `<p class="small"><a href="${esc(((D.graphs.find(g => g.repo === x.repo).pages.find(p => p[0].startsWith('Explorer')) || [])[1]) || '#')}#q=${encodeURIComponent(x.name)}" target="_blank" rel="noopener">Open in the graph explorer</a></p>` : ''}`;
+function openProject(key) { const t = TABLES.find(t => t.opt.name === 'projects-7r') || TABLES.find(t => t.opt.name === 'migration-order'); if (!t) return; const tab = t.host.closest('.tab'); if (tab) show(tab.id.slice(4)); t.openRow(key);
+  const row = t.host.querySelector(`tr.row[data-id="${CSS.escape(key)}"]`); if (row) { row.scrollIntoView({behavior: SMOOTH, block: 'center'}); row.focus({preventScroll: true}); } }
 
 function drawMap(h) {
   const M = D.map; const cols = [['clients','Clients'],['apps','Applications'],['libs','Shared libraries'],['data','Data'],['external','External systems']];
@@ -202,7 +312,7 @@ function show(id, push = true) { const tab = document.getElementById('tab-' + id
 document.querySelectorAll('nav.side a').forEach(a => a.onclick = e => { e.preventDefault(); show(a.dataset.tab); });
 document.getElementById('menu').onclick = e => { const open = document.querySelector('nav.side').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', open); };
 const search = document.getElementById('q'); let timer;
-search.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { Q = search.value.trim(); TABLES.forEach(t => { t.st.page = 0; t.render(); }); renderPlans();
+search.oninput = () => { clearTimeout(timer); timer = setTimeout(() => { Q = search.value.trim(); TABLES.forEach(t => { t.st.page = 0; t.render(); }); renderPlans(); WORK.forEach(f => f());
   document.querySelectorAll('nav.side a').forEach(a => { const sec = document.getElementById('tab-' + a.dataset.tab); const b = a.querySelector('.badge'); if (!sec || !b) return;
     const n = Q ? (sec.textContent.toLowerCase().split(Q.toLowerCase()).length - 1) : 0; b.textContent = n; b.style.display = Q && n ? 'inline-block' : 'none'; }); }, 220); };
 document.addEventListener('click', e => { const a = e.target.closest('a.fref'); if (!a) return; e.preventDefault(); const ref = a.getAttribute('href').replace('#finding-','');

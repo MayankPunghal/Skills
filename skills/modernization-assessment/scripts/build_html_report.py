@@ -15,6 +15,7 @@ import base64
 import datetime
 import html
 import json
+import math
 import os
 import re
 from collections import Counter
@@ -249,17 +250,59 @@ def collect(c, cfg):
     if ph:  # the phased tool-run estimate (estimate_phases.py) is the planning figure; the parametric model is the cross-check
         effort["phased"] = {"h": [sum(e["total"][0] for e in ph), sum(e["total"][1] for e in ph)], "buffer": ph[0].get("buffer", 0),
                             "days": [sum(e.get("dev_days", [0, 0])[0] for e in ph), sum(e.get("dev_days", [0, 0])[1] for e in ph)]}
+    if ph and not H.is_hours(c.est):  # lead with the planning figure; the parametric P50 is the cross-check (Effort tab)
+        p = effort["phased"]
+        kpis = [k for k in kpis if k[0] not in ("Effort", "Duration")]
+        eng = c.est.get("engineers") or 3
+        hpd = (ph[0].get("hours_per_day") or 6)
+        kpis.insert(3, ("Effort (planning figure)", f"{p['h'][0]}–{p['h'][1]} h", f"≈ {p['days'][0]}–{p['days'][1]} dev-days of {hpd} h · parametric cross-check {t.get('likely_hours', '-')} h"))
+        kpis.insert(4, ("Duration", f"~{max(1, math.ceil(p['days'][0] / eng / 5))}–{max(1, math.ceil(p['days'][1] / eng / 5))} weeks", f"team of {eng} engineers, {hpd} focused hours a day"))
     lbuild = []
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}
         lbuild += [dict(p, repo=r, status=A.BUILD_LABEL.get(p["status"], p["status"])) for p in lb.get("projects", [])]
+    pm = BR.project_model(c)
+    for p in packages:  # what the developer does with each package
+        p["action"] = PKG_ACTION.get(p["group"], "Keep") if p["vulnerable"] != "yes" or PKG_ACTION.get(p["group"]) in ("Replace", "Remove") else "Upgrade (security)"
+    graphs = []
+    for r in c.repos:
+        go = os.path.join(OUT, "graphs", r, "graphify-out")
+        if not os.path.exists(os.path.join(go, "graph.json")):
+            continue
+        rel = lambda f: os.path.relpath(f, os.path.join(OUT, "report")).replace("\\", "/")
+        pages = [(t, rel(f)) for t, f in (("Explorer: blast radius, paths, hubs", os.path.join(OUT, "graphs", r, "explorer.html")),
+                                           ("Interactive graph", os.path.join(go, "graph.html")), ("Code tree", os.path.join(go, "GRAPH_TREE.html")),
+                                           ("Call flows", os.path.join(go, f"{r}-callflow.html")), ("Wiki", os.path.join(go, "wiki-html", "index.html")),
+                                           ("Graph report (Markdown)", os.path.join(go, "GRAPH_REPORT.md"))) if os.path.exists(f)]
+        g = c.graph.get(r) or {}
+        graphs.append({"repo": r, "pages": pages, "nodes": g.get("nodes", 0), "edges": g.get("edges", 0), "communities": g.get("community_count", 0),
+                       "hubs": [{"label": h.get("label"), "file": h.get("file") or h.get("source_file") or "", "degree": h.get("degree") or h.get("edges") or 0}
+                                for h in (g.get("god_nodes") or [])[:10]],
+                       "files": sorted(((f, n) for f, n in (g.get("file_impact") or {}).items()), key=lambda x: -x[1])[:10],
+                       "graph": os.path.relpath(os.path.join(go, "graph.json"), c.root).replace("\\", "/")})
     return {"findings": findings, "apps": apps, "packages": packages, "binaries": binaries, "pgroups": [{"group": g, "desc": d} for g, d in A.PACKAGE_GROUPS],
             "deps": deps, "projects": projects, "winapi": winapi, "questions": questions, "wps": wps, "timeline": c.est.get("timeline", []), "kpis": kpis,
             "segs": segs, "cats": catrows, "r7": dict(Counter(a["r7"] for a in apps)), "sev": {s: sev[s] for s in SEVS}, "linux": lr,
             "linuxIssues": A.linux_issue_types(c), "linuxChecks": A.linux_checks(c), "linuxReports": A.linux_reports(c), "tp": {k: v for k, v in tp.items() if k in ("external", "onprem", "sdks")},
             "tpCounts": {"external": len(tp["external"]), "onprem": len(tp["onprem"]), "sdks": len({x["service"] for x in tp["sdks"]}),
                          "identity": len(tp["identity"]), "other": len(tp["other"])},
-            "linuxBuild": lbuild, "map": A.architecture_map(c), "effort": effort}
+            "linuxBuild": lbuild, "map": A.architecture_map(c), "effort": effort,
+            "P": pm, "auth": BR.auth_rows(c, pm), "graphs": graphs, "pkgActions": PKG_ACTIONS}
+
+
+PKG_ACTION = {"Incompatible": "Replace", "Deprecated / end of life": "Replace", "Framework-specific": "Replace", "Upgrade needed": "Upgrade",
+              "Licence review": "Check licence", "Private / unknown": "Get source / private feed", "Not verified (offline)": "Verify",
+              "Compatible": "Keep", "Not needed on .NET 10": "Remove"}
+PKG_ACTIONS = [  # (action, what the developer does), in the order to work through them
+    ("Upgrade (security)", "Published vulnerability for the version in use: upgrade first, whatever else happens"),
+    ("Replace", "No .NET 10 / Linux path in this package: swap it for the named replacement during the port"),
+    ("Remove", "The platform provides it on .NET 10: delete the reference"),
+    ("Upgrade", "Works on .NET 10 in a newer version: bump the version"),
+    ("Get source / private feed", "Not on nuget.org: get the source or publish it to a private feed (AWS CodeArtifact)"),
+    ("Check licence", "Licence changed or commercial: confirm terms before the move"),
+    ("Verify", "Not checked against nuget.org: rerun the scan online"),
+    ("Keep", "Runs on .NET 10 and Linux: keep (move to a current version during the port)"),
+]
 
 
 # blocks that need a heading on their card (the Markdown report has its own section headings)
