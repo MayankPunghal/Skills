@@ -77,6 +77,9 @@ Effort (modernize path) is **coding hours only** (no QA, DevOps, project managem
 
 ## What it produces
 
+Start a new session at `assessment/reference/README.md` (the context pack, `reference.py`): where everything is, notes from earlier sessions, logs and inputs.
+
+
 All in `assessment/report/`:
 - **`<Client>-AWS-Modernization-Assessment.html`** — the version for PMs, BAs and the client. It is one self-contained page that combines the report and every export:
   - sidebar navigation and global search;
@@ -109,10 +112,10 @@ modernization-assessment/
 │                            estimation-model, review-findings, scale-and-subagents, write-report, report-template,
 │                            style-guide, calibration, setup, sources
 ├── scripts/                 setup_assessment, discover_estate, map_graphs, scan_repo, review_queue, classify_apps,
-│   │                        estimate_effort, validate_linux_build, build_report, verify_report, context,
+│   │                        estimate_effort, validate_linux_build, build_report, verify_report, context, reference,
 │   │                        render_references, _common, _findings,
 │   │                        solutions, third_party, estimate_hours, build_check, _hours_report (lift-and-shift hours calculator)
-│   └── data/                rules.json (186 evidence rules), package_map.json, categories.json, estimation.json,
+│   └── data/                rules.json (209 evidence rules), auth.json (sign-in mechanisms and AWS options), package_map.json, categories.json, estimation.json,
 │                            decision_rules.json, hours.json, commercial_packages.json   <- calibration lives here, not in code
 ├── calibration/             drop sample reports in samples/ (never packaged); gap-analysis template
 ├── templates/narrative/     stubs for the seven narratives
@@ -173,6 +176,34 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - .NET 8 and 9: a target turns from "ending soon" to "out of support" on its end-of-support date (10 November 2026), and the 7R rationale names the date. The duplicate rule BUILD-TFM-NET8-NET9 is gone (INV-TFM-SUPPORT covers it). Rules: 196 (was 186).
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
+
+## Changed in 3.3.0
+
+- **A report a .NET developer can act on.** The HTML screens are regrouped: Start here (Overview with "What to do first", Migration order), Projects (Projects & 7R, Dependencies, Code graph), What to change (Work items, Sign-in & access, Packages, Linux, .NET modernization, integrations, data, hosting, delivery), Plan, Reference. The scans and the data are unchanged; only the display is.
+- **Migration order by blast radius (`_projects.py`).** Every project, class libraries and tests included, gets a wave, a place in the order, what to port first, what uses it and a blast radius. The pilot is picked from it. Cross-repository DLLs count as dependencies. Markdown 1.3 and 4.13; HTML Migration order and Dependencies (project map by wave, filter by repository); `report/projects.json`; tracker sheet Projects; summary section.
+- **7R and difficulty per project.** Class and shared libraries get their own 7R ([seven-rs.md](references/seven-rs.md#every-project-class-libraries-tests-and-difficulty)). Difficulty: APIs, class libraries, console and worker projects are Easy; Web Forms and desktop UIs Hard. Markdown 3.4; HTML Projects & 7R.
+- **Authentication and authorization.** 13 new rules (custom login, credentials checked in the database, reversible passwords, fixed header secrets, API keys, IP checks, roles in config or code, JWT, OWIN OAuth, Basic auth, custom authorization code, ASP.NET Core auth). `_auth.py` says per application who signs in (people, other systems, Windows users) and recommends the ASP.NET Core and AWS replacement (Cognito, API Gateway, IAM Identity Center, Secrets Manager ...) with developer steps and client questions. Markdown 7.4; HTML Sign-in & access; `report/auth.json`; tracker and summary.
+- **Packages on their own screen.** One action per package: upgrade for a security advisory, replace, remove, upgrade, get the source, check the licence, verify, keep. Markdown 7.5.
+- **Work items.** Findings grouped by project in migration order, each with what to do, why and where.
+- **Full graphify output by default.** `map_graphs.py` writes graph.html, the code tree, the wiki (also as HTML pages), call flows and GraphML (`--no-exports` skips them), then the **explorer** (`graph_ui.py`): blast radius, depends on, path, hubs, with text matches for the static calls graphify misses. `graph_ui.py --serve` adds graphify questions from the browser (local only). The report's Code graph screen and the reference pack link them.
+- **Fixed: Web Forms false Blocker.** `WEB-WEBFORMS-UI` now needs System.Web, a page directive or ASP.NET markup in the same file; a class named `Page<T>` in a plain library no longer matches.
+- **Fixed: false internal hosts.** A UNC path must start a value: `\u017F` in a regex range, `C:\temp` and sample paths in scripts are no longer read as servers (`network_endpoints.py`, also in lift-and-shift-assessment and codebase-documenter).
+- **Header secrets masked.** `Headers["X"] == "value"` shows `***` in evidence (also in lift-and-shift-assessment).
+
+## Changed in 3.2.6
+
+- **Context pack (`reference.py`, step 8.16).** `assessment/reference/README.md` and `.html` are the place to start in a new session. They cover:
+  - scope and assessment type;
+  - each repository copy with its branch and commit;
+  - the headline estimate and 7 Rs;
+  - every deliverable, and every `assessment/` folder with what it holds;
+  - the code graph and the exact `graphify query` command;
+  - what lives outside `assessment/` and why: repository copies, build copies in the short-path folder, the AWS Transform scanner, and the shared tool caches;
+  - tool versions.
+- **Notes from chat (`reference.py --note`).** `notes/` keeps answers given in chat as dated Markdown and HTML, so they outlive the session transcript.
+- **Logs and inputs copied.** `logs/` holds the run issues log and the workspace-root logs. `inputs/` holds `assessment.json` and the scanner settings, with secret values masked.
+- **Pointers in context.py and checks in verify_report.py.** `context.py` prints where the pack is and when it is stale. `verify_report.py` checks every file in `reference/` for secret values.
+- **No temp leftovers (`_docx_brand.py`).** The Word helper scripts in the temp folder and the `.toc-check.pdf` are removed even when Word fails or times out. The same fix is in lift-and-shift-assessment 1.1.2.
 
 ## Changed in 3.2.5
 

@@ -5,6 +5,12 @@ A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, 
 It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
 
+## Changed in 1.1.2
+
+- **No false internal hosts from backslashes (network_endpoints.py).** A UNC path (`\\server\share`) must start a value. A `\u017F` inside a regex character range, a drive path such as `C:\temp` and sample paths in publish scripts are no longer reported as servers named `u017F`, `temp` or `full`.
+- **Header secrets masked in evidence (_common.py).** A request header compared with a value written in the code (`Headers["X"] == "value"`) shows `***` instead of the value.
+- **No temp leftovers (`_docx_brand.py`).** The Word helper scripts in the temp folder and the `.toc-check.pdf` next to the document are removed even when Word fails or times out.
+
 ## Changed in 1.1.1
 
 - **Network endpoints name the store, not the port guess (network_endpoints.py).** MongoDB connection strings are MongoDB on 27017 (they also say Server=...), Memcached and Aerospike have their own roles and ports (11211, 3000) instead of Redis on 6379, and a host in a store's own config file (redis.config, memcached.config) takes that store's role.
