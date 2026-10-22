@@ -183,7 +183,8 @@ def sort_key(f):
 
 def has_evidence(f):
     ev = f.get("evidence") or []
-    return any(e.get("file") and (e.get("line") or e.get("package")) for e in ev) or bool(f.get("package"))
+    # line 0 = file-level evidence (e.g. a file that should exist and does not)
+    return any(e.get("file") and (isinstance(e.get("line"), int) or e.get("package")) for e in ev) or bool(f.get("package"))
 
 
 def evidence_ref(e):

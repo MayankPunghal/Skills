@@ -118,7 +118,9 @@ def main():
                     (" (" + "; ".join((bad + missing)[:4]) + ")" if bad or missing else "")))
     # 2 coverage
     reports = [p for p in glob.glob(os.path.join(OUT, "report", "*.md"))]
-    report = open(reports[0], encoding="utf-8").read() if reports else ""
+    # the main report, not the summary or the execution plan (directory order puts execution-plan.md first on Windows)
+    main = sorted(p for p in reports if not os.path.basename(p).startswith("execution-plan") and "-Summary" not in os.path.basename(p))
+    report = open(main[0], encoding="utf-8").read() if main else ""
     cats = data("categories.json")["categories"]
     is_lift = BR.lift(cfg)
     if is_lift:  # lift-and-shift report: section 5 holds the in-scope categories, 8.2 summarises the rest (Linux / .NET modernization)
@@ -185,7 +187,8 @@ def main():
     absent = [h for h in heads if h not in report]
     est = read_json(os.path.join(OUT, "estimate.json"), {})
     oq = os.path.join(OUT, "report", "open-questions.csv")
-    stale = bool(htmls) and bool(reports) and os.path.getmtime(htmls[0]) < os.path.getmtime(reports[0]) - 1
+    twin = os.path.splitext(main[0])[0] + ".html" if main else ""
+    stale = os.path.exists(twin) and os.path.getmtime(twin) < os.path.getmtime(main[0]) - 1
     hours = est.get("hours") if est.get("basis") == "hours" else None
     ok7 = not absent and bool(est.get("totals", {}).get("likely_days") or hours) and os.path.exists(oq) and bool(htmls) and not stale
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "

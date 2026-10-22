@@ -174,6 +174,12 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.2.1
+
+- **7R of a shared project (`estimate_phases.py`).** When one application lists another application's project, that project keeps its owner's 7R; before, the last application processed overwrote it.
+- **Verifier reads the main report (`verify_report.py`).** On Windows the folder listing put `execution-plan.md` first, so the coverage, structure and dependency gates failed on a correct report. It now picks the main report and checks its own `.html` twin for staleness.
+- **File-level evidence counts (`_findings.py`).** A finding cited at line 0 (for example a repository with no `.gitattributes`) now passes the evidence gate.
+
 ## Changed in 3.2.0
 
 - **One Linux-readiness scanner.** The check now loads the standalone **linux-readiness** skill (installed with this one); the copy in this skill is gone. Its hits that this skill's rules do not already cover become costed findings, with no double count, and the report has a Linux readiness section and a checklist appendix.

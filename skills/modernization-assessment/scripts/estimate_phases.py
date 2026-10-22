@@ -415,11 +415,12 @@ def inputs_for(repo, f, cfg, d):
         envs if isinstance(envs, int) else None)
     cls = read_json(os.path.join(OUT, "classification.json"), {}) or {}
     r7 = {}
-    for app in cls.get("applications", []):
-        if app.get("repo") != repo:
-            continue
-        for pr in app.get("projects", []):
-            r7[pr] = {"r": app.get("r7"), "why": " ".join(app.get("rationale") or [])[:300], "then": app.get("target", "")}
+    apps = [a for a in cls.get("applications", []) if a.get("repo") == repo]
+    for primary in (True, False):  # an application's own project first; a project it only references keeps its owner's 7R
+        for app in apps:
+            for pr in (app.get("projects") or [])[:1] if primary else (app.get("projects") or [])[1:]:
+                if pr not in r7:
+                    r7[pr] = {"r": app.get("r7"), "why": " ".join(app.get("rationale") or [])[:300], "then": app.get("target", "")}
     plan = read_json(os.path.join(OUT, "execution-plan.json"), {}) or {}
     engine = next((x.get("engine") for x in plan.get("repos", plan.get("repositories", [])) if isinstance(x, dict) and x.get("repo") == repo), None)
     amb = (f.get("code_usage") or {}).get("ambient_context") or {}

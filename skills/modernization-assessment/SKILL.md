@@ -2,7 +2,7 @@
 name: modernization-assessment
 description: Assesses legacy .NET code bases (one repository or hundreds) for modernization to .NET 10, Linux and AWS, and produces an evidence-backed, client-ready AWS Modernization Assessment Report with JSON/CSV exports. Inventories the estate, maps each repo with graphify, scans for everything that breaks on Linux or .NET 10 (Windows-only APIs, System.Web, WCF, COM, registry, SQL Server features, config secrets, vulnerable NuGet packages and more), classifies every application with the 7 Rs and estimates effort and timeline. A short intake questionnaire picks the assessment type (modernize, or lift-and-shift to EC2 with the same OS). Use when the user mentions migrating, modernizing, porting or assessing .NET Framework / ASP.NET / WCF apps for AWS, Linux, containers, .NET 8/10, the 7 Rs, AWS Transform, MAP or licensing cost reduction, or asks what will break when moving an app off Windows/SQL Server, even if they don't say "assessment".
 metadata:
-  version: 3.2.0
+  version: 3.2.1
 user-invocable: true
 argument-hint: "[help · assess-estate · intake · fetch-repos · discover-estate · atf-scan · map-code-graph · branch-check · scan-repos · linux-readiness · map-infra · update-inventory · review-findings · classify-applications · estimate-effort · effort-facts · estimate-phases · plan-execution · build-check · extrapolate-estate · validate-linux-build · write-report · write-summary · write-document · verify-report · calibrate-report · resume] [repo]"
 allowed-tools:
