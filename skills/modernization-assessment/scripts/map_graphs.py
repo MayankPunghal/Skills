@@ -1,6 +1,6 @@
 """Map each repository with graphify (AST code graph) and derive the architecture facts the report needs.
 
-    python <skill>/scripts/map_graphs.py --repo NAME | --all [--force] [--label] [--exports] [--merge]
+    python <skill>/scripts/map_graphs.py --repo NAME | --all [--force] [--label] [--exports | --no-exports] [--merge]
 
 Per repository (assessment/graphs/<repo>/):
   graphify extract <repo> --code-only        code graph (free, no LLM); third-party front-end libraries copied into the repo
@@ -15,7 +15,10 @@ Per repository (assessment/graphs/<repo>/):
                                              C# method -> table / procedure from SQL embedded in code (T-SQL parser, no regex)
   community_names.py (codebase-documenter)   unique community names + one-line summaries without an LLM; with --label an
                                              LLM names them instead (cheap, one request per 25 communities)
-  graphify export wiki / callflow-html (with --exports)   navigable wiki and Mermaid call flows for the architecture section
+  graphify export html / tree / wiki / callflow-html / graphml   the full output set, by default (--no-exports skips it):
+                                             graph.html, GRAPH_TREE.html, wiki/ (+ wiki-html/ pages), <repo>-callflow.html,
+                                             graph.graphml; then graph_ui.py writes explorer.html (blast radius, paths, search;
+                                             `graph_ui.py --serve` adds questions answered by graphify query / explain / path)
   analysis.json                              communities (size, folders, projects, summary), god nodes (hubs), observed
                                              project-to-project edges, per-file blast radius (how many other files
                                              depend on code in each file), node/edge counts, and "wiring": DI containers,
@@ -148,11 +151,32 @@ def label(repo, llm):
           f"{'' if code else ': ' + last[:160]}")
 
 
-def exports(repo):
+EXPORTS = [  # (graphify arguments, file it writes under graphify-out/): the full set, each a few seconds
+    (["export", "html"], "graph.html"),                                   # interactive graph (communities, zoom, search)
+    (["tree", "--label", "{repo}"], "GRAPH_TREE.html"),                   # collapsible folder / type / member tree
+    (["export", "wiki"], "wiki/index.md"),                                # one Markdown article per community and hub
+    (["export", "callflow-html", "--max-sections", "12"], "{repo}-callflow.html"),  # Mermaid call flows per area
+    (["export", "graphml"], "graph.graphml"),                             # for Gephi / yEd / Neo4j import
+]
+
+
+def exports(repo, force=False):
+    """The full graphify output set, then the wiki as HTML pages and the explorer (graph_ui.py). Skipped when every file
+    is newer than graph.json, unless force."""
     d = graph_dir(repo)
-    for args in (["export", "wiki"], ["export", "callflow-html", "--max-sections", "12"]):
+    gj = os.path.join(d, "graphify-out", "graph.json")
+    for args, out in EXPORTS:
+        target = os.path.join(d, "graphify-out", out.replace("{repo}", repo))
+        if not force and os.path.exists(target) and os.path.getmtime(target) >= os.path.getmtime(gj):
+            continue
+        args = [a.replace("{repo}", repo) for a in args]
         code, txt = run(["graphify"] + args, cwd=d, timeout=1800)
         print(f"{repo}: graphify {' '.join(args)} -> {'ok' if code == 0 else 'failed: ' + txt[-200:]}")
+    try:
+        import graph_ui
+        print(f"{repo}: " + graph_ui.build(repo))
+    except Exception as e:  # the explorer is a convenience: never fail the graph step over it
+        print(f"WARN {repo}: graph explorer not built ({type(e).__name__}: {e})")
 
 
 def analyse(repo, gj, inv):
@@ -476,7 +500,8 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--label", action="store_true", help="name communities with an LLM (needs a key in the environment)")
-    ap.add_argument("--exports", action="store_true", help="also export the graphify wiki and call-flow HTML")
+    ap.add_argument("--exports", action="store_true", help="re-export even when the exports are newer than the graph (they run by default)")
+    ap.add_argument("--no-exports", action="store_true", help="skip graph.html, the tree, wiki, call flows, GraphML and the explorer (very large estates)")
     ap.add_argument("--merge", action="store_true", help="merge all repository graphs into one estate graph")
     a = ap.parse_args()
     root, cfg = load_config()
@@ -515,8 +540,8 @@ def main():
                 how = "existing+" + "+".join(refresh)
         if a.label or how != "existing" or not os.path.exists(os.path.join(gout, "community-summaries.json")):
             label(name, a.label)
-        if a.exports:
-            exports(name)
+        if not a.no_exports:
+            exports(name, a.exports or a.force or how != "existing")
         if how != "existing" or a.force or a.label or not done or not os.path.exists(os.path.join(graph_dir(name), "analysis.json")):
             res, wf = analyse(name, gj, inv)
             write_json(os.path.join(graph_dir(name), "analysis.json"), res)
