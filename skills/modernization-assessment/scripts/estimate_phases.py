@@ -9,7 +9,7 @@ porting agent (or Claude with the DB porting skills) adds the PostgreSQL path be
 The hours are engineer time to run the tools, approve plans, review pull requests, fix what the gates reject, decide
 designs and sign off. Planning grade: +-25%. Buffer 15% on the subtotal by default.
 
-Every line = quantity from the code (assessment/effort/<repo>/facts.json) x a rate range per unit (+ a fixed part).
+Every line = quantity from the code (assessment/effort/<repo>/facts.json) x a rate range per unit (+ a fixed part). Two rate sets: claude-first (default: the engine or Claude writes every line) and engineer-paced (the reference plan; shown as a scenario); estimate-inputs.json "rate_profile" picks one.
 Rates live in RATES below, each with the basis it was set from. Per-repository assumptions live in
 assessment/effort/<repo>/estimate-inputs.json: written on the first run with every value this skill can read from
 the code (ambient-context uses, configuration reads, SQL connections), the 7R per project from classification.json,
@@ -35,7 +35,7 @@ from _mdhtml import write_pair
 # A2 inline SQL 32-56 for about 1,000 candidates, A3 procedure re-pointing 24-40, A5 shim 16-32, A8 cross-database
 # 24-40, A9 re-points 12-24 for 6 waves), scaled to this repository's quantities; data/estimation.json per-occurrence
 # rates for findings.
-RATES = {
+ENGINEER_PACED = {
     "solution_build": (6, 10), "project_sdk": (1, 2), "package": (0.1, 0.2), "binary_ref": (0.5, 1.5),
     "parity_base": (8, 12), "request_type": (0.5, 1.0), "page_smoke": (0.5, 1.0),
     "transform_project": (4, 8), "review_kloc": (0.5, 1.0),
@@ -55,6 +55,32 @@ RATES = {
     # a measured run on the estate: calibrate after the first one.
     "dbagent_run": (4, 8), "dbagent_proc_review": (0.15, 0.3), "dbagent_stmt_review": (0.25, 0.5), "dbagent_open_items": (4, 10),
 }
+# Claude-first (default): every line of code is written by the porting engine or by Claude, never by hand; Claude writes
+# 1,000 lines in seconds, so the hours are what stays human: running the tools, reading the diff where the risk is (not
+# every line), build / test loops, design decisions, sign-off, and waiting on environments. Rates are the engineer-paced
+# ones cut to that work: about a quarter for mechanical items, a third to a half where a decision or a real environment
+# is needed (load balancer with no source, protected config, cross-database design, re-points, canary). INFERRED: replace
+# with measured hours after the first repository (estimate-inputs.json "rate_profile", or edit here).
+CLAUDE_FIRST = {
+    "solution_build": (2, 4), "project_sdk": (0.25, 0.5), "package": (0.02, 0.05), "binary_ref": (0.25, 0.75),
+    "parity_base": (4, 8), "request_type": (0.25, 0.5), "page_smoke": (0.25, 0.5),
+    "transform_project": (1, 2), "review_kloc": (0.1, 0.25),
+    "handler": (1.5, 3), "asmx_svc": (1.5, 3), "response_end": (0.05, 0.1), "windows_auth": (1, 2),
+    "ambient_base": (2, 4), "ambient_use": (0.01, 0.02),
+    "soap_reference": (1, 2), "soap_op": (0.1, 0.25), "webapi_op": (0.05, 0.1), "load_balancer": (2, 4), "webrequest": (0.1, 0.25),
+    "config_read": (0.02, 0.05), "custom_section": (0.25, 0.5), "protected_config": (1, 2), "external_config": (0.1, 0.25),
+    "pkg_remove": (0.02, 0.05), "pkg_windows_only": (0.5, 1), "pkg_unmaintained": (0.5, 1), "pkg_major": (0.5, 1), "lib_remove": (0.5, 1),
+    "page": (1, 2), "user_control": (0.5, 1), "master": (0.5, 1), "control_toolkit": (1, 2),
+    "containerise": (1, 2), "health": (0.25, 0.5), "canary_env_deployable": (1, 2),
+    "sqlclient_file": (0.5, 1), "sql_objects_50": (0.25, 0.5),
+    "stmt_auto": (0.05, 0.1), "stmt_rewrite": (0.25, 0.5), "stmt_redesign": (1, 2), "stmt_unparsed": (0.25, 0.5), "stmt_dynamic": (0.5, 1),
+    "proc": (0.1, 0.2), "call_site": (0.02, 0.05), "multi_result": (0.5, 1),
+    "shim_base": (1, 2), "sql_error_number": (0.1, 0.25), "output_param_proc": (0.1, 0.25), "tvp_proc": (0.5, 1),
+    "for_xml_proc": (1, 2), "cross_db": (0.5, 1), "cross_db_base": (1, 2), "repoint": (0.25, 0.5), "db_parity_proc": (0.1, 0.25),
+    "dbagent_run": (1, 2), "dbagent_proc_review": (0.05, 0.1), "dbagent_stmt_review": (0.1, 0.2), "dbagent_open_items": (1, 3),
+}
+RATE_PROFILES = {"claude-first": CLAUDE_FIRST, "engineer-paced": ENGINEER_PACED}
+RATES = CLAUDE_FIRST  # set per build from estimate-inputs.json "rate_profile"
 # Who does each work item. One porting engine per project (estimate-inputs.json "port_engine": "devtx" = AWS's Version
 # Upgrade Toolkit: Upgrade Assistant + Kiro CLI with its 28-file .NET knowledge base, iterated to a green build; or
 # "aws-transform" = AWS Transform for .NET), never both. What that engine does not cover goes to Claude with the
@@ -126,13 +152,31 @@ def short(x):
 
 
 # per-occurrence rates for Windows-only / hosting findings (rule -> rate)
-FINDING_RATES = {
+FINDING_RATES_ENGINEER_PACED = {
     "API-BINARYFORMATTER": (1, 2), "API-ENTERPRISESERVICES": (1, 2), "SEC-WEAK-CRYPTO": (0.5, 1),
     "TZ-WINDOWS-ID": (0.5, 1), "TZ-LOCAL-TIME": (0.1, 0.25), "HV-MACHINE-NAME": (0.25, 0.5), "FILE-BACKSLASH": (0.25, 0.5),
     "FILE-LOCAL-WRITE": (0.5, 1), "FILE-DRIVE-LETTER": (0.5, 1), "STATE-APP-CACHE": (0.25, 0.5), "LOG-FILE-TARGETS": (1, 2),
     "AUTH-DEFAULT-CREDENTIALS": (0.5, 1), "LS-CLIENT-IP-LOGIC": (1, 2), "LS-LOCALHOST-SERVICE": (0.25, 0.5),
     "API-REGISTRY": (1, 2), "API-EVENTLOG": (0.5, 1), "API-COM-INTEROP": (4, 8), "API-PINVOKE": (2, 4), "API-SYSTEM-DRAWING": (1, 3),
 }
+FINDING_RATES_CLAUDE_FIRST = {  # Claude makes the change; the engineer checks it (COM interop stays a design decision)
+    "API-BINARYFORMATTER": (0.25, 0.5), "API-ENTERPRISESERVICES": (0.5, 1), "SEC-WEAK-CRYPTO": (0.1, 0.25),
+    "TZ-WINDOWS-ID": (0.1, 0.2), "TZ-LOCAL-TIME": (0.02, 0.05), "HV-MACHINE-NAME": (0.05, 0.1), "FILE-BACKSLASH": (0.05, 0.1),
+    "FILE-LOCAL-WRITE": (0.1, 0.25), "FILE-DRIVE-LETTER": (0.1, 0.25), "STATE-APP-CACHE": (0.05, 0.1), "LOG-FILE-TARGETS": (0.25, 0.5),
+    "AUTH-DEFAULT-CREDENTIALS": (0.1, 0.25), "LS-CLIENT-IP-LOGIC": (0.25, 0.5), "LS-LOCALHOST-SERVICE": (0.05, 0.1),
+    "API-REGISTRY": (0.25, 0.5), "API-EVENTLOG": (0.1, 0.25), "API-COM-INTEROP": (2, 4), "API-PINVOKE": (0.5, 1), "API-SYSTEM-DRAWING": (0.5, 1),
+}
+FINDING_RATE_PROFILES = {"claude-first": FINDING_RATES_CLAUDE_FIRST, "engineer-paced": FINDING_RATES_ENGINEER_PACED}
+FINDING_RATES = FINDING_RATES_CLAUDE_FIRST
+
+
+def use_profile(inp):
+    """Select the rate set for one build: estimate-inputs.json "rate_profile" (claude-first unless set)."""
+    global RATES, FINDING_RATES
+    p = (inp.get("rate_profile") or {}).get("value", "claude-first")
+    p = p if p in RATE_PROFILES else "claude-first"
+    RATES, FINDING_RATES = RATE_PROFILES[p], FINDING_RATE_PROFILES[p]
+    return p
 SEV = ["Blocker", "High", "Medium", "Low", "Info"]
 
 
@@ -157,6 +201,7 @@ def line(items, stage, iid, label, parts, basis, status="VERIFIED", note="", too
 
 def build(f, inp):
     """Work items for one repository under one set of assumptions."""
+    use_profile(inp)
     envs = inp["environments"]["value"]
     retired = set(inp.get("retire_projects", {}).get("value", []))
     ui_retired = inp.get("admin_ui", {}).get("value") == "retire"
@@ -472,6 +517,10 @@ def inputs_for(repo, f, cfg, d):
                        "question": "Move the server-hosted services (caches, mail, logging, ...) to AWS managed services now (priced in) or later?"},
         "aws_native_choices": {"value": cfg.get("aws_native_choices") or {}, "status": "INFERRED", "note": "Per service the first option of data/aws_native.json unless chosen here."},
         "r7": {"value": r7, "status": "INFERRED", "note": "From classification.json (decisions.json overrides)."},
+        "rate_profile": {"value": "claude-first", "status": "INFERRED",
+                         "note": "claude-first: the porting engine or Claude writes every line; hours are engineer time to run tools, review where the risk is, "
+                                 "fix what the gates reject, decide and sign off. engineer-paced: the reference plan's rates (people read every line). "
+                                 "Calibrate from the first repository's measured hours."},
         "scenarios": {"value": {}, "status": "INFERRED", "note": "What-ifs: {name: {question, set: {key: value}, add: [{id, label, low, high}]}}."},
     }
     changed = False
@@ -482,6 +531,11 @@ def inputs_for(repo, f, cfg, d):
         elif k == "r7" and not inp[k].get("value"):
             inp[k] = v
             changed = True
+    sc = inp.setdefault("scenarios", {"value": {}}).setdefault("value", {})
+    if inp["rate_profile"].get("value") != "engineer-paced" and "Engineer-paced rates" not in sc:
+        sc["Engineer-paced rates"] = {"question": "If engineers review every line and hand-fix instead of Claude making every change (reference plan rates)",
+                                      "set": {"rate_profile": "engineer-paced"}}
+        changed = True
     if inp.get("db_tool", {}).get("value") not in DB_TOOLS:  # a tool name this version does not know
         inp["db_tool"]["value"] = "db-agent"
         changed = True
@@ -514,11 +568,12 @@ def estimate_repo(repo, cfg, a):
         t = totals(J, alt)
         scen.append({"name": name, "question": sc.get("question", ""), "total": [round(t[3]), round(t[4])],
                      "delta": [round(t[3] - tot_lo), round(t[4] - tot_hi)]})
+    rate_prof = use_profile(inp)  # the scenarios may have switched the rate set: back to this estimate's own
     stages = {s: (sum(x["low"] for x in I if x["stage"] == s), sum(x["high"] for x in I if x["stage"] == s)) for s in ("A", "B", "S")}
     hpd = inp.get("hours_per_day", {}).get("value", 6)
     res = {"repo": f["repo"], "items": I, "stages": stages, "subtotal": [round(sub_lo), round(sub_hi)], "buffer": buf,
            "total": [round(tot_lo), round(tot_hi)], "dev_days": [round(tot_lo / hpd), round(tot_hi / hpd)], "hours_per_day": hpd,
-           "inputs": inp, "rates": RATES, "finding_rates": FINDING_RATES, "scenarios": scen}
+           "inputs": inp, "rate_profile": rate_prof, "rates": RATES, "finding_rates": FINDING_RATES, "scenarios": scen}
     team = inp.get("team", {}).get("value", [1, 2])
     res["calendar_weeks"] = {str(n): [round(tot_lo / (n * hpd * 5), 1), round(tot_hi / (n * hpd * 5), 1)] for n in team}
     os.makedirs(a.out, exist_ok=True)

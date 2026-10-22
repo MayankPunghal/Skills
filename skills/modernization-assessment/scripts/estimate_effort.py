@@ -606,6 +606,8 @@ def main():
                     help="effort model: auto = hours calculator for the lift-and-shift track, engineer-days model otherwise (default)")
     ap.add_argument("--engineers", type=int)
     ap.add_argument("--manual", action="store_true", help="ignore AI assistance (manual estimate)")
+    ap.add_argument("--factors", choices=["claude-first", "engineer-paced"], default="claude-first",
+                    help="AI factor set: claude-first (default, Claude or the engine writes every line) or engineer-paced (people hand-fix)")
     ap.add_argument("--hosting", help="modernize | windows-rehost | lift-and-shift (default: assessment.json scenario.hosting)")
     ap.add_argument("--database", help="dual | postgresql | none (default: assessment.json scenario.database)")
     ap.add_argument("--explain", action="store_true", help="print the per-project arithmetic")
@@ -628,6 +630,8 @@ def main():
     if database not in ("dual", "postgresql", "none"):
         raise SystemExit(f"unknown database scenario '{database}': use dual, postgresql or none (assessment.json scenario.database)")
     ai_on = est["ai_assistance"].get("enabled", True) and not a.manual
+    if a.factors == "engineer-paced":
+        est["ai_assistance"].update(est["ai_assistance"].get("engineer_paced", {}))
     engineers = a.engineers or sc.get("engineers") or est["team"]["engineers"]
     HPD = est["hours_per_day"]
     start_date = a.start_date or sc.get("start_date")

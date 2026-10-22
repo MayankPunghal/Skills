@@ -41,12 +41,15 @@ conversion(project) = (fixed[type] + hand-written KLOC × rate[type] + markup KL
 size_factor         = max(1, (repository hand-written KLOC / 10) ^ 0.10)   COCOMO II diseconomy of scale (360 KLOC → 1.4)
 remediation(finding) = min(fixed + per × (occurrences − 1), cap)          by the rule's effort key
 code_manual = Σ conversion + Σ remediation
-code        = mechanical part × ai_assistance.code_factor (0.30–0.50)
-            + redesign part   × ai_assistance.redesign_factor (0.70–1.0)   set enabled=false for manual-only
-database    = mechanical part × db_factor (0.35–0.55) + redesign part × redesign_factor   only in a database scenario
+code        = mechanical part × ai_assistance.code_factor (0.10–0.20, Claude-first)
+            + redesign part   × ai_assistance.redesign_factor (0.25–0.45)   set enabled=false for manual-only
+database    = mechanical part × db_factor (0.15–0.30) + redesign part × redesign_factor   only in a database scenario
+            (--factors engineer-paced: code 0.30–0.50, redesign 0.70–1.0, db 0.35–0.55)
 ```
 
-- Generated code is excluded; a project shared by several apps is ported once.
+- **Claude-first operating model (default).** The porting engine or Claude writes every line of code and SQL; nothing is hand-written. The factors price what stays human: running the tools, reading the diff where the risk is, build and test loops, design decisions and sign-off. The phased estimate (`estimate_phases.py`) uses the same model through its `claude-first` rate set and shows the `engineer-paced` rate set as a scenario.
+- Web Forms projects: only UI code (`loc_ui`: page, user control and master page code) and markup take the Web Forms rate and the redesign factor; the rest of the project ports at the `web-library` rate (`ui_split_types`).
+- Generated code is excluded, also from the run-time indirection count; a project shared by several apps is ported once.
 - **Baseline findings** (System.Web usage, Global.asax, legacy project format …) describe work inside the conversion rate. They show in the report but add no hours.
 - **Retain, Retire, Repurchase and desktop clients** pay small fixed code costs (`other_r_hours`): repointing connection strings and endpoints, integration code.
 - **Redesign part** (no mechanical path, so AI tools help little): Web Forms projects, findings with effort `medium-change`, `large-change`, `db-object-large` or `package-blocker`, constructs and findings at the PostgreSQL `redesign` level, and the dual-database abstraction. Lists in `ai_assistance.redesign_*`.

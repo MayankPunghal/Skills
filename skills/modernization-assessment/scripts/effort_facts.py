@@ -319,7 +319,9 @@ def collect(repo, cfg):
     out = os.path.join(OUT, "effort", repo)
     os.makedirs(out, exist_ok=True)
     choices = (read_json(os.path.join(out, "estimate-inputs.json"), {}) or {}).get("aws_native_choices", {}).get("value") or cfg.get("aws_native_choices") or {}
-    aws = AN.scan(root, library_dirs(scan), facts, choices)
+    ai = (read_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "estimation.json"), {}) or {}).get("ai_assistance", {})
+    factors = {"code": ai.get("code_factor", AN.DEFAULT_FACTORS["code"]), "redesign": ai.get("redesign_factor", AN.DEFAULT_FACTORS["redesign"])}
+    aws = AN.scan(root, library_dirs(scan), facts, choices, factors)  # the same AI factors as every other coding item
     write_json(os.path.join(out, "aws-native.json"), aws)
     write_pair(os.path.join(out, "aws-native.md"), AN.render(aws, repo))
     write_json(os.path.join(out, "facts.json"), json.loads(json.dumps(facts, default=str)))

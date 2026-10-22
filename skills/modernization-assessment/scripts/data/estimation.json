@@ -21,18 +21,33 @@
  "ai_assistance": {
   "_doc": "Share of manual-equivalent effort that remains when coding agents / AWS Transform for .NET / GitHub Copilot app modernization do the mechanical part and engineers direct, review and fix. AWS cites up to 4x faster on mechanical porting (factor 0.25) and about 47% overall productivity gain; the range below sits between the two because findings and rewrites stay human. db: AWS DMS Schema Conversion (generative AI) converts most T-SQL, the rest is review. Set enabled=false for a manual-only estimate.",
   "enabled": true,
+  "_doc_operating_model": "Claude-first (default): the porting engine or Claude writes every line of code and SQL (seconds per 1,000 lines); no manual development. What remains is engineer time: run the tools, read the diff where the risk is, build and test loops, design decisions, sign-off. code 0.1-0.2 and db 0.15-0.3 of manual-equivalent; redesign 0.25-0.45 because decisions and verification against real environments stay human. INFERRED from the operating model, not measured: calibrate from the first repository. The engineer-paced factors (people direct and hand-fix; AWS's 47% / 4x claims) are kept in engineer_paced for comparison (estimate_effort.py --factors engineer-paced).",
   "code_factor": [
-   0.3,
-   0.5
+   0.1,
+   0.2
   ],
   "db_factor": [
-   0.35,
-   0.55
+   0.15,
+   0.3
   ],
   "redesign_factor": [
-   0.7,
-   1.0
+   0.25,
+   0.45
   ],
+  "engineer_paced": {
+   "code_factor": [
+    0.3,
+    0.5
+   ],
+   "db_factor": [
+    0.35,
+    0.55
+   ],
+   "redesign_factor": [
+    0.7,
+    1.0
+   ]
+  },
   "redesign_effort_keys": [
    "medium-change",
    "large-change",

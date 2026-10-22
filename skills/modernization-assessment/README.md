@@ -174,6 +174,14 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.2.3
+
+- **Claude-first operating model is the default.** The porting engine or Claude writes every line of code and SQL; nothing is hand-written. Hours are engineer time to run the tools, read the diff where the risk is, run build and test loops, decide and sign off.
+  - `estimate_phases.py`: two rate sets, `claude-first` (default) and `engineer-paced` (the reference plan's rates, kept as the scenario "Engineer-paced rates"); `estimate-inputs.json` `rate_profile` picks one. Finding rates have the same two sets.
+  - `data/estimation.json` `ai_assistance`: code 0.10-0.20, db 0.15-0.30, redesign 0.25-0.45 of manual-equivalent; the old factors are kept under `engineer_paced` (`estimate_effort.py --factors engineer-paced`).
+  - `effort_facts.py` passes the same factors to `aws_native.py`, so the managed-service swaps (stage S) follow the model too.
+  - The Claude-first rates are INFERRED from the operating model: calibrate from the first repository's measured hours.
+
 ## Changed in 3.2.2
 
 - **Web Forms projects priced by their UI share (`discover_estate.py`, `estimate_effort.py`, `data/estimation.json` `ui_split_types`).** The inventory now counts each project's Web Forms UI code (`loc_ui`: page, user control and master page code-behind and Page subclasses). Only that code and its markup take the Web Forms rewrite rate and the redesign AI factor; HTTP handlers, services, business logic and data access in the same project port at the `web-library` rate with the code AI factor. Before, a handler-only service typed `aspnet-webforms` was priced as a full UI rewrite.

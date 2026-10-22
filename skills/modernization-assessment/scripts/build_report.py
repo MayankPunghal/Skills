@@ -1023,7 +1023,7 @@ def phased_lead(c):
         return ""
     lo, hi = sum(e["total"][0] for _, e in ph), sum(e["total"][1] for _, e in ph)
     t = c.est.get("totals", {})
-    return (f"**Planning figure: {lo:,.0f}-{hi:,.0f} h** from the phased estimate (estimate_phases.py: a tool-run port in six phases, item by item, "
+    return (f"**Planning figure: {lo:,.0f}-{hi:,.0f} h** from the phased estimate (estimate_phases.py: a {ph[0][1].get('rate_profile', 'claude-first')} port in six phases, item by item, "
             f"{int(round(ph[0][1].get('buffer', 0) * 100))}% buffer included; per repository in `effort/<repo>/estimate.html`). "
             f"The table below is the parametric cross-check (lines of code x rate per project type x complexity, plus each finding, "
             f"x the AI factor): likely {t.get('likely_hours', '?')} h, P10-P90 {t.get('total_hours', ['?', '?'])[0]}-{t.get('total_hours', ['?', '?'])[1]} h. "
