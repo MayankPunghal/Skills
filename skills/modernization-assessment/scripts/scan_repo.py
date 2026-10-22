@@ -14,6 +14,7 @@ Evidence snippets never contain secret values (see _common.mask).
 """
 import argparse
 import datetime
+import glob
 import gzip
 import json
 import os
@@ -22,6 +23,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
@@ -580,7 +582,7 @@ class Scan:
                     row["replacement"] = n.get("deprecated_alt") or "the successor named on nuget.org (none given: check the package page)"
                 if row["status"] == "unknown" and n.get("found"):
                     if n.get("supports_modern"):
-                        row["status"], row["note"] = "ok", f"Latest {n.get('latest')} targets {', '.join(n.get('frameworks', [])[:4])}"
+                        row["status"], row["note"] = "ok", f"Latest {n.get('latest')} targets {', '.join(n.get('frameworks', [])[:4]) or n.get('frameworks_from') or 'no framework-specific assets'}"
                     else:
                         row["status"], row["severity"] = "replace", "Medium"
                         row["note"] = f"No .NET Standard/.NET target in latest {n.get('latest')} (targets {', '.join(n.get('frameworks', [])[:4]) or 'none listed'})"
@@ -659,7 +661,109 @@ class Scan:
             if hit and r["status"] in ("ok", "upgrade", "unknown"):
                 r["status"], r["severity"] = "windows-only", "Medium"
                 r["note"] = f"Depends on Windows-only {', '.join(hit)}. " + (r["note"] or "")
+        for row in table:
+            complete_package_row(row, online, os.path.join(OUT, "cache", "nuget"))
         self.facts["packages"] = table
+
+    # ---------------------------------------------------------------- DLLs referenced by HintPath (not from a NuGet package)
+    def binaries(self, online):
+        """Every DLL a project references from a folder in the repository: the framework it was built for, other builds next
+        to it, its source in the estate (any inventoried project with that assembly name), and the nuget.org package of the
+        same name (latest, frameworks, Windows-only). Every column gets a value; nothing is left blank."""
+        pm = data("package_map.json")["packages"]
+        for e in pm:
+            e.setdefault("_rx", re.compile(rf"(?i)^(?:{e['match']})$"))
+        src = defaultdict(list)
+        for sr in self.cfg.get("source_search_roots") or []:  # folders holding library source that is not part of the estate
+            for cp in glob.glob(os.path.join(sr, "**", "*.csproj"), recursive=True) + glob.glob(os.path.join(sr, "**", "*.vbproj"), recursive=True):
+                if re.search(r"(?i)[\\/](bin|obj)[\\/]", cp):
+                    continue
+                t = read_text(cp)
+                an = re.search(r"<AssemblyName>([^<]+)</AssemblyName>", t)
+                tf = re.findall(r"<TargetFrameworks?(?:Version)?>([^<]+)<", t)
+                src[(an.group(1) if an else os.path.splitext(os.path.basename(cp))[0]).lower()].append(
+                    f"{cp.replace(os.sep, '/')} ({', '.join(tf) or 'framework not stated'})")
+        for ip in glob.glob(os.path.join(OUT, "inventory", "*.json")):
+            other = read_json(ip) or {}
+            for q in other.get("projects", []):
+                src[(q.get("assembly_name") or q.get("name") or "").lower()].append(
+                    f"{other.get('name') or os.path.splitext(os.path.basename(ip))[0]}/{q['path']} ({', '.join(q.get('target_frameworks') or []) or 'framework not stated'})")
+        rows = []
+        cache = os.path.join(OUT, "cache", "nuget")
+        for p in self.inv["projects"]:
+            for b in p.get("binary_references", []):
+                full = os.path.normpath(os.path.join(self.root, os.path.dirname(p["path"]), b["hint"].replace("/", os.sep)))
+                built = dll_framework(full)
+                parent = os.path.dirname(os.path.dirname(full))
+                others = sorted(f"{os.path.basename(os.path.dirname(v))}: {dll_framework(v)}"
+                                for v in glob.glob(os.path.join(parent, "*", os.path.basename(full)))
+                                if os.path.normcase(v) != os.path.normcase(full)) if os.path.isdir(parent) else []
+                m = next((e for e in pm if e["_rx"].match(b["name"])), None)
+                n = nuget_info(b["name"], [], cache) if online else {"found": False, "offline": True}
+                fws = n.get("frameworks") or []
+                plat = {}
+                if n.get("found") and n.get("latest"):
+                    files = package_files(b["name"], n["latest"], cache)
+                    if files is not None:
+                        libs = lib_frameworks(files)
+                        rids = sorted({f.split("/")[1] for f in files if f.lower().startswith("runtimes/") and "/native/" in f.lower() and f.count("/") >= 3})
+                        plat = {"win_only_lib": bool(libs) and all("-windows" in l or l.startswith(("net4", "net3", "net2")) for l in libs) and any("-windows" in l for l in libs),
+                                "win_only_native": bool(rids) and all(r.lower().startswith("win") for r in rids)}
+                source = src.get(b["name"].lower(), [])
+                modern_dll = bool(re.search(r"NETStandard|NETCoreApp", built)) or any(re.search(r"NETStandard|NETCoreApp", o) for o in others)
+                if built == "missing":
+                    built_txt = f"DLL not in the repository ({b['hint']})"
+                else:
+                    built_txt = built
+                if not online:
+                    nuget_txt = "not checked (offline run)"
+                elif n.get("error"):
+                    nuget_txt = "not checked (nuget.org unreachable in this run)"
+                elif n.get("found"):
+                    nuget_txt = f"{b['name']} {n.get('latest')}: " + (", ".join(fws[:6]) or n.get("frameworks_from") or "frameworks not listed")
+                else:
+                    nuget_txt = "no package of this name on nuget.org (internal or vendor assembly)"
+                if m and m.get("status") in ("blocker", "replace", "windows-only"):
+                    linux, action = f"no ({m['status']})", f"Replace: {m.get('replacement') or m.get('note')}"
+                elif plat.get("win_only_lib") or plat.get("win_only_native"):
+                    linux, action = "no: the nuget.org package is Windows-only", "Replace with a cross-platform package"
+                elif m and m.get("status") == "remove":
+                    linux, action = "yes (part of .NET 10)", f"Remove the reference: {m.get('replacement') or 'part of .NET 10'}"
+                elif n.get("found") and n.get("supports_modern"):
+                    linux = "yes, through the nuget.org package" + (f" ({', '.join(f for f in fws if not f.startswith('.netframework'))[:80]})" if fws else "")
+                    action = f"Replace the DLL with PackageReference {b['name']} (pick the version matching the API in use; latest {n.get('latest')})"
+                    if re.search(r"CLR v2", built):
+                        action += "; the DLL is a .NET Framework 2.0-3.5 build, so expect API changes against the current package"
+                elif modern_dll:
+                    linux, action = "yes: a .NET Standard / .NET build is in the repository", "Reference the .NET Standard / .NET build (or package it in a private feed)"
+                elif source:
+                    linux, action = "after a port: the source is in the estate", f"Port the source project to .NET 10 and use a ProjectReference or a private package ({source[0]})"
+                elif re.search(r"CLR v2", built):
+                    linux, action = "no: a .NET Framework 2.0-3.5 build, it does not load on .NET 10", "Ask the client for the source or a current version; otherwise replace the component"
+                elif n.get("found"):
+                    linux, action = f"no .NET Standard / .NET build on nuget.org (latest {n.get('latest')})", "Find a cross-platform alternative, or get the source and port it"
+                else:
+                    linux = "unknown: .NET Framework build, no source and no public package"
+                    action = "Ask the client for the source or a .NET Standard 2.0 / .NET build; until then it is a port blocker"
+                if online and linux.startswith(("no", "unknown")) and not (m and m.get("replacement")):
+                    alt = linux_alternative(b["name"], cache)
+                    action += f". Candidate on nuget.org: {alt}" if alt else ". No cross-platform package of a similar name on nuget.org"
+                rows.append({"project": p["path"], "assembly": b["name"], "version": b.get("version") or "not stated in the reference",
+                             "hint": b["hint"], "built_for": built_txt, "other_builds": ", ".join(others) or "none next to this DLL",
+                             "nuget": nuget_txt, "runs_on_linux": linux, "action": action,
+                             "source": "; ".join(source[:3]) or "no source in the inventoried repositories",
+                             "package_map": (m or {}).get("status", "")})
+                blocker = linux.startswith(("no", "unknown"))
+                if blocker:
+                    r = self.synthetic("PKG-BINARY-REFERENCE", "packages", f"DLL {b['name']} has no build that runs on .NET 10 / Linux", "High",
+                                       "Likely", f"{p['path']} references {b['hint']} ({built_txt}). nuget.org: {nuget_txt}. Source: {rows[-1]['source']}.",
+                                       action, "", "package-blocker" if not source else "package-replace", ["S3"],
+                                       "Can we get the source (or a .NET Standard / .NET build) of this assembly?")
+                    r["id"] = f"PKG-BIN-{slug(b['name'])}"
+                    f = self.add(r, p["path"], p["path"], self.find_line_any(p["path"], (f'Include="{b["name"]}', b["hint"].replace("/", "\\"))),
+                                 f"{b['name']} -> {b['hint']}")
+                    f["package"] = b["name"]
+        self.facts["binary_references"] = rows
 
     def find_line_any(self, relfile, needles):
         """Line of the first needle found (a PackageReference before a comment that mentions the package)."""
@@ -994,6 +1098,11 @@ def nuget_info(pid, versions, cache_dir):
     listed = [e for e in entries if e.get("listed", True) is not False and not re.search(r"-", e.get("version", ""))] or entries
     latest = listed[-1]
     fws = sorted({(g.get("targetFramework") or "any").lower() for g in (latest.get("dependencyGroups") or [])})
+    fw_from = "dependency groups"
+    if not fws:  # no dependency groups declared: read the target frameworks from the package's lib/ folders
+        files = package_files(pid, latest.get("version", ""), cache_dir)
+        fws = lib_frameworks(files or [])
+        fw_from = "lib folders" if fws else ("no lib folder (tools, content or metadata package)" if files is not None else "unknown (nuget.org file list not read)")
     modern = (not fws) or any(re.match(r"^(\.netstandard|netstandard|\.netcoreapp|netcoreapp|net\d+\.\d+|any)", f) for f in fws)
     used = {ver_tuple(v) for v in versions if v}
     sevname = {"0": "low", "1": "moderate", "2": "high", "3": "critical"}
@@ -1008,7 +1117,7 @@ def nuget_info(pid, versions, cache_dir):
         alt = (dep.get("alternatePackage") or {}).get("id")
         return ", ".join(dep.get("reasons", [])) + (f"; use {alt}" if alt else "")
     used_dep = next((e.get("deprecation") for e in entries if ver_tuple(e.get("version", "0")) in used and e.get("deprecation")), None)
-    return {"found": True, "latest": latest.get("version"), "frameworks": fws, "supports_modern": modern,
+    return {"found": True, "latest": latest.get("version"), "frameworks": fws, "frameworks_from": fw_from, "supports_modern": modern,
             "deprecated": dep_text(latest.get("deprecation")), "used_version_deprecated": dep_text(used_dep),
             "deprecated_alt": ((latest.get("deprecation") or {}).get("alternatePackage") or {}).get("id"),
             "vulnerable_versions": vuln, "licence": latest.get("licenseExpression"), "licence_info": licence_change(pid, entries, versions),
@@ -1024,16 +1133,148 @@ def platform_assets(pid, entries, versions, cache_dir):
         uv = max(used, key=ver_tuple)
     except ValueError:
         return None
+    files = package_files(pid, uv, cache_dir)
+    if files is None:
+        return None  # unknown, not "no native binaries"
+    rids = sorted({f.split("/")[1] for f in files if f.lower().startswith("runtimes/") and f.count("/") >= 3 and "/native/" in f.lower()})
+    libs = lib_frameworks(files)
+    win_only_native = bool(rids) and all(r.lower().startswith("win") for r in rids)
+    win_only_lib = bool(libs) and all("-windows" in l or l.startswith(("net4", "net3", "net2")) for l in libs) and any("-windows" in l for l in libs)
+    return {"native_rids": rids, "win_only_native": win_only_native, "win_only_lib": win_only_lib, "lib_frameworks": libs}
+
+
+def linux_alternative(pid, cache_dir):
+    """A cross-platform package that can stand in for one with no .NET Standard / .NET build: nuget.org search for packages
+    whose id contains this one (forks such as <id>Core, <id>.NetCore), most downloaded first, the first whose latest version
+    targets .NET Standard / .NET. Returns "id latest (frameworks)" or None. Cached with the other nuget.org answers."""
+    os.makedirs(cache_dir, exist_ok=True)
+    cp = os.path.join(cache_dir, f"search-{slug(pid)}.json")
+    res = None
+    if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < 14 * 86400:
+        try:
+            res = read_json(cp)
+        except (ValueError, OSError):
+            res = None
+    if res is None:
+        if not net_usable():
+            return None
+        try:
+            url = "https://azuresearch-usnc.nuget.org/query?" + urllib.parse.urlencode({"q": pid, "take": 20, "prerelease": "false", "semVerLevel": "2.0.0"})
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "modernization-assessment"}), timeout=20) as r:
+                res = [{"id": d["id"], "downloads": d.get("totalDownloads", 0)} for d in json.loads(r.read()).get("data", [])]
+            net_result(True)
+            write_cache(cp, res)
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as ex:
+            net_result(getattr(ex, "code", None) is not None)
+            return None
+    base = re.sub(r"[^a-z0-9]", "", pid.lower())
+    cands = sorted((d for d in res if d["id"].lower() != pid.lower() and base in re.sub(r"[^a-z0-9]", "", d["id"].lower())),
+                   key=lambda d: -d["downloads"])[:4]
+    for d in cands:
+        n = nuget_info(d["id"], [], cache_dir)
+        fws = [f for f in (n.get("frameworks") or []) if fw_modern(f)]
+        if n.get("found") and fws and not n.get("deprecated"):
+            return f"{d['id']} {n.get('latest')} ({', '.join(fws[:4])}; {d['downloads']:,} downloads; check it is the maintained fork)"
+    return None
+
+
+def fw_modern(tfm):
+    """A target framework a .NET 10 app on Linux can load: .NET Standard, .NET Core or .NET 5+ (not UWP's netcore5.0)."""
+    return bool(re.match(r"^\.?(netstandard|netcoreapp)|^net\d+\.\d+|^any$", tfm.lower()))
+
+
+def complete_package_row(row, online, cache_dir=None):
+    """Every package column gets a value: the frameworks the latest version targets, whether it runs on Linux, the latest
+    version, the replacement or the action, and a note. An empty cell would read as "checked, nothing to say"."""
+    n = row.get("nuget") or {}
+    fws = [urllib.parse.unquote(f) for f in (n.get("frameworks") or (n.get("platform") or {}).get("lib_frameworks") or [])]
+    if not online:
+        row.setdefault("frameworks", "not checked (offline run)")
+        row["latest"] = row.get("latest") or "not checked (offline run)"
+    elif n.get("error"):
+        row.setdefault("frameworks", "not checked (nuget.org unreachable in this run)")
+        row["latest"] = row.get("latest") or "not checked (nuget.org unreachable)"
+    elif not n.get("found"):
+        row.setdefault("frameworks", "not on nuget.org")
+        row["latest"] = row.get("latest") or "not on nuget.org"
+    else:
+        row.setdefault("frameworks", ", ".join(fws) or n.get("frameworks_from") or "not listed on nuget.org")
+    st = row.get("status", "unknown")
+    if "runs_on_linux" not in row:
+        if st == "windows-only":
+            row["runs_on_linux"] = "no: Windows-only build"
+        elif st == "blocker":
+            row["runs_on_linux"] = "no: no .NET 10 / Linux equivalent of this package"
+        elif st == "remove":
+            row["runs_on_linux"] = "yes: part of .NET 10 (reference removed)"
+        elif st == "build-only":
+            row["runs_on_linux"] = "not shipped (build-time only)"
+        elif n.get("found"):
+            modern = [f for f in fws if fw_modern(f)]
+            pcl = [f for f in fws if f.startswith("portable")]
+            row["runs_on_linux"] = ("yes: targets " + ", ".join(modern) if modern else
+                                    "verify: portable class library build only (" + ", ".join(pcl) + "); confirm it loads on .NET 10" if pcl else
+                                    "yes: no framework-specific assets" if not fws else "no: .NET Framework builds only (" + ", ".join(fws[:4]) + ")")
+        else:
+            row["runs_on_linux"] = "unknown: " + ("private package, needs its source or a .NET build" if online and not n.get("error") else "not checked online")
+    if not row.get("replacement"):
+        rec = row.get("recommendation") or {}
+        if st in ("ok", "upgrade") and rec.get("action") == "upgrade" and rec.get("version"):
+            row["replacement"] = f"None: upgrade to {rec['version']}"
+        elif row["runs_on_linux"].startswith("no"):
+            alt = linux_alternative(row["id"], cache_dir) if online and cache_dir else None
+            row["replacement"] = (f"Candidate on nuget.org: {alt}" if alt else
+                                  "No cross-platform package found on nuget.org: replace the component, or get the source and port it")
+        elif row["runs_on_linux"].startswith("verify"):
+            alt = linux_alternative(row["id"], cache_dir) if online and cache_dir else None
+            row["replacement"] = "Keep if it loads on .NET 10 (test early)" + (f"; otherwise {alt}" if alt else "; otherwise replace the component")
+        elif st in ("ok", "upgrade", "licence", "build-only") or row["runs_on_linux"].startswith("yes"):
+            row["replacement"] = "None needed: keep " + ", ".join(row.get("versions") or ["the version in use"]) + " (cross-platform)"
+        elif st == "private":
+            row["replacement"] = "Get the source or a .NET Standard / .NET build into a private feed (CodeArtifact)"
+        else:
+            row["replacement"] = "No known replacement: find a cross-platform alternative"
+    if not row.get("note"):
+        row["note"] = f"Latest {row['latest']} targets {row['frameworks']}." if n.get("found") else "No further facts."
+
+
+def dll_framework(path):
+    """The framework a DLL was built for, read from its TargetFrameworkAttribute (or the CLR version for pre-4.0 builds)."""
+    try:
+        with open(path, "rb") as fh:
+            b = fh.read()
+    except OSError:
+        return "missing"
+    m = re.search(rb"\.(NETFramework|NETStandard|NETCoreApp|NETPortable),Version=v[\d.]+", b)
+    if m:
+        return m.group(0).decode()
+    m = re.search(rb"v[24]\.0\.\d{5}", b)
+    return ("CLR " + m.group(0).decode() + " (.NET Framework 2.0-3.5 build)") if m and m.group(0).startswith(b"v2") else (
+        ("CLR " + m.group(0).decode() + " (.NET Framework 4.x, framework attribute not set)") if m else "not readable (not a .NET assembly?)")
+
+
+def lib_frameworks(files):
+    """Target frameworks a package ships builds for: the folder names under lib/ (and ref/)."""
+    return sorted({f.split("/")[1].lower() for f in files if f.lower().startswith(("lib/", "ref/")) and f.count("/") >= 2})
+
+
+def package_files(pid, uv, cache_dir):
+    """The file list of one package version (nuget.org catalog leaf, cached for good), or None when it could not be read."""
+    if not uv:
+        return None
+    os.makedirs(cache_dir, exist_ok=True)
     cp = os.path.join(cache_dir, f"{slug(pid)}-{slug(uv)}-files.json")
     key = cp.lower()
     files = _NET["files"].get(key)
+    if files is False:  # failed earlier in this run
+        return None
     if files is None:
         try:
             files = read_json(cp) if os.path.exists(cp) else None
         except (ValueError, OSError):
             files = None
     if files is None and not net_usable():
-        return None  # unknown, not "no native binaries"
+        return None
     if files is None:
         try:
             reg = f"https://api.nuget.org/v3/registration5-gz-semver2/{pid.lower()}/{uv.lower()}.json"
@@ -1047,14 +1288,10 @@ def platform_assets(pid, entries, versions, cache_dir):
             write_cache(cp, files)  # a version's file list never changes: cached for good, but only when it was read
         except (urllib.error.URLError, OSError, ValueError, KeyError) as ex:
             net_result(getattr(ex, "code", None) is not None or isinstance(ex, (ValueError, KeyError)))
-            _NET["files"][key] = []
+            _NET["files"][key] = False
             return None  # failed lookup: unknown, retried next run
     _NET["files"][key] = files
-    rids = sorted({f.split("/")[1] for f in files if f.lower().startswith("runtimes/") and f.count("/") >= 3 and "/native/" in f.lower()})
-    libs = sorted({f.split("/")[1].lower() for f in files if f.lower().startswith("lib/") and f.count("/") >= 2})
-    win_only_native = bool(rids) and all(r.lower().startswith("win") for r in rids)
-    win_only_lib = bool(libs) and all("-windows" in l or l.startswith(("net4", "net3", "net2")) for l in libs) and any("-windows" in l for l in libs)
-    return {"native_rids": rids, "win_only_native": win_only_native, "win_only_lib": win_only_lib}
+    return files
 
 
 # ---------------------------------------------------------------- version recommendation (any package, from nuget.org metadata)
@@ -1262,6 +1499,7 @@ def scan_repo(name, cfg, online):
     s.network()
     s.db_findings(s.facts["db_inventory"])
     s.packages(online)
+    s.binaries(online)
     s.structure()
     s.case_paths()
     findings = s.result()

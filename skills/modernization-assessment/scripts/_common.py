@@ -144,6 +144,24 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-") or "x"
 
 
+def gitlab_token(cfg):
+    """The GitLab read token from the environment variable named in assessment.json -> gitlab.token_env (default GITLAB_TOKEN). On Windows a
+    variable set with setx after the session started is not in this process yet, so the user environment in the registry is read too.
+    The token is returned to the caller only: never print it, write it to a file or put it on a command line."""
+    name = ((cfg.get("gitlab") or {}).get("token_env") or "GITLAB_TOKEN").strip()
+    tok = os.environ.get(name)
+    if not tok and os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                tok = winreg.QueryValueEx(k, name)[0]
+        except OSError:
+            tok = None
+    if not tok:
+        raise SystemExit(f"set the GitLab read token in the environment variable {name} (assessment.json gitlab.token_env); it is never printed")
+    return tok.strip()
+
+
 def tool_exe(name):
     """Full path of a CLI tool: PATH first, then the folders user-level installers use (uv / pipx / pip --user)."""
     found = shutil.which(name)
@@ -184,6 +202,16 @@ def documenter_dir():
     for d in (os.environ.get("CODEBASE_DOCUMENTER_DIR"), os.path.join(os.path.dirname(SKILL_DIR), "codebase-documenter"),
               os.path.join(os.path.expanduser("~"), ".claude", "skills", "codebase-documenter")):
         if d and os.path.exists(os.path.join(d, "SKILL.md")):
+            return d
+    return None
+
+
+def linux_readiness_dir():
+    """The linux-readiness skill that owns the Linux readiness scanner and catalogue (env var, sibling install, personal install)."""
+    home = os.path.expanduser("~")
+    for d in (os.environ.get("LINUX_READINESS_DIR"), os.path.join(os.path.dirname(SKILL_DIR), "linux-readiness"),
+              os.path.join(home, ".claude", "skills", "linux-readiness"), os.path.join(home, ".agents", "skills", "linux-readiness")):
+        if d and os.path.isfile(os.path.join(d, "scripts", "data", "linux_readiness.json")):
             return d
     return None
 

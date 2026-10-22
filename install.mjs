@@ -46,7 +46,7 @@ const AGENTS = {
 };
 
 // Skills that need another skill installed beside them (modernization-assessment reuses the documenter's installer and graphify setup).
-const DEPENDS = { "modernization-assessment": ["codebase-documenter"] };
+const DEPENDS = { "modernization-assessment": ["codebase-documenter", "linux-readiness"], "dotnet-modernization": ["linux-readiness"] };
 // Skills that were renamed: `update` replaces an install of the old name with the new one (old copy backed up).
 const RENAMED = { "migration-assessment": "modernization-assessment" };
 // A skill that ships this script gets an optional "install prerequisites" step after copying.

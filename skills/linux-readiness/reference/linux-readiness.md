@@ -1,6 +1,6 @@
 # Linux readiness
 
-What works on Windows today but breaks, or behaves differently, in a Linux container on AWS (ECS/EKS, Fargate or EC2). One check, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/linux_readiness.json`. The same files (with `_mdhtml.py`) ship in the modernization-assessment, dotnet-modernization and linux-readiness skills: change all three together.
+What works on Windows today but breaks, or behaves differently, in a Linux container on AWS (ECS/EKS, Fargate or EC2). One check, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/linux_readiness.json`. The files exist once, in the linux-readiness skill; the modernization-assessment and dotnet-modernization skills run them through a thin `scripts/linux_readiness.py` entry point of their own, so a change here reaches all three.
 
 ## Contents
 
@@ -94,7 +94,7 @@ Each rule in the JSON has `patterns` (regex + file types) and optionally a `chec
 - **PASS** means no open blocking hit. Warn and info hits are reviewed, not gated.
 - **Block**: fails the build, startup or a common path on Linux. **Warn**: behaves differently or fails on some paths. **Info**: verify.
 - The report lists the areas, the checks that hit (what breaks and the fix), up to 25 locations per check, and the checklist of checks a person confirms.
-- In the assessment, the full report for each repository is written to `assessment/linux/<repo>/`; the assessment report itself shows only each repository's blocking and to-review counts, in the per-application Linux verdict (the estimate does not read the hits). In execution, each hit maps to a playbook (`linux-and-containers`, `windows-only-apis`, `config-and-secrets`, `startup-and-middleware`, `time-and-culture`).
+- In the assessment, the full report for each repository is written to `assessment/linux/<repo>/`. Blocking and warn hits of checks the assessment's own rules do not already cover become findings (one per check and project), so they are reviewed, costed and planned like any other finding; checks its rules cover are counted once, under those rules. The assessment report lists every check that hit, with how the estimate counts it, and the checklist of checks a person confirms. In execution, each hit maps to a playbook (`linux-and-containers`, `windows-only-apis`, `config-and-secrets`, `startup-and-middleware`, `time-and-culture`).
 
 ## What AWS Transform and DevTx do and do not cover
 
@@ -115,7 +115,7 @@ Each rule in the JSON has `patterns` (regex + file types) and optionally a `chec
 
 - One rule per row in `data/linux_readiness.json`: `id` (`LNX-<AREA>-<NAME>`), `area`, `level`, `what`, `detect`, `fix`, `sources`, `patterns`, `automated`, optional `check` and filters. `tuned: true` marks rules refined against real code.
 - After a change: run on a known-good modern app (it must PASS with no false blocking hits) and on a legacy repository, then spot-check the ten busiest rules.
-- Copy the script, `_mdhtml.py` and the JSON to the other two skills. The linux-readiness skill's `selftest.py` must pass (the other two skills ship the same self-test under the name selftest_linux_readiness). It also checks that every rule with file types is marked automated, so a pattern without file types cannot silently turn a rule off.
+- Nothing is copied: the other two skills load this script and catalogue at run time. `selftest.py` must pass. It also checks that every rule with file types is marked automated, so a pattern without file types cannot silently turn a rule off.
 
 ## Sources
 

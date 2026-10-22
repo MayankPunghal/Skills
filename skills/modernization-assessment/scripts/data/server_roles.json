@@ -20,14 +20,14 @@
    "app_regex": ""
   },
   {
-   "role": "nitro-api",
-   "label": "Nitro API server",
-   "name_regex": "(?i)napi\\d|nitroapi|nitrohasync|nitro-api",
+   "role": "partner-api",
+   "label": "Partner API server",
+   "name_regex": "(?i)partnerapi\\d|partner-?api",
    "app_regex": ""
   },
   {
-   "role": "xml-gateway",
-   "label": "XML gateway server",
+   "role": "xml-api",
+   "label": "XML API server",
    "name_regex": "(?i)xml(app|biz|gtw)\\d+",
    "app_regex": ""
   },

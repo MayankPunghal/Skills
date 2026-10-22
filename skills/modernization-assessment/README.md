@@ -169,7 +169,28 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 
 ## Changed in 3.1.0
 
-- Linux readiness: 337 checks (was 240), the same files as dotnet-modernization and the standalone linux-readiness skill, with a self-test (`scripts/selftest_linux_readiness.py`).
+- Linux readiness: 337 checks (was 240), the same files as dotnet-modernization and the standalone linux-readiness skill, with a self-test (now the linux-readiness skill's `selftest.py`).
 - .NET 8 and 9: a target turns from "ending soon" to "out of support" on its end-of-support date (10 November 2026), and the 7R rationale names the date. The duplicate rule BUILD-TFM-NET8-NET9 is gone (INV-TFM-SUPPORT covers it). Rules: 196 (was 186).
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
+
+## Changed in 3.2.0
+
+- **One Linux-readiness scanner.** The check now loads the standalone **linux-readiness** skill (installed with this one); the copy in this skill is gone. Its hits that this skill's rules do not already cover become costed findings, with no double count, and the report has a Linux readiness section and a checklist appendix.
+- **AWS Transform codebase scanner first (`atf_scan.py`, step 1.5).** It runs RadNet and RaSQL over every repository before this skill's scans, or imports their results, and reconciles them: executable lines of code, DLL / NuGet / COM / P/Invoke references, and every inline-SQL and execute row against `raw_sql.py`.
+- **Phased estimate per repository (`effort_facts.py`, `estimate_phases.py`, step 6.1).** These are the quantities and evidence behind each work item, plus developer hours for a tool-run port in six phases. The inputs are written from what the code shows, and the client questions are marked UNKNOWN.
+- **One short summary report (`build_summary.py`, step 8.1).** It gives the answer first, then only what needs action. Every number comes from the other steps' files.
+- **Every package and DLL column filled from nuget.org.** Each package gets the frameworks of its latest version, whether it runs on Linux, and a cross-platform replacement or action. DLLs referenced by HintPath get a table of their own: the framework each was built for, other builds, the matching package, its source, and an action. A DLL with no Linux build and no source becomes finding `PKG-BINARY-REFERENCE`.
+- **Lift-and-shift track at parity with lift-and-shift-assessment 1.1.0:**
+  - GitLab project list and clones (`gitlab_projects.py`, `clone_repos.py`);
+  - the branch check (`branch_evidence.py`, `branch_list.py`);
+  - a staged intake with 40 more questions, asked only for this track (`--pending`, `--check`, `--stage`; after-scan questions only when the scan found their subject);
+  - call records (`--client-update`, `--release-step`, `--branch-note`, `--open-question`, `--decision`) and a guarded `--finalize`;
+  - the .docx and workbook (`build_doc.py`, `verify_doc.py`, optional company template);
+  - the application-to-server mapping sheet and its check (`build_mapping_sheet.py`, `check_mapping.py`);
+  - open questions and the client email (`build_open_questions.py`);
+  - every hour explained and self-checked (`build_estimate_explainer.py`);
+  - the newer hours rates (cutover split by solution size, pipeline scope, publish profiles left out of the configuration weight);
+  - executable-line counting with copied front-end libraries counted apart;
+  - the rest of its fixes.
+- `context.py` names these steps in NEXT.

@@ -2,7 +2,7 @@
 name: linux-readiness
 description: Checks a .NET code base for everything that works on Windows but breaks or behaves differently in a Linux container on AWS (ECS, EKS, Fargate), and says how to fix each hit. Covers file name case, paths, time zones, ICU culture, encodings, shell calls, environment, DPAPI and certificates, Windows auth and integrated security, SQL Server and ODBC, registry, WMI, COM, System.Drawing, IIS hosting, Dockerfiles, secrets and CI. Works on .NET Framework code before a port, ported code and apps already on .NET 5+. Read-only and masks secrets; writes a JSON, Markdown and HTML report, gates a build with waivers, and has a Dockerfile-only mode. Use when the user asks whether a .NET app is ready for Linux, Docker, containers, ECS, EKS or Fargate, what will break on Linux, to check a .NET Dockerfile, to explain a Linux readiness check, or to gate a pipeline on Linux readiness.
 metadata:
-  version: 1.0.0
+  version: 1.0.1
 user-invocable: true
 argument-hint: "[help · scan · gate · dockerfile · explain · waivers · selftest] [folder | Dockerfile | LNX-ID]"
 allowed-tools:
@@ -22,6 +22,7 @@ One scanner, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/lin
 - Fix guide by area
 - Related reading
 - Relation to the other skills
+- Changed in 1.0.1
 - Maintaining this skill
 
 ## Ground rules
@@ -181,13 +182,17 @@ Copied from the dotnet-modernization skill's playbooks; read the one for the are
 
 ## Relation to the other skills
 
-- **modernization-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits feed the estimate.
+- **modernization-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits of checks its own rules do not cover become costed findings.
 - **dotnet-modernization** runs it as the `linux` gate of `verify.py` after a port and fixes hits by playbook.
-- All three skills ship the **same** `linux_readiness.py`, `_mdhtml.py` and `data/linux_readiness.json`. A change to one is copied to the other two in the same commit.
+- The scanner and catalogue exist **once**, here. The other two skills have a thin `scripts/linux_readiness.py` that loads this skill (from `LINUX_READINESS_DIR`, a sibling `linux-readiness` folder, or `~/.claude/skills` / `~/.agents/skills`), so the installer brings this skill with them.
+
+## Changed in 1.0.1
+
+- This skill is now the only copy of the scanner and catalogue: modernization-assessment and dotnet-modernization load it through a thin entry point and install it with them. In an assessment, blocking and warn hits of checks the assessment's own rules do not cover become costed findings.
 
 ## Maintaining this skill
 
 - Changes are additive: never drop a check, rule detail or lesson without the owner's say-so.
 - One rule per catalogue row: `id` (`LNX-<AREA>-<NAME>`), `area`, `level`, `what`, `detect`, `fix`, `sources`, `patterns`, `automated`, optional `check` and filters; `tuned: true` once refined against real code. A new check without a cited page gets source `K`.
-- After a change: `selftest.py`; a real clean .NET 10 app (`dotnet new webapi`, `mvc`, `worker`, `blazor` plus the sample Dockerfile) must have no block or warn hit; a legacy repository must fail with secrets masked; spot-check the ten busiest rules. Then copy the files to the other two skills.
+- After a change: `selftest.py`; a real clean .NET 10 app (`dotnet new webapi`, `mvc`, `worker`, `blazor` plus the sample Dockerfile) must have no block or warn hit; a legacy repository must fail with secrets masked; spot-check the ten busiest rules. Nothing to copy: the other two skills load these files.
 - Test prompts and expected behaviour: [evals/evals.md](evals/evals.md).

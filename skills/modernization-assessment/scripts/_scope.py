@@ -30,7 +30,7 @@ OUT_PATTERNS = [
     re.compile(r"""\.pipe\(\s*gulp\.dest\(\s*["']([^"']+)["']"""),
     re.compile(r"""\boutput\s*:\s*["']([^"']*\.\.[^"']*)["']"""),
 ]
-PARENT_STRING = re.compile(r"""["']((?:\.\.[/\\])+[^"'\s]*)["']""")  # "../SwiftUI/deploymentPackage/": a path that leaves the Node folder
+PARENT_STRING = re.compile(r"""["']((?:\.\.[/\\])+[^"'\s]*)["']""")  # "../WebApp/deploymentPackage/": a path that leaves the Node folder
 NAMED_OUT = re.compile(r"\b(?:outDir|outputPath|buildLocation|outputDir|distDir)\b")
 DOTNET_DRIVE =re.compile(r"(?i)\b(dotnet\s+(publish|build|msbuild)|gulp-dotnet-cli|msbuild(\.exe)?|nuget\s+(restore|pack))\b|require\(['\"]gulp-dotnet-cli['\"]\)")
 RUNTIME_USE = re.compile(r"""(?i)(Process\.Start|ProcessStartInfo)\s*\(.{0,80}["'](node|node\.exe|npm|npm\.cmd|npx|ts-node)["']|\bINodeServices\b|\bNodeJSService\b|Jering\.Javascript""")

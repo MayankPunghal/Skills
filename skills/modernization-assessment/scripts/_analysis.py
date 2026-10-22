@@ -230,6 +230,72 @@ def linux_issue_types(c):
                     "refs": ", ".join(v["refs"][:8]), "why": v["why"], "fix": v["fix"]} for v in by.values()), key=lambda r: (order.get(r["severity"], 9), -r["occurrences"]))
 
 
+def linux_checks(c):
+    """Every Linux readiness check that hit, across repositories (step 3.2 reports): level, what breaks, the fix, where,
+    and how it is costed (its own finding, inside one of this skill's rules, or not costed: info / waived)."""
+    cat = F.linux_catalogue()
+    names = {a["id"]: a["name"] for a in c.cls["applications"]}
+    own = defaultdict(list)
+    fired = {f["rule"].split(":")[0] for f in c.findings}
+    for f in c.findings:
+        if f.get("source") == "linux-readiness":
+            own[f["rule"]].append(f)
+    by = {}
+    for r in c.repos:
+        rep = read_json(os.path.join(OUT, "linux", r, "linux-readiness.json"))
+        if not rep:
+            continue
+        inv = c.inv.get(r) or {"projects": [], "applications": []}
+        pidx, apps_of = F.project_index(inv), defaultdict(set)
+        for a in inv.get("applications", []):
+            for p in a["projects"] + ([a["entry"]] if a.get("type") == "website" else []):
+                apps_of[p].add(names.get(a["id"], a["id"]))
+        for h in rep.get("hits", []):
+            row = cat.get(h["rule"]) or rep.get("rules", {}).get(h["rule"], {})
+            b = by.setdefault(h["rule"], {"id": h["rule"], "level": row.get("level", "info"), "area": row.get("area", ""), "what": row.get("what", ""),
+                                          "fix": row.get("fix", ""), "repos": set(), "apps": set(), "hits": 0, "waived": 0, "where": [], "sources": row.get("sources", [])})
+            b["repos"].add(r)
+            b["apps"] |= apps_of.get(F.project_of_file(pidx, h["file"]), set())
+            b["hits"] += 1
+            b["waived"] += 1 if h.get("waived") else 0
+            if len(b["where"]) < 3:
+                b["where"].append(f"{r}/{h['file']}:{h['line']}")
+    rows = []
+    for rid, b in by.items():
+        fs = own.get(rid, [])
+        ids, covered = F.linux_counted_by(cat.get(rid, {})) if rid in cat else ([], False)
+        ids = [i for i in ids if i in fired]
+        if fs:
+            costed = f"finding ({len(fs)}: " + ", ".join(sorted({f['ref'] for f in fs if f.get('ref')})[:4]) + ")"
+        elif b["level"] == "info":
+            costed = "not costed (verify)"
+        elif b["hits"] == b["waived"]:
+            costed = "waived"
+        elif ids or covered:
+            costed = "within " + (", ".join(ids) if ids else "this skill's rules")
+        else:
+            costed = "not costed"
+        apps = sorted(b["apps"] | {names.get(x, x) for f in fs for x in f.get("apps", [])})
+        rows.append({"id": rid, "level": b["level"], "area": b["area"], "what": b["what"], "fix": b["fix"], "repos": ", ".join(sorted(b["repos"])),
+                     "apps": ", ".join(apps), "hits": b["hits"], "waived": b["waived"], "where": ", ".join(b["where"]), "costed": costed,
+                     "verify": "K" in b["sources"] and not [s for s in b["sources"] if s != "K"]})
+    order = {"block": 0, "warn": 1, "info": 2}
+    return sorted(rows, key=lambda x: (order.get(x["level"], 9), -x["hits"], x["id"]))
+
+
+def linux_checklist(c):
+    """The Linux readiness checks no scanner can decide (automated: false): a person confirms each one per repository."""
+    rows = [{"id": r["id"], "area": r["area"], "level": r["level"], "what": r["what"], "fix": r["fix"]}
+            for r in F.linux_catalogue().values() if not r.get("automated")]
+    order = {"block": 0, "warn": 1, "info": 2}
+    return sorted(rows, key=lambda x: (order.get(x["level"], 9), x["area"], x["id"]))
+
+
+def linux_reports(c):
+    """Repository -> path of its full Linux readiness report (HTML), for the repositories that have one."""
+    return {r: f"{OUT}/linux/{r}/linux-readiness.html" for r in c.repos if os.path.exists(os.path.join(OUT, "linux", r, "linux-readiness.json"))}
+
+
 def third_party(c):
     """External services (endpoints + service SDK packages), on-premises dependencies, identity providers."""
     sdks = data("service_sdks.json")["sdks"]

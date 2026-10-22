@@ -2,7 +2,7 @@
 name: dotnet-modernization
 description: Carries out the modernization of legacy .NET Framework applications to .NET 10 on Linux containers on AWS, after an assessment. Runs one porting engine per project (AWS DevTx Version Upgrade Toolkit or AWS Transform for .NET), then has Claude clean up what the engine leaves, playbook by playbook (System.Web, Web Forms, WCF/ASMX, Windows-only APIs, auth, config and secrets, time zones, logging, containers, AWS managed services), moves the data-access code to PostgreSQL with the DB porting agent or Claude using the DB porting skills, and proves the result with gates: build, tests, residue scan, a 337-check Linux readiness scan, container run and request/response parity. Writes an execution report. Use when the user wants to port, upgrade, modernize, migrate or containerize a .NET Framework / ASP.NET / WCF app to .NET 8/10, Linux, Docker, ECS or PostgreSQL, run DevTx or AWS Transform, clean up after them, check Linux readiness of an already-modern app, or verify a port, even if they don't say "modernization".
 metadata:
-  version: 1.1.0
+  version: 1.1.1
 user-invocable: true
 argument-hint: "[help · modernize-package · resume · intake · baseline · port · residue · cleanup · data-access · aws-native · linux-readiness · container · verify · report] [package or folder]"
 allowed-tools:
@@ -101,7 +101,7 @@ Already on .NET 5+: `linux_readiness.py`, fix by playbook, upgrade the TFM if ou
 
 ## Relation to modernization-assessment
 
-The **modernization-assessment** skill assesses and plans: findings, 7R decisions, estimate, and `plan_execution.py`, which writes `assessment/execution-plan.json` (engine, database tool, streams and playbooks per package, libraries first). This skill executes that plan. Both ship the same `linux_readiness.py` and `data/linux_readiness.json` as the standalone **linux-readiness** skill; change all three copies together and run `scripts/selftest_linux_readiness.py`. Without an assessment, start from `residue_scan.py` and `linux_readiness.py` on the original.
+The **modernization-assessment** skill assesses and plans: findings, 7R decisions, estimate, and `plan_execution.py`, which writes `assessment/execution-plan.json` (engine, database tool, streams and playbooks per package, libraries first). This skill executes that plan. Both run the Linux readiness check of the standalone **linux-readiness** skill (installed with them) through a thin `scripts/linux_readiness.py`; change the check there and run its `selftest.py`. Without an assessment, start from `residue_scan.py` and `linux_readiness.py` on the original.
 
 ## Maintaining this skill
 

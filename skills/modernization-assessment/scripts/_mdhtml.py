@@ -2,7 +2,8 @@
 
 Every script that writes a .md deliverable also writes the .html twin with write_pair(). Covers what the generators emit:
 headings, paragraphs, bullet / numbered lists (nested by indent), pipe tables, fenced code, inline code, bold, italic and
-links. Offline page, light and dark theme, printable, sortable tables (click a header).
+links. Offline page, light and dark theme, printable, sortable tables (click a header). brand=True adds the company look of the
+branded .docx (green table headers, green rules); build_doc.py's template decides it (assessment.json -> docx_template set).
 """
 import html
 import os
@@ -125,31 +126,38 @@ def convert(md):
     return "\n".join(out)
 
 
-def page(md, title=None):
+BRAND_CSS = """
+:root{--accent:#4f7a00}@media (prefers-color-scheme:dark){:root{--accent:#a6e22e}}
+th{background:#88cb00;color:#fff}h2{border-bottom:2px solid #88cb00}h1{border-left:6px solid #88cb00;padding-left:10px}
+"""
+
+
+def page(md, title=None, brand=False):
     m = re.search(r"(?m)^#\s+(.+)$", md)
     title = title or (re.sub(r"[`*_]", "", m.group(1)) if m else "Report")
     return (f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<meta name="color-scheme" content="light dark"><title>{html.escape(title)}</title><style>{CSS}</style></head>'
+            f'<meta name="color-scheme" content="light dark"><title>{html.escape(title)}</title><style>{CSS}{BRAND_CSS if brand else ""}</style></head>'
             f"<body><main>{convert(md)}</main><script>{JS}</script></body></html>\n")
 
 
-def write_pair(md_path, md, title=None):
+def write_pair(md_path, md, title=None, brand=False):
     """Write md_path and the .html next to it; returns the html path."""
     os.makedirs(os.path.dirname(os.path.abspath(md_path)), exist_ok=True)
     with open(md_path, "w", encoding="utf-8") as fh:
         fh.write(md)
     hp = os.path.splitext(md_path)[0] + ".html"
     with open(hp, "w", encoding="utf-8") as fh:
-        fh.write(page(md, title))
+        fh.write(page(md, title, brand))
     return hp
 
 
 def main():
     import sys
-    for p in sys.argv[1:]:
+    args = [a for a in sys.argv[1:] if a != "--brand"]
+    for p in args:
         md = open(p, encoding="utf-8").read()
         hp = os.path.splitext(p)[0] + ".html"
-        open(hp, "w", encoding="utf-8").write(page(md))
+        open(hp, "w", encoding="utf-8").write(page(md, brand="--brand" in sys.argv))
         print(hp)
 
 

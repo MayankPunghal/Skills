@@ -1,79 +1,97 @@
 {
- "_doc": "Hours calculator of the lift-and-shift track (ported from lift-and-shift-assessment 1.0.0). Developer working hours assuming AI-assisted work, 8 h per day, plus the contingency below. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so. The modernize path does not use this file (estimation.json).",
+ "_doc": "Hours calculator of the lift-and-shift track (from lift-and-shift-assessment 1.1.0; its rates are the source of truth), developer working hours assuming AI-assisted work. Each rate is [low, high] hours per unit. basis 'sample' = calibrated to the manager's reference estimate (72-108 h, source of truth); basis 'inferred' = the skill's own estimate with no sample behind it. Everything can be revised: nothing is final until the user says so. Lines are groups of work (one task per solution or per deployable), never per setting, per key or per address: the environment-specific configuration of a solution is one task whose hours depend on how much the solution holds (a straight-line curve on a weight = config files without publish profiles + secret-like settings + environment variables + distinct private IPs + 2 per third-party key). The curve is calibrated so the manager's sample (two solutions, 32-50 h of secrets, connection and re-key work) is reproduced.",
+ "activity_thresholds": {
+  "_doc": "Commits per week over the git activity window that mark a repository active or hot (parallel-development risk in scan_repo.py).",
+  "active_commits_per_week": 3,
+  "hot_commits_per_week": 15
+ },
  "day_hours": 8,
  "contingency_pct": 20,
  "items": {
   "cicd_secrets": {
    "label": "CI/CD pipeline + Secrets Manager",
+   "label_no_pipeline": "Environment configuration + Secrets Manager",
    "lines": [
     {
-     "id": "secrets_config",
-     "label": "Secrets and settings moved to Secrets Manager",
-     "driver": "env_vars",
-     "unit": "environment variable or secret",
+     "id": "env_config",
+     "label": "Environment-specific configuration per solution (config files, secrets and settings, addresses, third-party keys)",
+     "driver": "config_curve",
+     "unit": "solution",
+     "plural": "solutions",
      "rate": [
-      0.45,
-      0.65
+      0,
+      0
      ],
      "basis": "sample",
-     "scope": "solution"
-    },
-    {
-     "id": "config_files",
-     "label": "Config files with hard-coded values externalised",
-     "driver": "config_files",
-     "unit": "config file",
-     "rate": [
-      0.3,
-      0.5
+     "scope": "solution",
+     "anchors": [
+      [
+       1,
+       [
+        1,
+        2
+       ]
+      ],
+      [
+       4,
+       [
+        2,
+        4
+       ]
+      ],
+      [
+       10,
+       [
+        5,
+        8
+       ]
+      ],
+      [
+       23,
+       [
+        12,
+        18
+       ]
+      ],
+      [
+       45,
+       [
+        20,
+        32
+       ]
+      ],
+      [
+       80,
+       [
+        32,
+        48
+       ]
+      ]
      ],
-     "basis": "sample",
-     "scope": "solution"
-    },
-    {
-     "id": "connection_values",
-     "label": "DNS names and connection values replacing addresses",
-     "driver": "endpoints",
-     "unit": "internal address or host name",
-     "rate": [
-      0.75,
-      1.25
-     ],
-     "basis": "sample",
-     "scope": "solution"
-    },
-    {
-     "id": "third_party_rekey",
-     "label": "Third-party keys and licences re-keyed on AWS",
-     "driver": "rekey",
-     "unit": "integration or licensed component",
-     "rate": [
-      1.2,
-      2.0
-     ],
-     "basis": "sample",
-     "scope": "solution"
+     "anchors_doc": "Weight -> [low, high] hours. Straight lines between neighbouring anchors, flat beyond the first and last one. The anchors are the centres of the old size bands, so the sample (two solutions, 32-50 h) is still reproduced."
     },
     {
      "id": "pipeline_solution",
-     "label": "CI/CD pipeline per solution",
+     "label": "CI/CD pipeline per solution (one shared template, adapted per solution)",
      "driver": "solutions",
      "unit": "solution",
+     "plural": "solutions",
      "rate": [
-      3.0,
-      5.0
+      1.5,
+      3.0
      ],
      "basis": "inferred",
      "scope": "solution"
     },
     {
-     "id": "pipeline_deployable",
-     "label": "Pipeline job per deployable",
-     "driver": "solution_deployables",
-     "unit": "deployable",
+     "id": "pipeline_large",
+     "label": "Extra pipeline work for solutions with more than 5 deployables",
+     "driver": "large_solutions",
+     "unit": "large solution",
+     "plural": "large solutions",
      "rate": [
-      0.5,
-      1.0
+      2.0,
+      3.0
      ],
      "basis": "inferred",
      "scope": "solution"
@@ -84,25 +102,14 @@
    "label": "Build check + deployable artifacts",
    "lines": [
     {
-     "id": "build_project",
-     "label": "Restore and build check",
-     "driver": "projects",
-     "unit": "project",
-     "rate": [
-      0.25,
-      0.5
-     ],
-     "basis": "inferred",
-     "scope": "project"
-    },
-    {
      "id": "build_solution",
-     "label": "Clean-agent build of the solution",
+     "label": "Clean-agent restore and build check (all projects of the solution)",
      "driver": "solutions",
      "unit": "solution",
+     "plural": "solutions",
      "rate": [
-      0.5,
-      1.0
+      1.0,
+      2.0
      ],
      "basis": "inferred",
      "scope": "solution"
@@ -112,6 +119,7 @@
      "label": "Deployable artifact and hand-over notes",
      "driver": "deployables",
      "unit": "deployable",
+     "plural": "deployables",
      "rate": [
       0.5,
       1.0
@@ -157,7 +165,8 @@
      "id": "validation",
      "label": "Test-launch validation on the AWS instance",
      "driver": "deployable_instances",
-     "unit": "deployable launched, per environment",
+     "unit": "deployable test launch",
+     "plural": "deployable test launches",
      "rate": [
       1.0,
       1.5
@@ -166,10 +175,24 @@
      "scope": "solution"
     },
     {
-     "id": "cutover",
-     "label": "Cutover and migration-defect support",
-     "driver": "workloads",
-     "unit": "workload (solution x environment)",
+     "id": "cutover_single",
+     "label": "Cutover and migration-defect support, solutions with one deployable",
+     "driver": "single_workloads",
+     "unit": "workload",
+     "plural": "workloads",
+     "rate": [
+      2.0,
+      3.0
+     ],
+     "basis": "inferred",
+     "scope": "solution"
+    },
+    {
+     "id": "cutover_multi",
+     "label": "Cutover and migration-defect support, solutions with several deployables",
+     "driver": "multi_workloads",
+     "unit": "workload",
+     "plural": "workloads",
      "rate": [
       4.0,
       5.3

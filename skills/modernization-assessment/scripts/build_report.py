@@ -190,6 +190,32 @@ def b_linux_issues(c):
     return table(["Severity", "What breaks on Linux", "Applications", "Occurrences", "Findings", "Fix"], rows)
 
 
+def b_linux_checks(c):
+    rows = A.linux_checks(c)
+    reps = A.linux_reports(c)
+    if not reps:
+        return "_The Linux readiness scan (step 3.2, `linux_readiness.py`) has not been run for any repository yet._"
+    lv = {"block": "Blocking", "warn": "Review", "info": "Verify"}
+    body = table(["Check", "Level", "What breaks", "Fix", "Repositories", "Applications", "Hits", "Examples", "Costed as"],
+                 [(f"`{r['id']}`" + (" (verify)" if r["verify"] else ""), lv.get(r["level"], r["level"]), F.short(r["what"], 220), F.short(r["fix"], 200),
+                   r["repos"], r["apps"] or "-", f"{r['hits']}" + (f" ({r['waived']} waived)" if r["waived"] else ""), r["where"], r["costed"]) for r in rows])
+    missing = [r for r in c.repos if r not in reps]
+    return (f"{len(rows)} checks hit across {len(reps)} {'repository' if len(reps) == 1 else 'repositories'}. **Blocking**: fails at build, start-up or on a common path in a Linux "
+            "container. **Review**: behaves differently on some paths. **Verify**: a lead to confirm. (verify) after a check: it rests on "
+            "engineering knowledge, not a cited source.\n\n" + body
+            + "\n\nFull report per repository (every location, the fix and the sources of each check): "
+            + ", ".join(f"`{p}`" for p in reps.values())
+            + (f".\n\nNot scanned yet: {', '.join(missing)}." if missing else "."))
+
+
+def b_appendix_linux_checklist(c):
+    rows = A.linux_checklist(c)
+    lv = {"block": "Blocking", "warn": "Review", "info": "Verify"}
+    return ("No scanner can decide these checks; confirm each one per repository and record the answer with the findings review.\n\n"
+            + table(["Check", "Area", "Level", "What to confirm", "Fix if it applies"],
+                    [(f"`{r['id']}`", r["area"], lv.get(r["level"], r["level"]), F.short(r["what"], 220), F.short(r["fix"], 200)) for r in rows]))
+
+
 def b_package_groups(c):
     out = []
     allp = [dict(p, repo=r) for r in c.repos for p in c.scan[r].get("packages", [])]
@@ -1167,11 +1193,25 @@ def b_appendix_packages(c):
         for p in c.scan[r].get("packages", []):
             rec = p.get("recommendation") or {}
             reco = (f"{rec['action']} {rec.get('version') or ''}".strip() + (" ⚠ " + "; ".join(rec["risks"]) if rec.get("risks") else "")) if rec else ""
-            rows.append((p["id"], ", ".join(p["versions"]), p.get("latest", ""), p["status"], F.short(reco, 160), p.get("vulnerable", ""), F.short(p.get("note"), 140), F.short(p.get("replacement"), 100), len(p["projects"]), r))
+            rows.append((p["id"], ", ".join(p["versions"]), p.get("latest") or "-", p["status"], F.short(p.get("frameworks") or "-", 90),
+                         F.short(p.get("runs_on_linux") or "-", 90), F.short(reco, 160) or "keep", p.get("vulnerable") or "none known",
+                         F.short(p.get("note"), 140) or "-", F.short(p.get("replacement"), 120) or "-", len(p["projects"]), r))
     return ("Recommendation (online scan): **keep** the version in use when it runs on the target framework, has no advisories, is "
             "not deprecated and its licence has not changed; otherwise **upgrade** to the lowest version that fixes it (not "
             "automatically the latest), with the risks that brings (major version jump, licence change, Windows-only build).\n\n"
-            + table(["Package", "Version(s)", "Latest", "Status", "Recommendation", "Advisories", "Note", "Replacement", "Projects", "Repository"], rows))
+            + table(["Package", "Version(s)", "Latest", "Status", "Latest targets", "Runs on Linux", "Recommendation", "Advisories", "Note", "Replacement / action", "Projects", "Repository"], rows))
+
+
+def b_appendix_binaries(c):
+    rows = [(b["project"], b["assembly"], b["version"], b["built_for"], b["other_builds"], F.short(b["nuget"], 120), F.short(b["runs_on_linux"], 90),
+             F.short(b["action"], 220), F.short(b["source"], 140), r)
+            for r in c.repos for b in c.scan[r].get("binary_references", [])]
+    if not rows:
+        return "_No project references a DLL outside a NuGet package._"
+    return ("DLLs referenced through a HintPath (kept in the repository, not restored from NuGet). Each is looked up on nuget.org "
+            "by assembly name and searched for in the estate (and `source_search_roots`); one that has no build for .NET Standard "
+            "or .NET and no source is a port blocker (finding `PKG-BINARY-REFERENCE`).\n\n"
+            + table(["Project", "Assembly", "Version", "Built for", "Other builds next to it", "nuget.org", "Runs on Linux", "Action", "Source", "Repository"], rows))
 
 
 def b_appendix_winapi(c):
@@ -1191,6 +1231,7 @@ def b_appendix_raw(c):
             rows.append((r, c.graph[r]["graph"], "graphify graph (query with `graphify query --graph …`)"))
     rows += [("estate", f"{OUT}/classification.json", "7R draft and decisions"), ("estate", f"{OUT}/estimate.json", "effort model output"),
              ("estate", f"{OUT}/report/findings.csv", "findings for spreadsheets")]
+    rows += [(r, p, "Linux readiness report (linux_readiness.py): every check, location and fix") for r, p in A.linux_reports(c).items()]
     return table(["Scope", "File", "Contents"], rows)
 
 
@@ -1321,12 +1362,12 @@ ARCH_NAMES = {"web-netfx": "Web app on .NET Framework", "web-modern": "Web app o
 
 BLOCKS = {"network-access": b_network_access, "config-map": b_config_map, "server-deps": b_server_deps, "scope-coupling": b_scope_coupling, "intake": b_intake, "landing-summary": b_landing_summary, "findings-in-scope": b_findings_in_scope, "findings-future": b_findings_future,
           "aws-native": b_aws_native, "estate-extrapolation": b_estate_extrapolation,
-          "scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
+          "scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "linux-checks": b_linux_checks, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
           "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network, "jobs": b_jobs, "methodology": b_methodology,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
           "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
-          "appendix-packages": b_appendix_packages, "appendix-winapi": b_appendix_winapi, "appendix-raw": b_appendix_raw,
+          "appendix-packages": b_appendix_packages, "appendix-winapi": b_appendix_winapi, "appendix-linux-checklist": b_appendix_linux_checklist, "appendix-binaries": b_appendix_binaries, "appendix-raw": b_appendix_raw,
           "appendix-sources": b_appendix_sources, "appendix-projects": b_appendix_projects}
 
 

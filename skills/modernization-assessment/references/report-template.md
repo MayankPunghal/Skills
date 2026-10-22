@@ -77,6 +77,13 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 
 {{block:linux-issues}}
 
+### 3.3 Linux readiness checks
+
+<!-- guide: every check of the Linux readiness scan (linux_readiness.py, step 3.2) that hit, across repositories. "Costed as" says
+whether the estimate counts it as its own finding, inside one of this skill's rules, or not at all (info: verify; waived). The
+full per-repository reports are listed under the table. -->
+{{block:linux-checks}}
+
 ## 4. Architecture and dependencies
 
 {{narrative:architecture}}
@@ -245,6 +252,10 @@ Full package inventory:
 
 {{block:appendix-packages}}
 
+DLL references (not from NuGet):
+
+{{block:appendix-binaries}}
+
 ### A2. Projects
 
 {{block:appendix-projects}}
@@ -260,3 +271,7 @@ Full package inventory:
 ### A5. Sources
 
 {{block:appendix-sources}}
+
+### A6. Linux readiness checklist (confirmed by a person)
+
+{{block:appendix-linux-checklist}}

@@ -23,6 +23,7 @@ This page describes the engineer-days model of `estimate_effort.py` (modernize a
 - [Calibration from actuals](#calibration-from-actuals)
 - [How the report explains it](#how-the-report-explains-it)
 - [Hours calculator (lift-and-shift track)](#hours-calculator-lift-and-shift-track)
+- [Phased estimate per repository](#phased-estimate-per-repository)
 
 ## Why the numbers are lower than before
 
@@ -182,3 +183,7 @@ total          = Σ solutions × (1 + 20 % buffer);   days = total ÷ 8 h;   eve
 All rates are in `scripts/data/hours.json`. To recalibrate, change a rate, rerun `estimate_effort.py` and note the change in [calibration.md](calibration.md). The benchmark run on the reference code (two repositories, environments unknown, retarget to 4.8.1) gives 111.5–184.5 h including the buffer, of which 72.5–109.0 h are calibrated to the sample and 39.0–76.0 h inferred. The estimate stays a draft until the user says it is final.
 
 `verify_report.py` gate 9 checks that `estimate.json` equals `estimate_hours.json`, that the total is the sum of the lines plus the buffer, and that the report states the same total.
+
+## Phased estimate per repository
+
+`estimate_phases.py` adds a per-repository, bottom-up estimate of a tool-run port in developer hours, by phase (P1 prepare, P2 engine port, P3 Claude clean-up, P4 data access, P5 AWS managed services, P6 verify and cut over), from the quantities `effort_facts.py` collects. This model stays the estate-level view. Rates, inputs and phases: [atf-and-phased-estimate.md](atf-and-phased-estimate.md#phased-estimate-step-61).

@@ -92,7 +92,7 @@ flowchart LR
 | Execute | dotnet-modernization | Runs the chosen engine, Claude clean-up one playbook per commit, SQL Server → PostgreSQL in the code, AWS managed-service swaps, the container, then the gates | `.modernization/execution-report.html` |
 | Same-OS move | lift-and-shift-assessment | Windows-to-Windows on EC2 when modernizing is out of scope | `<client>-lift-and-shift-assessment.docx` |
 
-Installing modernization-assessment brings codebase-documenter with it. modernization-assessment, dotnet-modernization and linux-readiness ship the same Linux readiness check (337 checks), so an app already on modern .NET gets the same answer from any of them; linux-readiness is the check on its own.
+Installing modernization-assessment brings codebase-documenter with it. modernization-assessment and dotnet-modernization bring linux-readiness with them and run its Linux readiness check (337 checks), so an app already on modern .NET gets the same answer from any of them; linux-readiness is the check on its own.
 
 ## Skill guide
 
@@ -342,5 +342,5 @@ package.json                makes the repo runnable with npx
 
 - **modernization-assessment** puts a consultancy name on reports: pass `--prepared-by "Your Company"`, or set `ASSESSMENT_PREPARED_BY` once per machine.
 - **codebase-documenter** names graph communities with an LLM. When no key is set it suggests OpenRouter with **GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, the default), and any other model or provider works: `--model`, `graph.model`, or `CODEBASE_DOCS_LLM_MODEL`.
-- **modernization-assessment** and **dotnet-modernization** ship the same `linux_readiness.py` and `data/linux_readiness.json`; change them together.
+- The Linux readiness scanner and catalogue live only in **linux-readiness**; **modernization-assessment** and **dotnet-modernization** load them through a thin `scripts/linux_readiness.py`.
 - **dotnet-modernization** bundles the AWS DevTx .NET migration knowledge base under Apache-2.0 (see its [NOTICE](skills/dotnet-modernization/NOTICE)).

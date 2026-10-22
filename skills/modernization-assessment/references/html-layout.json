@@ -1,5 +1,5 @@
 {
- "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, block:optional (optional modernizations), gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
+ "_doc": "Tabbed interactive HTML report (build_html_report.py). Calibrate here: tab groups, tab order, titles, intros, components, branding, glossary. Components: kpis, chart:r7, chart:severity, chart:segments, chart:categories, apps-table, app-plans, linux-scorecard, linux-checks, linux-issues, linux-build, findings:<segment id>|all, package-groups, packages-table, binaries-table, integrations-summary, thirdparty-table, onprem-table, sdk-table, effort-summary, workpackages-table, block:optional (optional modernizations), gantt, architecture-map, dependencies-table, questions-table, projects-table, winapi-table, glossary, narrative:<name> (any file in assessment/narrative/), block:<name> (any Markdown block from build_report.py). Segment ids: linux, modernization, packages, integrations, data, security, hosting, delivery. Narrative files not placed in any tab appear in an 'Additional notes' tab.",
  "brand": {
   "company": "",
   "accent": "#0b6e74",
@@ -57,10 +57,11 @@
     {
      "id": "linux",
      "title": "Linux readiness",
-     "intro": "Can each application run on Linux, and what stops it? Readiness per application, then every issue type that breaks on Linux.",
+     "intro": "Can each application run on Linux, and what stops it? Readiness per application, every issue type that breaks on Linux, then every Linux readiness check that hit and how the estimate counts it.",
      "items": [
       "linux-scorecard",
       "linux-issues",
+      "linux-checks",
       "findings:linux",
       "linux-build"
      ]
@@ -76,10 +77,11 @@
     {
      "id": "packages",
      "title": "Packages",
-     "intro": "Every NuGet package grouped by what has to happen to it: incompatible, deprecated, framework-specific, upgrade, licence, private, compatible. Click a group to filter.",
+     "intro": "Every NuGet package grouped by what has to happen to it: incompatible, deprecated, framework-specific, upgrade, licence, private, compatible. Click a group to filter. Below it, every DLL referenced outside NuGet, with its nuget.org match and the action.",
      "items": [
       "package-groups",
       "packages-table",
+      "binaries-table",
       "findings:packages"
      ]
     },
@@ -217,6 +219,7 @@
       "projects-table",
       "winapi-table",
       "block:appendix-raw",
+      "block:appendix-linux-checklist",
       "block:appendix-sources"
      ]
     }

@@ -22,6 +22,7 @@ import time
 
 from _common import skip_dir, OUT, SOURCE_DIR_SKIP, load_config, mark_step, read_json, run, slug, tool_exe, utf8_stdout, write_json
 import intake as I
+import _buildfix as BF
 
 HINT = re.compile(r"<HintPath>([^<]+)</HintPath>", re.I)
 PROJREF = re.compile(r'<ProjectReference\s+Include="([^"]+)"', re.I)
@@ -127,6 +128,17 @@ def _sibling(root, resolved):
     return None if rel.startswith("..") else rel.replace("\\", "/").split("/")[0]
 
 
+STAGE = {"dir": None, "aliases": {}}  # optional folder that acts as the group folder (Library, DLL Cache ...) when the sibling checkout has a different layout
+
+
+def _staged(rel):
+    """Path inside the staging folder for a repo-relative path (e.g. Library/filemanager/x.dll), or None."""
+    if not STAGE["dir"]:
+        return None
+    p = os.path.join(STAGE["dir"], rel.replace("/", os.sep))
+    return p if os.path.exists(p) else None
+
+
 def static_check(root, sol, inv):
     """Issues and prerequisites for one solution from its files. Returns (status, issues, prerequisites, siblings)."""
     by_path = {p["path"]: p for p in inv.get("projects", [])}
@@ -162,6 +174,12 @@ def static_check(root, sol, inv):
                     sib = _sibling(root, resolved)
                     if sib:
                         siblings.setdefault(sib, set()).add(os.path.relpath(resolved, os.path.dirname(root)).replace("\\", "/"))
+            elif _staged(os.path.relpath(resolved, os.path.dirname(root)).replace(chr(92), "/")):
+                rel = os.path.relpath(resolved, os.path.dirname(root)).replace(chr(92), "/")
+                siblings.setdefault(rel.split("/")[0], set()).add(rel)
+                top = "/".join(rel.split("/")[:2])
+                if top in STAGE["aliases"]:
+                    pre.add(f"{rel.split('/')[0]}: '{top}' is not at that path in the current repository; tested with the path pointed at {STAGE['aliases'][top]}")
             elif re.search(r"/bin/(debug|release)/", hl):
                 pre.add(f"build order: {p['name']} reads {os.path.basename(h)} from another project's bin folder; that project must be built first, and the build runs in Debug")
             else:
@@ -174,6 +192,7 @@ def static_check(root, sol, inv):
                 pre.add("Visual Studio Build Tools: Web development build tools (WebApplication.targets)")
         fw = ",".join(p.get("frameworks") or [])
         if p.get("family") == "netfx":
+            fw = re.sub(r"\bnet(4)(\d)(\d)?\b(?!\.)", lambda m: ".".join(g for g in m.groups() if g), fw)  # SDK-style monikers (net472) -> 4.7.2
             pre.add("Visual Studio Build Tools: MSBuild + .NET Framework " + (fw.replace("v", "") or "targeting pack"))
             if os.path.exists(os.path.join(base, "packages.config")):
                 pre.add("NuGet restore of packages.config: nuget.exe (msbuild -restore skips packages.config projects) and access to the NuGet feed")
@@ -210,6 +229,8 @@ def stage_siblings(siblings, repo_root, work):
     for files in siblings.values():
         for rel in files:
             src = os.path.join(src_group, rel.replace("/", os.sep))
+            if not os.path.exists(src) and _staged(rel):
+                src = _staged(rel)
             dst = os.path.join(dst_group, rel.replace("/", os.sep))
             for f in os.listdir(os.path.dirname(src)):
                 fs, fd = os.path.join(os.path.dirname(src), f), os.path.join(os.path.dirname(dst), f)
@@ -220,12 +241,55 @@ def stage_siblings(siblings, repo_root, work):
     return n
 
 
+def restore_hint_packages(work, tc):
+    """Projects that point at a local packages folder (HintPath or Import: packages\\Id.1.2.3\\... one level or more above the project) that is not in
+    the repository: install exactly that package version from NuGet into that folder. Returns the packages restored (NuGet downloads only, the standing approval)."""
+    rx = re.compile(r"(?i)((?:\.\.[\\/])+)packages[\\/]([A-Za-z0-9_\-]+(?:\.[A-Za-z_][A-Za-z0-9_\-]*)*)\.(\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9.\-]+)?)[\\/]")
+    wanted = {}
+    for dp, dn, fs in os.walk(work):
+        dn[:] = [d for d in dn if d not in (".git", "node_modules", "bin", "obj")]
+        for f in fs:
+            if f.lower().endswith((".csproj", ".vbproj", ".props", ".targets")):
+                try:
+                    text = open(os.path.join(dp, f), encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    continue
+                for m in rx.finditer(text):
+                    pkgdir = os.path.abspath(os.path.join(dp, m.group(1).replace("/", os.sep), "packages"))
+                    wanted[(pkgdir, m.group(2), m.group(3))] = True
+    done = []
+    for pkgdir, pid, ver in sorted(wanted):
+        if os.path.isdir(os.path.join(pkgdir, f"{pid}.{ver}")) or not tc.get("nuget"):
+            continue
+        os.makedirs(pkgdir, exist_ok=True)
+        rc, _ = run([tc["nuget"], "install", pid, "-Version", ver, "-OutputDirectory", pkgdir, "-NonInteractive"], cwd=work, timeout=1800)
+        if rc == 0:
+            done.append(f"{pid} {ver}")
+    return done
+
+
+def work_base(root):
+    """Where the build copies go. Default assessment/build/work. MSBuild tools such as SGEN still fail on Windows paths over 260 characters,
+    and a deep workspace (a temp or OneDrive folder) plus a deep repository breaks the build for no reason of the client's. So when the
+    workspace path is long, the copies go to a short folder in the tool cache instead (%LOCALAPPDATA%/lsa/<6-character id of the
+    workspace>); assessment.json -> build_work_dir overrides both. build/index.json records the folder used."""
+    cfg = read_json(os.path.join(root, "assessment.json"), {}) or {}
+    if (cfg.get("build_work_dir") or "").strip():
+        return os.path.abspath(cfg["build_work_dir"])
+    default = os.path.abspath(os.path.join(root, OUT, "build", "work"))
+    if os.name == "nt" and len(default) > 60:
+        import hashlib
+        tag = hashlib.sha1(os.path.abspath(root).lower().encode()).hexdigest()[:6]
+        return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "lsa", tag)
+    return default
+
+
 def real_build(root, sol, inv, tc, approved, repo_root, siblings=None):
     if not approved:
         return {"status": "NOT RUN", "detail": "restore downloads NuGet packages: run with --approve-downloads after the user said yes"}
     if not tc["msbuild"]:
         return {"status": "NOT RUN", "detail": "MSBuild not found on this machine; install Visual Studio Build Tools (needs the user's approval) and run again"}
-    work = os.path.abspath(os.path.join(OUT, "build", "work", sol["repo"]))
+    work = os.path.join(work_base(root), sol["repo"])
     copy_repo(repo_root, work)
     if siblings:
         stage_siblings(siblings, repo_root, work)
@@ -241,13 +305,26 @@ def real_build(root, sol, inv, tc, approved, repo_root, siblings=None):
         rc, rout = run([tc["nuget"], "restore", target, "-NonInteractive"], cwd=work, timeout=3600)
         if rc != 0:
             return {"status": "FAIL", "stage": "restore", "errors": [l.strip() for l in rout.splitlines() if l.strip()][-8:], "error_count": 1, "seconds": round(time.time() - started)}
+    restored = restore_hint_packages(work, tc)
     fw_root, fw_failed = framework_root(needed_frameworks(work), tc)
     extra = [f"-p:TargetFrameworkRootPath={fw_root}"] if fw_root else []
-    code, out = run([tc["msbuild"], target, "-restore", "-t:Build", f"-p:Configuration={config}", *extra, "-m", "-nologo", "-v:minimal"], cwd=work, timeout=3600)
-    errs = [l.strip() for l in out.splitlines() if ERROR.search(l)]
+    workarounds, props = [], []
+    for _round in range(8):  # a failed build may be fixable in the copy (see _buildfix.py); fix, then build again
+        code, out = run([tc["msbuild"], target, "-restore", "-t:Build", f"-p:Configuration={config}", *extra, *props, "-m", "-nologo", "-v:minimal"], cwd=work, timeout=3600)
+        errs = [l.strip() for l in out.splitlines() if ERROR.search(l)]
+        if code == 0 or not errs or all("MSB3644" in e for e in errs):
+            break
+        fixed, new_props = BF.autofix(work, out, tc)
+        if not fixed and not new_props:
+            break
+        workarounds += fixed
+        props += new_props
     if code != 0 and errs and all("MSB3644" in e for e in errs):
         return {"status": "NOT RUN", "detail": "the .NET Framework reference assemblies for " + ", ".join(fw_failed or needed_frameworks(work)) + " are not on this machine and could not be fetched; the build says nothing about the code"}
-    return {"status": "PASS" if code == 0 else "FAIL", "stage": "build", "configuration": config, "errors": sorted(set(errs))[:15], "error_count": len(set(errs)), "seconds": round(time.time() - started)}
+    res = {"status": "PASS" if code == 0 else "FAIL", "stage": "build", "configuration": config, "errors": sorted(set(errs))[:15], "error_count": len(set(errs)), "seconds": round(time.time() - started), "packages_installed": restored}
+    if workarounds:
+        res["workarounds"] = workarounds  # PASS plus workarounds = a contingent pass; FAIL plus workarounds = what was tried
+    return res
 
 
 def main():
@@ -261,26 +338,35 @@ def main():
     root, cfg = load_config()
     os.chdir(root)
     tc = toolchain()
+    STAGE["dir"] = cfg.get("library_stage")
+    if STAGE["dir"] and os.path.exists(os.path.join(STAGE["dir"], "aliases.json")):
+        STAGE["aliases"] = read_json(os.path.join(STAGE["dir"], "aliases.json"), {}) or {}
     if a.toolchain:
         print(f"MSBuild: {tc['msbuild'] or 'NOT FOUND'}\nnuget.exe (optional): {tc['nuget'] or 'not found'}\ndotnet: {tc['dotnet'] or 'NOT FOUND'}\n"
               f".NET Framework targeting packs: {', '.join(tc['netfx_targeting_packs']) or 'none found'}")
         return
-    I.require_hours(cfg, "build_check.py")
+    import intake as _intake
+    _intake.require(cfg, root, ["before_scan", "after_scan"], "build_check.py")
     idx = read_json(os.path.join(OUT, "solutions", "index.json"))
     if not idx:
         raise SystemExit("run solutions.py first")
     prev = {s["id"]: s for s in (read_json(os.path.join(OUT, "build", "index.json"), {}) or {}).get("solutions", [])}
-    rows = []
+    statics = {}
     for s in idx["solutions"]:
         inv = read_json(os.path.join(OUT, "inventory", s["repo"] + ".json"))
-        repo_root = inv["root"]
-        status, issues, pre, siblings = static_check(repo_root, s, inv)
-        old = prev.get(s["id"], {}).get("real", {"status": "NOT RUN", "detail": "not attempted yet"})
-        real = old
-        if a.run and (not a.solution or a.solution == s["id"]):
-            real = real_build(root, s, inv, tc, a.approve_downloads, repo_root, siblings)
+        statics[s["id"]] = (inv, inv["root"]) + static_check(inv["root"], s, inv)
+    reals = {}
+    todo = [s for s in idx["solutions"] if a.run and (not a.solution or a.solution == s["id"])]
+    todo.sort(key=lambda s: any("build order" in p for p in statics[s["id"]][4]))  # a solution that reads another repository's bin output is built after the others
+    for s in todo:
+        inv, repo_root, status, issues, pre, siblings = statics[s["id"]]
+        reals[s["id"]] = real_build(root, s, inv, tc, a.approve_downloads, repo_root, siblings)
+    rows = []
+    for s in idx["solutions"]:
+        inv, repo_root, status, issues, pre, siblings = statics[s["id"]]
+        real = reals.get(s["id"]) or prev.get(s["id"], {}).get("real", {"status": "NOT RUN", "detail": "not attempted yet"})
         rows.append({"id": s["id"], "static": {"status": status, "issues": issues, "prerequisites": pre, "sibling_folders": siblings}, "real": real})
-    write_json(os.path.join(OUT, "build", "index.json"), {"toolchain": tc, "solutions": rows})
+    write_json(os.path.join(OUT, "build", "index.json"), {"toolchain": tc, "work_dir": work_base(root), "solutions": rows})
     mark_step(root, "build_static")
     if a.run:
         mark_step(root, "build_real", "done" if all(r["real"]["status"] in ("PASS", "FAIL") for r in rows) else "partial")

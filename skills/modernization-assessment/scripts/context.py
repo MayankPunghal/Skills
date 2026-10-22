@@ -8,7 +8,7 @@ import re
 import sys
 from collections import Counter
 
-from _common import ASSESSMENT_TYPES, CONFIG_NAME, ISSUES_LOG, OUT, documenter_dir, issues_log, load_config, load_state, read_json, run, utf8_stdout
+from _common import ASSESSMENT_TYPES, CONFIG_NAME, ISSUES_LOG, OUT, documenter_dir, issues_log, load_config, load_state, read_json, run, slug, utf8_stdout
 import _findings as F
 
 
@@ -96,11 +96,29 @@ def main():
     pending_graph = [r for r in repos if st["repos"][r].get("graph") != "done"]
     pending_infra = [r for r in repos if st["repos"][r].get("infra") != "done"]
     sample = (cfg.get("intake") or {}).get("code_access") == "sample"
+    lift = cfg.get("assessment_type") == "lift-and-shift"
+
+    def newer(a, b):  # a (under assessment/) changed after b was written, or b is missing
+        pa, pb = os.path.join(OUT, a), os.path.join(OUT, b)
+        return not os.path.exists(pb) or (os.path.exists(pa) and os.path.getmtime(pa) > os.path.getmtime(pb))
+
+    atf_dir = cfg.get("atf_scanner_dir") or os.environ.get("ATF_SCANNER_DIR")
+    atf_todo = [r for r in repos if not os.path.exists(os.path.join(OUT, "atf", r, "atf.json"))] if atf_dir and not lift else []
+    phased = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {}) or {}
+    phases_todo = [r for r in repos if r not in (phased.get("repos") or {})] if not lift else []
+    summaries = glob.glob(os.path.join(OUT, "report", "*-Modernization-Summary.md"))
+    stem = os.path.join(OUT, "documents", slug(cfg.get("client") or "client"))
+    extras = [(stem + "-open-questions.md", "build_open_questions.py   (full and short question lists and the client email, .md + .html)"),
+              (stem + "-effort-estimate-explained.md", "build_estimate_explainer.py   (every hour explained, .md + .html)")]
+    docs = read_json(os.path.join(OUT, "documents", "built.json"))
+    mapping = glob.glob(os.path.join(OUT, "documents", "*-Application-Server-Mapping.xlsx"))
     if not cfg.get("assessment_type") and not repos:  # workspaces started before the intake keep their scenario.hosting
         nxt = ("intake questionnaire: ask the questions from intake.py --questions in plain words, then intake.py --answers '<json>' "
                "(references/intake.md); the answers choose the assessment type")
     elif pending_discover:
         nxt = "discover_estate.py"
+    elif atf_todo and pending_scan:
+        nxt = f"atf_scan.py   (AWS Transform codebase scanner, RadNet then RaSQL: {len(atf_todo)} repositories without atf.json; references/atf-and-phased-estimate.md)"
     elif pending_scan:
         nxt = f"scan_repo.py --all   ({len(pending_scan)} repositories not scanned)"
     elif pending_infra:
@@ -122,12 +140,27 @@ def main():
     elif sample and (not os.path.exists(os.path.join(OUT, "extrapolation.json"))
                      or os.path.getmtime(os.path.join(OUT, "extrapolation.json")) < os.path.getmtime(os.path.join(OUT, "estimate.json"))):
         nxt = "extrapolate_estate.py (only a sample of the estate is assessed: estimate the rest from it)"
+    elif phases_todo:
+        nxt = (f"effort_facts.py, then estimate_phases.py   ({len(phases_todo)} repositories without a phased estimate; "
+               "answer the UNKNOWN inputs in assessment/effort/<repo>/estimate-inputs.json and re-run)")
+    elif lift and (not docs or newer("estimate.json", "documents/built.json")):
+        nxt = "build_doc.py   (the single .docx for the whole project + the small workbook), then verify_doc.py"
+    elif lift and not mapping and not os.path.exists(os.path.join(OUT, "infra", "mapping-check.json")):
+        nxt = "build_mapping_sheet.py   (the application-to-server sheet for the client to fill in; never pre-fill servers)"
+    elif lift and any(not os.path.exists(f) or newer("documents/built.json", os.path.relpath(f, OUT)) for f, _ in extras):
+        nxt = next(cmd for f, cmd in extras if not os.path.exists(f) or newer("documents/built.json", os.path.relpath(f, OUT)))
     elif todo:
         nxt = f"write narratives: {', '.join(sorted(todo))} (references/write-report.md)"
     elif not reports:
         nxt = "build_report.py"
     elif not glob.glob(os.path.join(OUT, "report", "*.html")):
         nxt = "build_html_report.py, then verify_report.py"
+    elif not lift and (not summaries or newer("effort/estimate-phases.json", os.path.relpath(summaries[0], OUT))):
+        nxt = "build_summary.py   (the one short report: answer first, then only what needs action)"
+    elif lift:
+        nxt = ("build_doc.py after any change, then verify_doc.py; before finalising ask the user to confirm the environments "
+               "(intake.py --confirm-environments) and only finalise when the user says so (intake.py --finalize). Call answers: intake.py --client-update / --decision / "
+               "--release-step. Mapping workbook back: check_mapping.py --workbook <file>")
     else:
         nxt = "build_report.py and build_html_report.py after any change, then verify_report.py"
     n, still = issues_log(root, cfg.get("client") or "")

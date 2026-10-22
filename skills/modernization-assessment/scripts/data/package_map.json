@@ -428,6 +428,13 @@
    "sev": "Medium",
    "note": "Check whether on-prem SharePoint stays reachable; CSOM for .NET Standard exists for Online.",
    "replacement": "PnP.Core / Microsoft.Graph"
+  },
+  {
+   "match": "Microsoft\\.AspNet\\.Web\\.Optimization(\\..*)?",
+   "status": "replace",
+   "sev": "Low",
+   "note": "System.Web bundling.",
+   "replacement": "Build-time bundling (Vite/esbuild) or LigerShark.WebOptimizer.Core"
   }
  ]
 }

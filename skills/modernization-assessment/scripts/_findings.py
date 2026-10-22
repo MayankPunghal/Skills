@@ -8,14 +8,88 @@ assessment/reviews/<repo>.json         {"<finding id>": {"verdict": "confirmed|d
                                          "confidence": "...", "note": "...", "reviewer": "...", "app": "<app id, optional>"}}
 assessment/reviews/<repo>.manual.json  [ {finding written by the reviewer: rule "MAN-...", category, title, severity,
                                          confidence, project, evidence: [{file, line, text}], why, fix, alt, effort_key} ]
+assessment/linux/<repo>/linux-readiness.json   linux_readiness.py (step 3.2, the linux-readiness skill's scanner):
+                                         blocking and warn hits of checks this skill's own rules do not already cover
+                                         become findings (one per check and project, rule = the LNX- id), so they are
+                                         reviewed, costed and planned like any other finding
 """
+import json
 import os
 import re
 
-from _common import OUT, read_json
+from _common import OUT, data, linux_readiness_dir, read_json, slug
 
 SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
 CONF_ORDER = {"Confirmed": 0, "Likely": 1, "Needs verification": 2}
+
+# Linux readiness level -> finding severity and effort key (data/estimation.json finding_hours). Info hits are not
+# findings: they stay in the Linux readiness section of the report as "verify".
+LNX_SEVERITY = {"block": "High", "warn": "Medium"}
+LNX_EFFORT = {"block": "small-change", "warn": "trivial"}
+# Linux readiness area -> this skill's finding category (all three are in the "linux" segment).
+LNX_CATEGORY = {"File system and paths": "file-handling", "Encodings, line endings and text": "file-handling",
+                "Time zones": "time-culture", "Globalization and culture (ICU vs NLS)": "time-culture"}
+LNX_EVIDENCE = 25
+_LNX = {}
+
+
+def linux_catalogue():
+    """{rule id: catalogue row} of the linux-readiness skill, or {} when the skill is not installed."""
+    if "rules" not in _LNX:
+        d = linux_readiness_dir()
+        cat = json.load(open(os.path.join(d, "scripts", "data", "linux_readiness.json"), encoding="utf-8")) if d else {"rules": []}
+        _LNX["rules"] = {r["id"]: r for r in cat["rules"]}
+        _LNX["ma_ids"] = {r["id"] for r in data("rules.json")["rules"]}
+    return _LNX["rules"]
+
+
+def linux_counted_by(rule):
+    """The rules of this skill that cover a Linux readiness check (named in the catalogue's already_in), and whether the
+    catalogue calls it covered with no rule named. A check is costed as its own finding unless one of those rules has a
+    finding in the same repository (or it is covered with no rule named)."""
+    linux_catalogue()
+    ids = sorted({t for t in re.findall(r"\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b", rule.get("already_in", "")) if t in _LNX["ma_ids"]})
+    return ids, rule.get("coverage") == "COVERED" and not ids
+
+
+def linux_title(rule):
+    what = re.sub(r"\s+", " ", rule.get("what", "")).strip()
+    head = what.split(": ")[0]
+    return short(head if 20 <= len(head) <= 110 else what, 110)
+
+
+def linux_findings(root, repo, raw):
+    """Blocking and warn hits of the Linux readiness report as findings, for checks this skill's rules do not cover here:
+    a check whose covering rule already has a finding in this repository is skipped (no double count)."""
+    rep = read_json(os.path.join(root, OUT, "linux", repo, "linux-readiness.json"))
+    cat = linux_catalogue() if rep else {}
+    if not rep or not cat:
+        return []
+    inv = load_inventory(root, repo)
+    pidx = project_index(inv) if inv else []
+    have = {f["rule"].split(":")[0] for f in raw}
+    groups = {}
+    for h in rep.get("hits", []):
+        r = cat.get(h["rule"])
+        if not r or h.get("waived") or r["level"] not in LNX_SEVERITY:
+            continue
+        ids, covered = linux_counted_by(r)
+        if covered or have & set(ids):
+            continue
+        proj = project_of_file(pidx, h["file"]) or "(repository)"
+        groups.setdefault((h["rule"], proj), []).append(h)
+    out = []
+    for (rid, proj), hs in sorted(groups.items()):
+        r = cat[rid]
+        known = [s for s in r.get("sources", []) if s != "K"]
+        out.append({"id": f"{repo}:{rid}:{slug(proj)}", "repo": repo, "project": proj, "rule": rid,
+                    "category": LNX_CATEGORY.get(r["area"], "linux-readiness"), "title": linux_title(r),
+                    "severity": LNX_SEVERITY[r["level"]], "confidence": "Likely" if known else "Needs verification",
+                    "occurrences": len(hs), "files": sorted({h["file"] for h in hs}),
+                    "evidence": [{"file": h["file"], "line": h["line"], "text": h["text"]} for h in hs[:LNX_EVIDENCE]],
+                    "why": r.get("what", ""), "fix": r.get("fix", ""), "alt": "", "effort_key": LNX_EFFORT[r["level"]],
+                    "baseline": False, "source": "linux-readiness"})
+    return out
 
 
 def repos(root):
@@ -30,6 +104,7 @@ def load_inventory(root, repo):
 def load(root, repo, include_dismissed=False):
     raw = read_json(os.path.join(root, OUT, "findings", f"{repo}.json"), []) or []
     raw = raw + (read_json(os.path.join(root, OUT, "graphs", repo, "wiring-findings.json"), []) or [])  # map_graphs.py: DI / wiring
+    raw = raw + linux_findings(root, repo, raw)  # linux_readiness.py: checks this skill's rules do not cover
     reviews = read_json(os.path.join(root, OUT, "reviews", f"{repo}.json"), {}) or {}
     manual = read_json(os.path.join(root, OUT, "reviews", f"{repo}.manual.json"), []) or []
     out = []

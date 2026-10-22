@@ -384,6 +384,9 @@ def main():
     root, cfg = load_config()
     C.ensure_company_domains(root, cfg)
     os.chdir(root)
+    if cfg.get("assessment_type") == "lift-and-shift":  # the intake answers the CI/CD and secrets questions this step depends on
+        import intake as _intake
+        _intake.require(cfg, root, ["before_scan", "after_scan"], "config_template.py")
     fmt = a.token_format or cfg.get("config_token_format") or "${NAME}"
     if fmt not in TOKEN_FORMATS:
         raise SystemExit(f"--token-format must be one of {TOKEN_FORMATS}")

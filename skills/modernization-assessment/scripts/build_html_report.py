@@ -181,11 +181,13 @@ def collect(c, cfg):
             packages.append({"id": p["id"], "versions": ", ".join(p["versions"]), "latest": p.get("latest", "") or "", "group": A.package_group(p), "status": p["status"],
                              "severity": p["severity"], "advisories": p.get("vulnerable", "") or "", "vulnerable": "yes" if p.get("vulnerable") else "no",
                              "note": p.get("note", ""), "replacement": p.get("replacement", ""), "projects": len(p["projects"]), "repo": r,
+                             "frameworks": p.get("frameworks", ""), "linux": p.get("runs_on_linux", ""),
                              "licence": ((p.get("nuget") or {}).get("licence") or ""),
                              "licence_change": (((p.get("nuget") or {}).get("licence_info") or {}).get("text") or ""),
                              "rec": (p.get("recommendation") or {}).get("action", "") + (" (optional)" if (p.get("recommendation") or {}).get("optional") else ""),
                              "rec_version": (p.get("recommendation") or {}).get("version") or "",
                              "rec_why": (p.get("recommendation") or {}).get("why", ""), "rec_risks": "; ".join((p.get("recommendation") or {}).get("risks", []))})
+    binaries = [dict(b, repo=r) for r in c.repos for b in c.scan[r].get("binary_references", [])]
     deps, projects = [], []
     for r in c.repos:
         for e in c.scan[r].get("endpoints", []):
@@ -246,10 +248,10 @@ def collect(c, cfg):
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}
         lbuild += [dict(p, repo=r, status=A.BUILD_LABEL.get(p["status"], p["status"])) for p in lb.get("projects", [])]
-    return {"findings": findings, "apps": apps, "packages": packages, "pgroups": [{"group": g, "desc": d} for g, d in A.PACKAGE_GROUPS],
+    return {"findings": findings, "apps": apps, "packages": packages, "binaries": binaries, "pgroups": [{"group": g, "desc": d} for g, d in A.PACKAGE_GROUPS],
             "deps": deps, "projects": projects, "winapi": winapi, "questions": questions, "wps": wps, "timeline": c.est.get("timeline", []), "kpis": kpis,
             "segs": segs, "cats": catrows, "r7": dict(Counter(a["r7"] for a in apps)), "sev": {s: sev[s] for s in SEVS}, "linux": lr,
-            "linuxIssues": A.linux_issue_types(c), "tp": {k: v for k, v in tp.items() if k in ("external", "onprem", "sdks")},
+            "linuxIssues": A.linux_issue_types(c), "linuxChecks": A.linux_checks(c), "linuxReports": A.linux_reports(c), "tp": {k: v for k, v in tp.items() if k in ("external", "onprem", "sdks")},
             "tpCounts": {"external": len(tp["external"]), "onprem": len(tp["onprem"]), "sdks": len({x["service"] for x in tp["sdks"]}),
                          "identity": len(tp["identity"]), "other": len(tp["other"])},
             "linuxBuild": lbuild, "map": A.architecture_map(c), "effort": effort}
@@ -260,7 +262,7 @@ BLOCK_TITLES = {"estimate": "Effort (developer hours)", "sprints": "Coding sprin
                 "methodology": "How the estimate was calculated",
                 "optional": "Optional modernizations", "estate-extrapolation": "Whole estate (estimated from the assessed sample)",
                 "aws-native": "Replacing servers with AWS managed services", "findings-future": "Linux and .NET modernization findings, for later",
-                "intake": "What the client asked for", "landing-summary": "What must change for the move"}
+                "intake": "What the client asked for", "appendix-linux-checklist": "Linux readiness checklist (confirmed by a person)", "landing-summary": "What must change for the move"}
 
 
 def component(name, c):

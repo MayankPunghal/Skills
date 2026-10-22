@@ -13,7 +13,8 @@ networking, IPC, Windows-only APIs, IIS hosting, container images, configuration
 messaging, CI). Each automated check is a regex over the file types it names (code, project, config, markup, Dockerfile,
 CI, scripts) or over file paths; the rest are listed as a review checklist.
 Works for .NET Framework code before a port, for ported code, and for applications already on modern .NET (the
-"Linux readiness only" path). Same file in the modernization-assessment, dotnet-modernization and linux-readiness skills.
+"Linux readiness only" path). The modernization-assessment and dotnet-modernization skills run this file through a thin
+entry point of the same name (one copy of the scanner and its catalogue).
 Writes <out>/linux-readiness.json and linux-readiness.md with its .html twin (default <out> = <folder>/.modernization).
 --dockerfile-only: only the checks that read Dockerfiles and entrypoint scripts (plus "no .dockerignore"), over a folder or
 one Dockerfile; writes linux-readiness-dockerfile.* instead.

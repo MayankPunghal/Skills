@@ -52,9 +52,13 @@ evals/evals.md              test prompts and expected behaviour
 
 `reference/kb/` is Apache-2.0 (Amazon), see `NOTICE`. The rest belongs to the skill owner.
 
+## Changed in 1.1.1
+
+- The Linux readiness scanner and its catalogue now exist once, in the linux-readiness skill (installed with this one). `scripts/linux_readiness.py` is a thin entry point that loads it, so the copied catalogue and self-test are gone and a change to a check reaches every skill at once. `reference/linux-readiness.md` is now a short page on how this skill uses the check.
+
 ## Changed in 1.1.0
 
-- Linux readiness: 337 checks (was 240), shared with modernization-assessment and the new standalone linux-readiness skill, with a self-test (`scripts/selftest_linux_readiness.py`). New in this release: IIS settings Kestrel does not read, ECS wiring (port 80, loopback binding, bridge mode, init process) and more Windows-only behaviour.
+- Linux readiness: 337 checks (was 240), shared with modernization-assessment and the new standalone linux-readiness skill, with a self-test (now the linux-readiness skill's `selftest.py`). New in this release: IIS settings Kestrel does not read, ECS wiring (port 80, loopback binding, bridge mode, init process) and more Windows-only behaviour.
 - Residue scan: 69 rules (was 44). Gates: vulnerable packages, parity and verify fixes; performance, SAST and the database gate are shown as manual "not run" rows.
 - New playbooks: web-api, mvc, signalr, reporting; a .NET 10 breaking-changes reference; the existing playbooks expanded (the startup playbook has a web.config-to-ASP.NET Core table).
 - `reference/kb-errata.md`: where the DevTx knowledge base is wrong or out of date, and what to do instead. `reference/db-porting-checklist.md`: the 97-item DB porting checklist, item by item.

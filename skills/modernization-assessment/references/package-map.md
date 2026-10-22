@@ -64,3 +64,7 @@ advisories for the versions in use, and the licence expression. Unknown packages
 | `Thinktecture\.IdentityModel(\..*)?\|IdentityServer3(\..*)?\|DotNetOpenAuth(\..*)?\|Microsoft\.IdentityModel\.(Protocol\.Extensions\|Clients\.ActiveDirectory)` | replace | Medium | Retired identity libraries. | Microsoft.AspNetCore.Authentication.OpenIdConnect / Duende IdentityServer (licence) / Cognito |  |
 | `Rotativa(\..*)?\|TuesPechkin(\..*)?\|Pechkin(\..*)?\|wkhtmltopdf(\..*)?\|ABCpdf(\..*)?\|EvoPdf(\..*)?\|Winnovative(\..*)?\|Select\.HtmlToPdf(\..*)?` | replace | Medium | HTML-to-PDF engines with Windows or native-binary dependencies. | PuppeteerSharp / Microsoft.Playwright (Chromium) / QuestPDF |  |
 | `Microsoft\.SharePoint(\.Client(\..*)?)?\|Microsoft\.SharePointOnline\.CSOM` | replace | Medium | Check whether on-prem SharePoint stays reachable; CSOM for .NET Standard exists for Online. | PnP.Core / Microsoft.Graph |  |
+
+## nuget.org lookups and DLL references
+
+Every package row gets the frameworks the latest version targets (from its `lib/` folders when nuget.org lists no dependency groups), whether it runs on Linux, and a replacement or action, including a cross-platform fork found by nuget.org search when the package has no Linux build. DLLs referenced by HintPath get the same treatment by assembly name, plus the framework they were built for, other builds next to them and their source. Details: [atf-and-phased-estimate.md](atf-and-phased-estimate.md#packages-and-dlls-on-nugetorg).
