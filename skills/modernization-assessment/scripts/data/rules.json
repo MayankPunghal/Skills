@@ -1989,6 +1989,251 @@
    "question": "Which identity provider tenant/app registrations does each application use, and who can add the new redirect URIs?"
   },
   {
+   "id": "AUTH-CUSTOM-LOGIN",
+   "cat": "auth",
+   "title": "Custom login with the signed-in user kept in session",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": ["cs", "vb", "markup"],
+   "pat": [
+    "Response\\.Redirect\\(\\s*\"~?/?Login(\\.aspx)?",
+    "\\bRedirectToAction\\(\\s*\"Login\"",
+    "\\bSession\\[\\s*\"(User|CurrentUser|LoggedInUser|LoginUser|UserInfo|UserId|UserName|UserDetails)\"\\s*\\]"
+   ],
+   "why": "No framework authentication: each page checks a user object in session and redirects to a hand-made login page. On ASP.NET Core the session must live in a shared store (several containers), and the per-page checks become cookie authentication with [Authorize].",
+   "fix": "Replace the session check with ASP.NET Core cookie authentication and [Authorize] (or a fallback policy that requires a signed-in user); keep the login page only if sign-in stays local, otherwise hand sign-in to an identity provider.",
+   "alt": "ASP.NET Core cookie auth + [Authorize]; Amazon Cognito user pool (hosted sign-in, or ALB OIDC authentication)",
+   "effort": "medium-change",
+   "refs": ["S9"],
+   "in_strings": true,
+   "question": "Where do this application's users and passwords live, and should sign-in move to a central identity provider (Amazon Cognito or the client's own IdP)?"
+  },
+  {
+   "id": "AUTH-DB-CREDENTIAL-CHECK",
+   "cat": "auth",
+   "title": "User name and password checked against the application's own database",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\"(Authenticate|ValidateUser|ValidateLogin|CheckLogin|UserLogin|LoginUser|AuthenticateUser)\\w*\"\\s*,\\s*CommandType\\.StoredProcedure",
+    "\\bExecute\\w*\\(\\s*\"(Authenticate|Validate(User|Login)|CheckLogin|UserLogin)\\w*\"",
+    "\\b(ValidateUser|AuthenticateUser|CheckLogin|ValidateLogin)\\s*\\(\\s*[\\w.]*[Uu]ser\\w*\\s*,\\s*[\\w.]*[Pp]ass"
+   ],
+   "why": "The application is its own identity store: user names and passwords sit in its database and are checked by its own code or stored procedure. Moving to AWS is the moment to decide whether that stays or moves to an identity provider; either way the credential check must keep working from the container.",
+   "fix": "Keep the check behind an ASP.NET Core authentication handler (one place, tested), or migrate the users to Amazon Cognito (user migration Lambda trigger moves them on first sign-in without a password reset).",
+   "alt": "ASP.NET Core authentication handler; Amazon Cognito with a user migration Lambda trigger",
+   "effort": "medium-change",
+   "refs": ["S9"],
+   "in_strings": true,
+   "question": "How many users / client accounts are in the application's user table, and may they move to Amazon Cognito (or the client's IdP)?"
+  },
+  {
+   "id": "AUTH-REVERSIBLE-PASSWORD",
+   "cat": "auth",
+   "title": "Passwords encrypted (reversible) instead of hashed",
+   "sev": "High",
+   "conf": "Likely",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\bDecrypt\\w*\\s*\\([^)]*[Pp]ass(word|wd)",
+    "[Pp]ass(word|wd)\\w*\\s*=\\s*[\\w.]*Decrypt\\w*\\s*\\(",
+    "\\bEncrypt\\w*\\s*\\(\\s*[\\w.]*[Pp]ass(word|wd)"
+   ],
+   "why": "Anyone with the encryption key can read every password. A cloud move puts the key in configuration that more people and services can reach; one leak exposes every account.",
+   "fix": "Store a one-way salted hash (PBKDF2 via ASP.NET Core Identity PasswordHasher, or Cognito) and rehash each password at its next successful sign-in; until then keep the key in AWS KMS / Secrets Manager, never in config files.",
+   "alt": "ASP.NET Core Identity PasswordHasher; Amazon Cognito; AWS KMS for the interim key",
+   "effort": "medium-change",
+   "refs": ["S9"],
+   "question": "Which systems decrypt stored passwords today (for example to sign in to another system), and can they move to hashed passwords?"
+  },
+  {
+   "id": "AUTH-FIXED-HEADER-SECRET",
+   "cat": "auth",
+   "title": "Requests trusted because a header equals a value written in the code",
+   "sev": "High",
+   "conf": "Likely",
+   "types": ["cs", "vb"],
+   "pat": [
+    "Headers\\[\\s*\"[\\w-]+\"\\s*\\]\\s*==\\s*\"[^\"]{6,}\"",
+    "Headers\\.Get\\(\\s*\"[\\w-]+\"\\s*\\)\\s*==\\s*\"[^\"]{6,}\"",
+    "\"[^\"]{6,}\"\\s*==\\s*[\\w.]*Headers\\["
+   ],
+   "why": "A fixed value in the source code acts as a password: everyone with the code (or one captured request) has it, and changing it needs a release.",
+   "fix": "Move the value to AWS Secrets Manager and read it through configuration; better, replace it with a real client credential (OAuth 2.0 client credentials from Cognito, or API Gateway API keys with usage plans) and rotate it.",
+   "alt": "AWS Secrets Manager; Amazon Cognito client credentials (M2M); Amazon API Gateway API keys",
+   "effort": "small-change",
+   "refs": ["S9"],
+   "in_strings": true,
+   "question": "Which client apps send this header, and can they switch to a per-client credential?"
+  },
+  {
+   "id": "AUTH-API-KEY",
+   "cat": "auth",
+   "title": "API key in a request header",
+   "sev": "Medium",
+   "conf": "Likely",
+   "types": ["cs", "vb", "config"],
+   "pat": [
+    "Headers\\[\\s*\"(x-)?api-?key\"",
+    "\"X-API-Key\"",
+    "\\bApiKey(Header|Name)\\b"
+   ],
+   "why": "Clients authenticate with a shared key: the key list, rotation and per-client limits are the application's job today.",
+   "fix": "Keep the check in an ASP.NET Core authentication handler with keys from Secrets Manager, or put Amazon API Gateway in front (API keys, usage plans, throttling) and let it reject bad keys before they reach the container.",
+   "alt": "Amazon API Gateway API keys and usage plans; AWS Secrets Manager",
+   "effort": "small-change",
+   "refs": ["S9"],
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-IP-CHECK",
+   "cat": "auth",
+   "title": "Client IP address read in code (allow-lists, logging)",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\b(REMOTE_ADDR|UserHostAddress|RemoteIpAddress|HTTP_X_FORWARDED_FOR)\\b",
+    "\"X-Forwarded-For\""
+   ],
+   "why": "Behind an AWS load balancer every request comes from the balancer's address; the client's address is in X-Forwarded-For. IP allow-lists in code silently allow or block everyone.",
+   "fix": "Enable the forwarded-headers middleware (UseForwardedHeaders with the ALB as a known proxy); move IP allow-lists to AWS WAF IP sets or security groups.",
+   "alt": "ASP.NET Core ForwardedHeaders; AWS WAF IP sets; security groups",
+   "effort": "small-change",
+   "refs": ["S10"],
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-CONFIG-RULES",
+   "cat": "auth",
+   "title": "URL authorization rules in web.config",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": ["config"],
+   "pat": [
+    "<(allow|deny)\\s+(users|roles|verbs)\\s*="
+   ],
+   "why": "ASP.NET Core ignores <authorization> rules in web.config: pages they protect become public after the port unless the rules are rewritten.",
+   "fix": "Rewrite each rule as an authorization policy ([Authorize(Policy = ...)], a fallback policy, or endpoint conventions) and test that protected URLs still return 401/403.",
+   "alt": "ASP.NET Core authorization policies",
+   "effort": "small-change",
+   "refs": ["S9"],
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-ROLES-CODE",
+   "cat": "auth",
+   "title": "Role checks in code",
+   "sev": "Low",
+   "conf": "Confirmed",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\.IsInRole\\(",
+    "\\bPrincipalPermission\\b",
+    "\\[Authorize\\(\\s*Roles\\s*="
+   ],
+   "why": "Role names come from the current identity store (Windows groups, Membership roles, a user table). A new identity provider must issue the same roles as claims, or every check fails closed.",
+   "fix": "List the roles, map them to claims from the new provider (Cognito groups, IdP claims), and move the checks to named policies.",
+   "alt": "Claims-based policies; Amazon Cognito groups",
+   "effort": "small-change",
+   "refs": ["S9"],
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-JWT",
+   "cat": "auth",
+   "title": "JSON Web Tokens issued or validated",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": ["cs", "vb", "config"],
+   "pat": [
+    "\\bJwtSecurityToken(Handler)?\\b",
+    "\\bUseJwtBearerAuthentication\\b",
+    "\\bAddJwtBearer\\b",
+    "System\\.IdentityModel\\.Tokens\\.Jwt"
+   ],
+   "why": "Token signing keys, issuer and audience settings move with the app; a symmetric key in config is a shared secret.",
+   "fix": "Validate tokens with AddJwtBearer; keep signing keys in AWS KMS / Secrets Manager; if the app issues its own tokens, consider Amazon Cognito as the issuer.",
+   "alt": "AddJwtBearer; Amazon Cognito as token issuer; AWS KMS signing keys",
+   "effort": "small-change",
+   "refs": ["S9"]
+  },
+  {
+   "id": "AUTH-OWIN-OAUTH",
+   "cat": "auth",
+   "title": "OWIN OAuth server or cookie middleware",
+   "sev": "High",
+   "conf": "Confirmed",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\bUseOAuthAuthorizationServer\\b",
+    "\\bOAuthAuthorizationServerOptions\\b",
+    "\\bUseOAuthBearerTokens\\b",
+    "\\bUseCookieAuthentication\\b"
+   ],
+   "why": "ASP.NET Core has no built-in OAuth authorization server, and OWIN cookie tickets cannot be read by ASP.NET Core: users are signed out at cut-over.",
+   "fix": "Issue tokens from Amazon Cognito (or OpenIddict / Duende IdentityServer if the app must stay the issuer); replace OWIN cookies with ASP.NET Core cookie authentication and plan a sign-in reset.",
+   "alt": "Amazon Cognito; OpenIddict; Duende IdentityServer",
+   "effort": "medium-change",
+   "refs": ["S9"]
+  },
+  {
+   "id": "AUTH-BASIC",
+   "cat": "auth",
+   "title": "HTTP Basic authentication",
+   "sev": "Medium",
+   "conf": "Confirmed",
+   "types": ["cs", "vb"],
+   "pat": [
+    "AuthenticationHeaderValue\\(\\s*\"Basic\"",
+    "\"Basic \"\\s*\\+",
+    "\\bBasicAuthentication\\w*"
+   ],
+   "why": "User name and password travel with every request; inbound, the app validates them itself; outbound, the credential sits in config.",
+   "fix": "Inbound: an ASP.NET Core authentication handler, or move clients to tokens (Cognito client credentials). Outbound: credentials from AWS Secrets Manager.",
+   "alt": "Amazon Cognito client credentials; AWS Secrets Manager",
+   "effort": "small-change",
+   "refs": ["S9"],
+   "in_strings": true
+  },
+  {
+   "id": "AUTH-CUSTOM-AUTHZ-CODE",
+   "cat": "auth",
+   "title": "Hand-written authorization (who may call what) in code",
+   "sev": "Low",
+   "conf": "Likely",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\b(void|bool|Task<bool>|Task)\\s+Authori[sz]e\\w*\\s*\\(",
+    "\\bFunction\\s+Authori[sz]e\\w*\\s*\\("
+   ],
+   "why": "The rules for who may do what live in the application's own code, outside any framework. They move with the port and must not be lost or bypassed.",
+   "fix": "Port the logic as an ASP.NET Core authorization handler or middleware that runs on every request, and cover each rule with a test before and after the port.",
+   "alt": "ASP.NET Core IAuthorizationHandler / middleware",
+   "effort": "small-change",
+   "refs": ["S9"]
+  },
+  {
+   "id": "AUTH-ASPNETCORE",
+   "cat": "auth",
+   "title": "ASP.NET Core authentication already in place",
+   "sev": "Info",
+   "conf": "Confirmed",
+   "types": ["cs", "vb"],
+   "pat": [
+    "\\bAddAuthentication\\s*\\(",
+    "\\bAddAuthorization\\s*\\(",
+    "\\bAddIdentity(Core)?\\s*<",
+    "\\bUseAuthentication\\s*\\("
+   ],
+   "why": "Authentication already uses the ASP.NET Core pipeline: only the provider settings and secrets move.",
+   "fix": "Move secrets to AWS Secrets Manager; if the provider changes (for example to Amazon Cognito), only the scheme registration changes.",
+   "alt": "Amazon Cognito; AWS Secrets Manager",
+   "effort": "trivial",
+   "refs": ["S9"]
+  },
+  {
    "id": "CFG-HARDCODED-SECRET",
    "cat": "configuration-secrets",
    "title": "Hard-coded credential or key in source",
