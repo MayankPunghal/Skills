@@ -23,6 +23,10 @@ It does what a senior business analyst, architect and technical writer would do,
 8. **Package**: one zip with a single README that any agent can follow to install the project skill.
 
 
+## Changed in 1.16.2
+
+- **No false internal hosts from backslashes (network_endpoints.py).** A UNC path (`\\server\share`) must start a value. A `\u017F` inside a regex character range, a drive path such as `C:\temp` and sample paths in publish scripts are no longer reported as servers named `u017F`, `temp` or `full`.
+
 ## Changed in 1.16.1
 
 - **Network endpoints name the store, not the port guess (network_endpoints.py).** MongoDB connection strings are MongoDB on 27017 (they also say Server=...), Memcached and Aerospike have their own roles and ports (11211, 3000) instead of Redis on 6379, and a host in a store's own config file (redis.config, memcached.config) takes that store's role.

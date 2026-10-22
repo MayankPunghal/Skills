@@ -806,7 +806,8 @@
     "S9",
     "S18"
    ],
-   "in_strings": true
+   "in_strings": true,
+   "requires": "\\bSystem\\.Web\\b|<%@|<asp:|\\bInherits\\b"
   },
   {
    "id": "WEB-WEBFORMS-AJAX",

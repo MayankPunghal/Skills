@@ -146,7 +146,9 @@ KEY_IN_CODE = re.compile(r"""(?:Configuration|config|_config|_configuration|cfg|
                          r"""(?:GetValue\s*<[^>]+>|GetValue\s*\(\s*Of\s+\w+\s*\)|GetSection|GetConnectionString|GetRequiredSection|"""
                          r"""AppSettings|ConnectionStrings)\s*\(\s*["']([\w:.\-]+)["']""", re.I)  # VB: AppSettings("Key")
 # \\server\share (also escaped "\\\\server\\share" in C# literals): SMB to a file server
-UNC = re.compile(r"(?<![\w\\])(?P<lead>\\{2,4})(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]{1,62})(?P<sep>\\{1,2})[\w$.\-]+")
+# it must start a value (line start, space, quote, =, (, comma, @, >, ;, {): after a drive letter (C:\\temp\\x), inside a regex
+# range ([\\u00C0-\\u017F]) or after a path segment it is a local path or an escape, not a server
+UNC = re.compile(r"(?:^|(?<=[\s\"'=(,@>;{]))(?P<lead>\\{2,4})(?P<host>[A-Za-z0-9][A-Za-z0-9.\-]{1,62})(?P<sep>\\{1,2})[\w$.\-]+")
 INBOUND_CODE = re.compile(r"""\.UseUrls\s*\(\s*["']([^"']+)["']|\.Listen(?:Any|Local)?IP\s*\(\s*(\d{2,5})|\.Listen\s*\(\s*IPAddress\.\w+\s*,\s*(\d{2,5})|"""
                           r"""\bapp\.Run\s*\(\s*["'](https?://[^"']+)["']|\.listen\s*\(\s*(\d{2,5})""")
 
@@ -332,7 +334,7 @@ class Scan:
                     h = m.group("host")
                     if ext in (".cs", ".vb") and len(m.group("lead")) == 2 and len(m.group("sep")) == 2:
                         continue  # "\\Folder\\file.xml" in a regular string is one escaped backslash: a relative path, not \\server\share
-                    if not re.fullmatch(r"(?i)\?|\.|localhost|wsl\$|wsl\.localhost|tsclient|[a-z]", h) and not re.fullmatch(r"\d+", h):
+                    if not re.fullmatch(r"(?i)\?|\.|localhost|wsl\$|wsl\.localhost|tsclient|[a-z]|u[0-9a-f]{4}", h) and not re.fullmatch(r"\d+", h):
                         self.out(h, None, "smb", "unc-path", rp, i)
             if ext in (".cs", ".vb") and not (cm and cm.match(line)):
                 for dm in re.finditer(r'(?:@"|")([D-Zd-z]):\\', line):  # "Z:\\exports" / @"Z:\exports" in a string literal
