@@ -43,6 +43,10 @@ wording rules: references/style-guide.md. -->
 
 {{block:key-risks}}
 
+### 1.3 Migration order at a glance
+
+{{block:order-summary}}
+
 ## 2. Scope and method
 
 ### 2.1 What was assessed
@@ -83,6 +87,10 @@ Project-level detail (frameworks, project format, support status) is in Appendix
 whether the estimate counts it as its own finding, inside one of this skill's rules, or not at all (info: verify; waived). The
 full per-repository reports are listed under the table. -->
 {{block:linux-checks}}
+
+### 3.4 Every project: kind, difficulty and 7R (class libraries included)
+
+{{block:projects-7r}}
 
 ## 4. Architecture and dependencies
 
@@ -144,6 +152,10 @@ full per-repository reports are listed under the table. -->
 
 {{block:config-map}}
 
+### 4.13 Migration order (dependencies and blast radius)
+
+{{block:migration-order}}
+
 {{narrative:dependencies}}
 
 ## 5. Findings by category
@@ -177,6 +189,14 @@ full per-repository reports are listed under the table. -->
 ### 7.3 AWS managed-service swaps and optional modernizations
 
 {{block:optional}}
+
+### 7.4 Authentication and authorization on AWS
+
+{{block:auth}}
+
+### 7.5 Package actions
+
+{{block:package-actions}}
 
 ## 8. Effort estimate and timeline
 

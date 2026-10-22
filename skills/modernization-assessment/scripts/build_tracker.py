@@ -139,6 +139,26 @@ def main():
     if apps:
         sheets.append(_xlsx.auto("Applications", apps))
 
+    # Projects in migration order: every project (class libraries and tests included) with its own 7R, difficulty and blast radius
+    pm = read_json(os.path.join(OUT, "report", "projects.json"), {}) or {}
+    rows = [["#", "Wave", "Repository", "Project", "Path", "Kind", "Deployable", "Lines", "Difficulty", "Why this difficulty", "7R", "Target", "Port first",
+             "Used by", "Blast radius", "Projects depending on it", "Deployables to retest", "Blocker / High findings"] + TRACK]
+    for x in pm.get("projects", []):
+        rows.append([x["order"], x["wave"], x["repo"], x["name"], x["path"], x["kind"], "yes" if x["deployable"] else "", x.get("loc", 0), x["difficulty"],
+                     "; ".join(x.get("difficulty_why", [])), x["r7"], x.get("target", ""), ", ".join(x["needs_first"]), ", ".join(u["name"] for u in x["used_by"]),
+                     x["blast"]["level"], x["blast"]["transitive"], ", ".join(x["blast"]["deployables"]), "; ".join(x.get("blockers", [])), "Open", "", ""])
+    if len(rows) > 1:
+        sheets.append(_xlsx.auto("Projects", rows))
+
+    # Sign-in and access: one row per mechanism found, with the ASP.NET Core and AWS replacement
+    auth = read_json(os.path.join(OUT, "report", "auth.json"), []) or []
+    rows = [["Application", "Repository", "Who signs in", "Area", "Today", "Severity", "How it works now", "On ASP.NET Core", "AWS options (first = recommended)", "Where"] + TRACK]
+    for a in auth:
+        for m in a.get("mechanisms", []):
+            rows.append([a["app"], a["repo"], a["who"], m["area"], m["label"], m.get("severity", ""), m["today"], m["core"], " | ".join(m["aws"]), "; ".join(m.get("where", [])[:3]), "Open", "", ""])
+    if len(rows) > 1:
+        sheets.append(_xlsx.auto("Sign-in and access", rows))
+
     # Summary first
     sev = {s: sum(1 for f in findings if f["severity"] == s) for s in SEVS}
     summ = [["Item", "Value"], ["Client", cfg.get("client", "")], ["Repositories", ", ".join(repos)],

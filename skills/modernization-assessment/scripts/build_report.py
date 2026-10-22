@@ -8,7 +8,7 @@ your own sample reports). Placeholders:
   {{block:<name>}}      generated tables/diagrams (see BLOCKS below)
   {{narrative:<name>}}  text written by the assessor in assessment/narrative/<name>.md (HTML comments stripped)
 Outputs (assessment/report/):
-  <Client>-AWS-Modernization-Assessment.md (AWS-Migration-Assessment for lift-and-shift), findings.csv, findings.json, applications.csv, packages.csv, open-questions.csv, endpoints.csv
+  <Client>-AWS-Modernization-Assessment.md (AWS-Migration-Assessment for lift-and-shift), findings.csv, findings.json, projects.json (migration order), auth.json (sign-in per application), applications.csv, packages.csv, open-questions.csv, endpoints.csv
 """
 import argparse
 import csv
@@ -1088,6 +1088,126 @@ def b_hybrid(c):
     return table(["Shared library", "Used by", "Current TFM", "Stays on .NET Framework", "Moves to .NET 10", "Plan", "Note"], rows)
 
 
+def project_model(c):
+    """Every project with kind, difficulty, 7R (libraries too), dependencies, blast radius and wave (_projects.py), once per run."""
+    if getattr(c, "_pm", None) is None:
+        import _projects as P
+        c._pm = P.build(c.inv, c.findings, c.cls, c.graph, c.cfg, read_json(os.path.join(OUT, "decisions.json"), {}) or {})
+    return c._pm
+
+
+def auth_rows(c, pm=None):
+    import _auth as AU
+    return AU.build(c.findings, c.cls.get("applications", []), pm or project_model(c))
+
+
+def b_order_summary(c):
+    pm = project_model(c)
+    if not pm["projects"]:
+        return "_No projects inventoried yet._"
+    out = []
+    if pm["pilot"]:
+        p = pm["pilot"]
+        out.append(f"- **Start with {p['name']}** ({p['repo']}): {p['why']}" + (f" Port first: {', '.join(p['needs_first'])}." if p["needs_first"] else ""))
+    for w in pm["waves"]:
+        libs = f"{len(w['libraries'])} shared / class librar{'y' if len(w['libraries']) == 1 else 'ies'}" if w["libraries"] else ""
+        deps = ", ".join(w["deployables"])
+        out.append(f"- **Wave {w['wave']}** ({w['summary'][0].lower() + w['summary'][1:]}): " + "; ".join(x for x in (libs, (f"deployables {deps}" if deps else "")) if x)
+                   + f" · hardest: {w['hardest']}.")
+    hard = [x for x in pm["projects"] if x["difficulty"] == "Hard"]
+    if hard:
+        out.append(f"- **Hardest to port:** {', '.join(x['name'] + ' (' + x['kind'] + ')' for x in hard[:6])}. APIs and class libraries move with their "
+                   "logic intact; Web Forms and desktop UIs are rewritten.")
+    out.append("- Full order, dependencies and blast radius: section 4.13; every project's 7R: section 3.4.")
+    return "\n".join(out)
+
+
+def b_projects_7r(c):
+    pm = project_model(c)
+    if not pm["projects"]:
+        return "_No projects inventoried yet._"
+    rows = [(x["order"], x["name"], x["repo"], x["kind"] + (" (deployable)" if x["deployable"] else ""), x["tfm"], f"{x['loc']:,}", x["difficulty"],
+             x["r7"], x["target"].split(" - ")[0], "; ".join(x["r7_why"])[:220] or "-") for x in pm["projects"]]
+    return ("Every project, not only the deployables: class libraries and test projects get their own 7R and target, so shared code is planned "
+            "before the applications that need it. Difficulty: APIs, class libraries, console and worker projects are **Easy** (the logic moves "
+            "intact); service hosts and MVC UIs **Medium**; Web Forms and desktop UIs **Hard** (rewritten); one level more for Windows-bound "
+            "code or other blockers and for very large projects.\n\n"
+            + table(["#", "Project", "Repository", "Kind", "Framework", "Lines", "Difficulty", "7R", "Target", "Why"], rows))
+
+
+def b_migration_order(c):
+    pm = project_model(c)
+    if not pm["projects"]:
+        return "_No projects inventoried yet._"
+    s = ["A project moves after everything it depends on (project references, DLLs built by other repositories, and calls the code graph "
+         "saw). **Blast radius** = what must be retested when it changes: the projects that depend on it (directly and through others), the "
+         "deployables among them, and the code fan-in (other files using its code, from the graph).", ""]
+    rows = []
+    for x in pm["projects"]:
+        b = x["blast"]
+        rows.append((x["order"], x["wave"], x["name"], x["kind"], x["difficulty"], x["r7"], ", ".join(x["needs_first"]) or "-",
+                     ", ".join(u["name"] for u in x["used_by"]) or "-",
+                     f"{b['level']}: {b['transitive']} project(s), deployables {', '.join(b['deployables']) or '-'}" + (f", fan-in {b['fan_in']}" if b["fan_in"] else "")))
+    s.append(table(["#", "Wave", "Project", "Kind", "Difficulty", "7R", "Port first", "Used by", "Blast radius"], rows))
+    deps = [x for x in pm["projects"] if x["deployable"]]
+    if deps:
+        order = [y["name"] for y in pm["projects"]]
+        s += ["", "**What each deployable needs ported first**", ""]
+        s.append(table(["Deployable", "Wave", "Needs first (in order)", "DLLs from other repositories", "Difficulty"],
+                       [(x["name"], x["wave"], ", ".join(sorted(x["needs_first"], key=lambda n: order.index(n) if n in order else 0)) or "nothing",
+                         ", ".join(sorted({d["name"] + " (" + d["repo"] + ")" for d in x["depends_on"] if d["how"].startswith("DLL from")})) or "-",
+                         x["difficulty"]) for x in deps]))
+    if len(pm["repos"]) > 1 and any(r["after"] for r in pm["repos"]):
+        s += ["", "**Repository order** (a repository that uses another one's DLLs moves after it)", ""]
+        s.append(table(["Step", "Repository", "After"], [(r["step"], r["repo"], ", ".join(r["after"]) or "-") for r in pm["repos"]]))
+    cyc = sorted({x["name"] + " with " + ", ".join(x["cycle"]) for x in pm["projects"] if x["cycle"]})
+    if cyc:
+        s += ["", "Dependency cycles (these move together): " + "; ".join(cyc) + "."]
+    return "\n".join(s)
+
+
+AREA = {"authn": "Sign-in", "authz": "Access rules", "secrets": "Secrets", "session": "Session"}
+
+
+def b_auth(c):
+    rows = auth_rows(c)
+    if not rows:
+        return "_No applications classified yet._"
+    s = []
+    for r in rows:
+        s += [f"**{r['app']}** ({r['repo']}) · {r['who']}", ""]
+        if r["mechanisms"]:
+            s.append(table(["Area", "Today", "How it works", "On ASP.NET Core", "On AWS (first = recommended)", "Where"],
+                           [(AREA.get(m["area"], m["area"]), m["label"], m["today"], m["core"], "; ".join(m["aws"]),
+                             ", ".join(m["where"][:2]) + (f" ({', '.join(m['refs'])})" if m["refs"] else "")) for m in r["mechanisms"]]))
+        s += ["", f"Recommended on AWS: {r['aws']}. Why: {r['why']}", "", "Steps:", ""]
+        s += [f"{i}. {t}" for i, t in enumerate(r["steps"], 1)]
+        if r["questions"]:
+            s += ["", "To ask the client: " + " ".join(r["questions"])]
+        s.append("")
+    return "\n".join(s).strip()
+
+
+def package_action(p):
+    import build_html_report as BH
+    act = BH.PKG_ACTION.get(A.package_group(p), "Keep")
+    return "Upgrade (security)" if p.get("vulnerable") and act not in ("Replace", "Remove") else act
+
+
+def b_package_actions(c):
+    import build_html_report as BH
+    rows = [(package_action(p), p["id"], ", ".join(p["versions"]), (p.get("recommendation") or {}).get("version") or p.get("latest") or "-",
+             p.get("replacement") or p.get("note") or "-", len(p["projects"]), r) for r in c.repos for p in c.scan[r].get("packages", [])]
+    if not rows:
+        return "_No NuGet packages._"
+    order = [a for a, _ in BH.PKG_ACTIONS]
+    rows.sort(key=lambda x: (order.index(x[0]) if x[0] in order else 99, x[1].lower()))
+    cnt = Counter(x[0] for x in rows)
+    head = " · ".join(f"**{a}** {cnt[a]}" for a in order if cnt[a])
+    todo = [x for x in rows if x[0] != "Keep"]
+    return head + "\n\n" + (table(["Action", "Package", "In use", "Target version", "What to do", "Projects", "Repository"], todo) if todo else "_Nothing to change._")
+
+
 def phased(c):
     """The phased estimate (estimate_phases.py) summed over the repositories, or None when it has not run: the planning figure."""
     ph = [(r, read_json(os.path.join(OUT, "effort", r, "estimate.json"), {}) or {}) for r in c.repos]
@@ -1491,7 +1611,7 @@ BLOCKS = {"network-access": b_network_access, "config-map": b_config_map, "serve
           "scenarios": b_scenarios, "db-inventory": b_db_inventory, "linux-readiness": b_linux_readiness, "linux-issues": b_linux_issues, "linux-checks": b_linux_checks, "package-groups": b_package_groups, "third-party": b_third_party, "headline": b_headline, "key-risks": b_key_risks, "scope": b_scope, "method": b_method, "not-assessed": b_not_assessed, "inventory": b_inventory,
           "architecture-diagram": b_architecture_diagram, "graph-insights": b_graph_insights, "wiring": b_wiring, "project-deps": b_project_deps, "workflows": b_workflows, "db-dependents": b_db_dependents, "db-coupling": b_db_coupling, "optional": b_optional, "dependencies": b_dependencies, "network": b_network, "jobs": b_jobs, "methodology": b_methodology,
           "findings-summary": b_findings_summary, "findings-by-category": b_findings_by_category, "database": b_database, "app-plans": b_app_plans,
-          "hybrid": b_hybrid, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
+          "hybrid": b_hybrid, "order-summary": b_order_summary, "projects-7r": b_projects_7r, "migration-order": b_migration_order, "auth": b_auth, "package-actions": b_package_actions, "estimate": b_estimate, "multipliers": b_multipliers, "timeline": b_timeline, "sprints": b_sprints, "assumptions": b_assumptions,
           "risks": b_risks, "open-questions": b_open_questions, "testing": b_testing, "merge": b_merge, "cost": b_cost,
           "appendix-packages": b_appendix_packages, "appendix-winapi": b_appendix_winapi, "appendix-linux-checklist": b_appendix_linux_checklist, "appendix-binaries": b_appendix_binaries, "appendix-raw": b_appendix_raw,
           "appendix-sources": b_appendix_sources, "appendix-projects": b_appendix_projects}
@@ -1583,6 +1703,9 @@ def exports(c, rdir):
                         f["severity"], f["confidence"], f.get("occurrences"), " ; ".join(F.evidence_ref(e) for e in f.get("evidence", [])), f.get("why"), f.get("fix"), f.get("alt"),
                         f.get("question") or "", (f.get("review") or {}).get("verdict", ""), (f.get("review") or {}).get("note", "")])
     json.dump(c.findings, open(os.path.join(rdir, "findings.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    pm = project_model(c)  # migration order, per-project 7R / difficulty / blast radius, and sign-in per application: read by the tracker and other sessions
+    json.dump(pm, open(os.path.join(rdir, "projects.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    json.dump(auth_rows(c, pm), open(os.path.join(rdir, "auth.json"), "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     with open(os.path.join(rdir, "applications.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["id", "name", "repo", "type", "framework", "loc", "r7", "target", "risk", "confidence", "effort_low", "effort_high", "effort_likely", "complexity", "decision_source"])
@@ -1666,7 +1789,7 @@ def main():
     write_text(os.path.join(rdir, name), report)
     exports(c, rdir)
     mark_step(root, "report")
-    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv, scheduled-jobs.csv")
+    print(f"report: {OUT}/report/{name} ({len(report.splitlines())} lines); exports: findings.csv/json, projects.json, auth.json, applications.csv, packages.csv, open-questions.csv, endpoints.csv, network-allowlist.csv, scheduled-jobs.csv")
     if not a.no_html:  # every Markdown report gets its HTML version
         import subprocess
         import sys

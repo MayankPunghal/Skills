@@ -99,6 +99,28 @@ def main():
         rows.append([x["name"], x["repo"], x["type"], f"{x['r7']}: {x.get('target', '')}", r.get("status", "-"), r.get("summary", "-"), eff])
     L += table(["Application", "Repository", "Type", "Path", "Linux", "What stands in the way", "Effort"], rows) + [""]
 
+    # ---- migration order: pilot, waves, every project (class libraries included) with its own 7R
+    pm = BR.project_model(c)
+    if pm["projects"]:
+        L += ["## Migration order", ""]
+        if pm.get("pilot"):
+            p = pm["pilot"]
+            L.append(f"**Pilot: {p['name']}** ({p['repo']}). {p['why']}" + (f" Port first: {', '.join(p['needs_first'])}." if p["needs_first"] else ""))
+            L.append("")
+        L += [f"- **Wave {w['wave']}** ({w['summary'].lower()}): {', '.join(w['projects'][:N])}" + (f" +{len(w['projects']) - N} more" if len(w["projects"]) > N else "") for w in pm["waves"]] + [""]
+        L += table(["#", "Wave", "Project", "Kind", "Difficulty", "7R", "Port first", "Blast radius"],
+                   [[x["order"], x["wave"], x["name"] + (" (deployable)" if x["deployable"] else ""), x["kind"], x["difficulty"], x["r7"],
+                     cell(", ".join(x["needs_first"]) or "-", 100), f"{x['blast']['level']} ({x['blast']['transitive']} project{'' if x['blast']['transitive'] == 1 else 's'})"] for x in pm["projects"][:N * 2]]) + [""]
+        if len(pm["projects"]) > N * 2:
+            L += [f"{len(pm['projects']) - N * 2} more projects in the full report (Migration order) and the tracker (Projects sheet).", ""]
+
+    # ---- sign-in and access per application, with the AWS replacement
+    auth = BR.auth_rows(c, pm)
+    if auth:
+        L += ["## Sign-in and access", ""]
+        L += table(["Application", "Who signs in", "Today", "Recommended on AWS", "Worst"],
+                   [[x["app"], x["who"], cell(", ".join(x["authn"]) or "no sign-in found in code", 120), cell(x["aws"], 160), x["worst"] or "-"] for x in auth]) + [""]
+
     # ---- what must change: Blocker / High grouped by rule
     by = defaultdict(lambda: {"n": 0, "apps": set(), "f": None})
     for f in c.findings:

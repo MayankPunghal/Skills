@@ -5,6 +5,8 @@ Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a 
 ## Contents
 - Definitions, as used in these reports
 - Draft rules (in order)
+- Every project: class libraries, tests and difficulty
+- Migration order and blast radius
 - The hybrid pattern
 - Incremental vs in-place (large web apps)
 - Targets (text used in the report: `data/decision_rules.json`)
@@ -39,6 +41,40 @@ Definitions follow AWS Prescriptive Guidance (S10). `classify_apps.py` drafts a 
 10. **Anything else on .NET Framework** → **Replatform** to .NET 10 on Linux.
 
 Then the reviewer adjusts using what the rules cannot know: business criticality, release plans, budget, team skills, AWS funding conditions, and client appetite for UI change.
+
+## Every project: class libraries, tests and difficulty
+
+The rules above classify deployables. `_projects.py` (run by `build_report.py`; output `assessment/report/projects.json`) gives **every** project its own 7R, so shared and class libraries are planned too. In order:
+
+1. A project that is an application's entry project takes that application's decision.
+2. **Test project** → Replatform with the projects it tests.
+3. **Database project** → Retain (the database assessment decides).
+4. **Library nothing references** (no project, DLL or deployable uses it) → **Retire?**, for the reviewer to confirm.
+5. **Already modern** (.NET 5+) → Retain if in support, else Replatform (retarget).
+6. **Windows-bound code** (COM, P/Invoke, Office interop, Crystal, registry ...) → Refactor: isolate it behind an interface.
+7. **System.Web in a library** → Refactor: move the HttpContext / session / cache use to the caller.
+8. **Library shared with an app that stays on .NET Framework** (hybrid plan, or a desktop consumer) → Replatform to `netstandard2.0`.
+9. Otherwise → Replatform to .NET 10.
+
+A reviewer decision overrides any of these: key `project:<repo>:<path>` in `assessment/decisions.json`.
+
+**Difficulty** (Easy / Medium / Hard) says how hard the port is, independent of the 7R:
+
+| Base | Kinds |
+| --- | --- |
+| Easy | Web API, class / .NET libraries, console, worker, already-modern projects, tests, database projects |
+| Medium | Service hosts (WCF, Windows service), MVC UIs |
+| Hard | Web Forms and desktop UIs (rewritten, not ported) |
+
+One level up for a Windows-bound Blocker / High finding (else for any other Blocker); one more for more than 50,000 lines. A Web Forms project with a token UI counts as an API.
+
+## Migration order and blast radius
+
+- **Dependencies** come from project references, DLL references matched to assemblies built elsewhere in the estate ("DLL from <repo>"), and project edges in the code graph.
+- **Waves:** a project moves in the wave after everything it depends on. Projects in a dependency cycle share a wave and move together.
+- **Order inside a wave:** libraries before deployables, the most-used first, then the easiest.
+- **Blast radius:** the projects that depend on it, directly or through others, the deployables to retest, and the uses of its code from other files (`file_impact` in the code graph). High at 3 or more dependent projects or deployables; Medium with any dependent, or 20 or more uses.
+- **Pilot:** the deployable that is easiest, needs the easiest projects first, has the smallest blast radius and is at least 1,000 lines. It proves the build, container, deploy and test pipeline.
 
 ## The hybrid pattern
 
