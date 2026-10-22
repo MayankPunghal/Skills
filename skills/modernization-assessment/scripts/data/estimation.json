@@ -115,6 +115,10 @@
    7
   ]
  },
+ "ui_split_types": {
+  "_doc": "Project types whose UI rate applies only to UI code. A Web Forms project's page / user control / master page code (inventory loc_ui) and its markup are rewritten at the aspnet-webforms rate and the redesign AI factor; its other code (HTTP handlers, services, business logic, data access) ports at the rate of the type named here with the code AI factor. Without loc_ui (inventories from older versions) the whole project keeps the UI rate.",
+  "aspnet-webforms": "web-library"
+ },
  "conversion_fixed_hours": {
   "_doc": "Manual-equivalent hours per project that do not scale with lines: project file, package set, build break-fix.",
   "default": [

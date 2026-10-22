@@ -429,7 +429,12 @@ def inputs_for(repo, f, cfg, d):
     svc_pkgs = [re.escape(p) for s in aws.get("services", []) for p in s.get("packages", [])] + [
         s["detect"]["packages"] for s in (read_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "aws_native.json"), {}) or {}).get("services", [])
         if s.get("detect", {}).get("packages")]
-    sqlcs = {c.get("name") for c in f.get("connection_strings", []) if not re.search(r"(?i)mongo|redis", (c.get("name") or "") + (c.get("host") or ""))}
+    nonsql = re.compile(r"(?i)mongo|redis|memcache|aerospike")
+    sqlcs = {c.get("name") for c in f.get("connection_strings", []) if c.get("engine", "sqlserver") == "sqlserver" and not nonsql.search((c.get("name") or "") + (c.get("host") or ""))}
+    # SQL servers named only in config transforms (Web.Release.config) or settings: the config map has them with the SQL Server port
+    cmap = read_json(os.path.join(OUT, "config", f"{repo}.json"), {}) or {}
+    sqlcs |= {f"host:{r['target']}" for r in cmap.get("rows", []) if r.get("type") == "connection string host" and r.get("port") == 1433
+              and not nonsql.search(r.get("setting", "")) and r.get("target", "").lower() not in {(c.get("host") or "").lower() for c in f.get("connection_strings", [])}}
     dbs = (cfg.get("scenario") or {}).get("database", "dual")
     defaults = {
         "environments": {"value": n_env or 3, "status": "VERIFIED" if n_env else "UNKNOWN",
@@ -452,7 +457,7 @@ def inputs_for(repo, f, cfg, d):
         "major_upgrades": {"value": sorted({b["assembly"] for b in f.get("binary_references", []) if "PackageReference" in (b.get("action") or "")
                                             and not any(re.match(rx, b["assembly"], re.I) for rx in svc_pkgs)}),
                            "status": "INFERRED", "note": "DLLs that become a current nuget.org package (the scan's DLL table); clients of server-hosted services are priced in stage S."},
-        "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection-string names in config."},
+        "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
         "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources and networking (DevOps)", "status": "INFERRED", "note": ""},
         "buffer": {"value": 0.15, "status": "INFERRED", "note": "Planning buffer on the subtotal."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},

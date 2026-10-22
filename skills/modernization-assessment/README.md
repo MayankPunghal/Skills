@@ -174,6 +174,20 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.2.2
+
+- **Web Forms projects priced by their UI share (`discover_estate.py`, `estimate_effort.py`, `data/estimation.json` `ui_split_types`).** The inventory now counts each project's Web Forms UI code (`loc_ui`: page, user control and master page code-behind and Page subclasses). Only that code and its markup take the Web Forms rewrite rate and the redesign AI factor; HTTP handlers, services, business logic and data access in the same project port at the `web-library` rate with the code AI factor. Before, a handler-only service typed `aspnet-webforms` was priced as a full UI rewrite.
+- **Generated code no longer inflates complexity (`map_graphs.py`).** Run-time-bound calls in generated files (service-reference proxies, designers) are left out of the per-project indirection count, as generated lines already are out of the size.
+- **Phased estimate leads (`build_report.py`, `build_html_report.py`, `report.js`).** When `estimate_phases.py` ran, section 8 and the HTML effort tab show its tool-run hours as the planning figure and the parametric model as the cross-check.
+- **Application size (`discover_estate.py`, `classify_apps.py`, HTML).** The applications table shows each application's own lines, with lines in referenced projects apart.
+- **Stores named in key=value connection strings (`scan_repo.py`, `network_endpoints.py`, `_config.py`, `_analysis.py`).** MongoDB, Memcached, Aerospike and Redis strings in the `Server=...;Database=...` shape get their own engine and default port instead of SQL Server on 1433; Memcached and Aerospike hosts are no longer labelled Redis; a host found in a service reference (WSDL, discovery file, generated proxy) is a SOAP service, not a guess from its operation names; one row per server, database and engine in 4.3.
+- **SQL connections counted from config transforms (`estimate_phases.py`, `effort_facts.py`).** A SQL Server host named only in `Web.Release.config` / `Web.Debug.config` counts toward `sql_connections`.
+- **Procedures called with no .sql in the repository (`build_report.py`).** Section 4.7 lists the stored procedures the code calls, with call sites, instead of "No database objects inventoried".
+- **`address_roles.py` runs `solutions.py` itself** when the solution index is missing.
+- **The scan uses this skill's own `network_endpoints.py`** (the documenter's copy is the fallback), so the store and SOAP role rules above reach section 4.4 and the allow-list.
+- **NCache detection (`data/aws_native.json`).** The keyword matches NCache by its case and as a word, so method names such as `InsertInCache...` no longer count as NCache call sites.
+- **One row per database in the dependency tables (`_analysis.py` `connection_rows`, `build_report.py`, `build_html_report.py`).** Read and read-write strings to the same server and database are one row, labelled with the engine.
+
 ## Changed in 3.2.1
 
 - **7R of a shared project (`estimate_phases.py`).** When one application lists another application's project, that project keeps its owner's 7R; before, the last application processed overwrote it.

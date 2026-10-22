@@ -141,8 +141,14 @@ def main():
     root, cfg = load_config()
     os.chdir(root)
     idx = read_json(os.path.join(OUT, "solutions", "index.json"))
+    if not idx:  # the solution index is an input: build it rather than stop
+        import subprocess
+        import sys
+        print("solutions index missing: running solutions.py first")
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "solutions.py")], check=False)
+        idx = read_json(os.path.join(OUT, "solutions", "index.json"))
     if not idx:
-        raise SystemExit("run solutions.py first")
+        raise SystemExit("solutions.py did not write assessment/solutions/index.json: run it and read its error")
     st = load_state(root)
     repos = sorted(r for r in st["repos"] if st["repos"][r].get("scope") != "out")
     dest = {}

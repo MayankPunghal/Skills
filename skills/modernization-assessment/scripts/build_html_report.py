@@ -169,7 +169,7 @@ def collect(c, cfg):
         w = c.wp.get(a["id"], {})
         blockers = [f"{f['ref']} {f['title']}" for f in c.findings if a["id"] in f.get("apps", []) and f["severity"] in ("Blocker", "High")][:12]
         apps.append({"id": a["id"], "name": a["name"], "repo": a["repo"], "type": a["type"], "framework": ", ".join(a.get("target_frameworks", [])) or a.get("framework_family", ""),
-                     "loc": a["loc"], "r7": a["r7"], "target": a["target"], "risk": a["risk"], "confidence": a.get("confidence", ""),
+                     "loc": a["loc"], "loc_own": a.get("loc_own", a["loc"]), "r7": a["r7"], "target": a["target"], "risk": a["risk"], "confidence": a.get("confidence", ""),
                      "h": w.get("total_hours", [0, 0]), "lh": w.get("likely_hours", 0), "d": w.get("total_days", [0, 0]), "ld": w.get("likely_days", 0),
                      "size": w.get("complexity", ""), "reviewed": "reviewed" if a.get("decision_source") == "review" else "draft",
                      "rationale": a.get("rationale", []), "options": a.get("options", []), "notes": a.get("notes", []),
@@ -193,9 +193,10 @@ def collect(c, cfg):
         for e in c.scan[r].get("endpoints", []):
             kind = {"internal": "On-prem / internal", "external": "External service", "external-ip": "Public IP"}.get(e["kind"], e["kind"])
             deps.append({"kind": kind, "system": e["host"], "details": ", ".join(e["schemes"]), "count": e["occurrences"], "evidence": "; ".join(F.evidence_ref(x) for x in e["evidence"][:3]), "repo": r})
-        for cs in c.scan[r].get("connection_strings", []):
-            deps.append({"kind": "Database", "system": f"{cs.get('host') or '-'} / {cs.get('database') or '-'}", "details": f"{cs.get('provider') or 'SqlClient'}; auth {cs.get('auth')}" + ("; LocalDB (dev)" if cs.get("localdb") else ""),
-                         "count": 1, "evidence": f"{cs['file']}:{cs['line']}", "repo": r})
+        for cs in A.connection_rows(c.scan[r]):
+            deps.append({"kind": f"Database ({cs['engine_name']})", "system": f"{cs.get('host') or '-'} / {cs.get('database') or '-'}",
+                         "details": f"{cs.get('provider') or ('SqlClient' if cs['engine'] == 'sqlserver' else cs['engine_name'])}; auth {cs.get('auth')}" + ("; LocalDB (dev)" if cs.get("localdb") else ""),
+                         "count": cs["count"], "evidence": f"{cs['file']}:{cs['line']}", "repo": r})
         for p in (c.inv[r] or {}).get("projects", []):
             projects.append({"repo": r, "project": p["path"], "type": p["type"], "tfm": ", ".join(p.get("target_frameworks", [])), "format": "SDK" if p.get("sdk_style") else "legacy",
                              "packages": "packages.config" if p.get("packages_config") else "PackageReference", "language": ", ".join(p.get("languages", [])), "loc": p.get("loc_code", 0),
@@ -244,6 +245,10 @@ def collect(c, cfg):
               "split": {"code": [round(sum(w["code"][i] for w in wps)) for i in (0, 1)]},
               "scenario": c.est.get("scenario", {}), "factors": c.est.get("ai_factors", {}), "mlh": t.get("manual_likely_hours", 0), "kloc": t.get("kloc", 0), "hpk": t.get("likely_hours_per_kloc", 0),
               "p80": t.get("p80_hours", 0), "bounds": t.get("bounds_hours", [0, 0])}
+    ph = [e for e in ((read_json(os.path.join(OUT, "effort", r, "estimate.json"), {}) or {}) for r in c.repos) if e.get("total")]
+    if ph:  # the phased tool-run estimate (estimate_phases.py) is the planning figure; the parametric model is the cross-check
+        effort["phased"] = {"h": [sum(e["total"][0] for e in ph), sum(e["total"][1] for e in ph)], "buffer": ph[0].get("buffer", 0),
+                            "days": [sum(e.get("dev_days", [0, 0])[0] for e in ph), sum(e.get("dev_days", [0, 0])[1] for e in ph)]}
     lbuild = []
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}

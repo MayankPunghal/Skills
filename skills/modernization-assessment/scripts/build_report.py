@@ -320,7 +320,18 @@ def b_db_dependents(c):
         out.append(f"**{r}** — {len(g['objects'])} database objects; {len(rows)} with a detected dependency, {unused} with none found (unused, or reached only through EF-generated SQL / dynamic SQL).\n")
         out.append(table(["Object", "Kind", "Defined", "Uses (objects)", "Used by (objects)", "Used by (workflows)"], rows))
         out.append("")
-    return "\n".join(out) or "_No database objects inventoried._"
+    for r in c.repos:  # no .sql in the repository, but the code calls procedures: list what is called, so the gap is visible
+        if dd.get(r, {}).get("objects"):
+            continue
+        calls = ((c.scan.get(r) or {}).get("db_inventory") or {}).get("procedure_calls") or []
+        if calls:
+            out.append(f"**{r}** — procedure bodies are not in the repository (no .sql files); the code calls {len(calls)} stored procedures from "
+                       f"{sum(p.get('call_sites', 0) for p in calls)} call sites. Their dependencies are known only once the database schema is exported.\n")
+            out.append(table(["Procedure", "Call sites", "Called with", "First call site"],
+                             [(p["name"], p.get("call_sites", 0), ", ".join(p.get("apis") or []) or "-",
+                               f"`{p['sites'][0]['file']}:{p['sites'][0]['line']}`" if p.get("sites") else "-") for p in sorted(calls, key=lambda p: p["name"].lower())]))
+            out.append("")
+    return "\n".join(out) or "_No database objects inventoried, and no stored procedure calls found in the code._"
 
 def b_db_coupling(c):
     """Shared database objects (map_graphs analysis.database, from the parsed SQL and the code graph): which applications read,
@@ -485,9 +496,10 @@ def b_dependencies(c):
             kind = {"internal": "On-prem / internal", "external": "External service", "external-ip": "Public IP"}.get(e["kind"], e["kind"])
             ev = e["evidence"][0] if e.get("evidence") else {}
             rows.append((kind, e["host"], ", ".join(e["schemes"]), e["occurrences"], f"{ev.get('file')}:{ev.get('line')}" if ev else "", r))
-        for cs in c.scan[r].get("connection_strings", []):
-            rows.append(("Database", f"{cs.get('host') or '-'} / {cs.get('database') or '-'}", f"{cs.get('provider') or 'SqlClient'}; auth {cs.get('auth')}" + ("; LocalDB (dev)" if cs.get("localdb") else ""),
-                         1, f"{cs['file']}:{cs['line']}", r))
+        for cs in A.connection_rows(c.scan[r]):
+            rows.append((f"Database ({cs['engine_name']})", f"{cs.get('host') or '-'} / {cs.get('database') or '-'}",
+                         f"{cs.get('provider') or ('SqlClient' if cs['engine'] == 'sqlserver' else cs['engine_name'])}; auth {cs.get('auth')}" + ("; LocalDB (dev)" if cs.get("localdb") else ""),
+                         cs["count"], f"{cs['file']}:{cs['line']}", r))
     rows.sort(key=lambda x: (x[0] != "On-prem / internal", x[0], x[1]))
     return table(["Kind", "System", "Protocol / details", "References", "First evidence", "Repository"], rows)
 
@@ -1003,6 +1015,21 @@ def b_hybrid(c):
     return table(["Shared library", "Used by", "Current TFM", "Stays on .NET Framework", "Moves to .NET 10", "Plan", "Note"], rows)
 
 
+def phased_lead(c):
+    """When estimate_phases.py ran, its tool-run hours are the planning figure: say so above the parametric table."""
+    ph = [(r, read_json(os.path.join(OUT, "effort", r, "estimate.json"), {}) or {}) for r in c.repos]
+    ph = [(r, e) for r, e in ph if e.get("total")]
+    if not ph:
+        return ""
+    lo, hi = sum(e["total"][0] for _, e in ph), sum(e["total"][1] for _, e in ph)
+    t = c.est.get("totals", {})
+    return (f"**Planning figure: {lo:,.0f}-{hi:,.0f} h** from the phased estimate (estimate_phases.py: a tool-run port in six phases, item by item, "
+            f"{int(round(ph[0][1].get('buffer', 0) * 100))}% buffer included; per repository in `effort/<repo>/estimate.html`). "
+            f"The table below is the parametric cross-check (lines of code x rate per project type x complexity, plus each finding, "
+            f"x the AI factor): likely {t.get('likely_hours', '?')} h, P10-P90 {t.get('total_hours', ['?', '?'])[0]}-{t.get('total_hours', ['?', '?'])[1]} h. "
+            "When the two differ by more than the planning band, the item lists in both show where.\n\n")
+
+
 def b_estimate(c):
     if H.is_hours(c.est):
         return H.estimate_md(c.est["hours"])
@@ -1027,7 +1054,7 @@ def b_estimate(c):
                 f"**commitment figure is P80: {t['p80_hours']} h ({t.get('p80_days')} d)**. Package ranges do not add up to the total range: independent "
                 "items partly cancel, which is why the total is narrower than the sum of its parts. Adding every item's low and every item's high gives "
                 f"{rng(t.get('bounds_hours', [0, 0]), ' h')}, extremes that need every item at the same end at once (not a planning range).")
-    return table(["Work package", "7R / kind", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual equivalent (P10–P90)", "Size", "Main drivers"], rows) + note
+    return phased_lead(c) + table(["Work package", "7R / kind", "Effort (AI-assisted, P10–P90)", "Likely (P50)", "Manual equivalent (P10–P90)", "Size", "Main drivers"], rows) + note
 
 
 def sprint_note(sp):

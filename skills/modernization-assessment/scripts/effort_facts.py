@@ -292,7 +292,7 @@ def collect(repo, cfg):
     facts["contracts"] = contracts(root)
     facts["network"] = network_roles(scan)
     facts["endpoints"] = len(scan.get("endpoints") or [])
-    facts["connection_strings"] = [{k: c.get(k) for k in ("file", "line", "name", "host", "database", "auth", "password_in_config")}
+    facts["connection_strings"] = [{k: c.get(k) for k in ("file", "line", "name", "host", "database", "engine", "auth", "password_in_config")}
                                    for c in scan.get("connection_strings") or []]
     facts["scheduled_jobs"] = scan.get("scheduled_jobs") or []
     facts["tests"] = {"test_projects": [p["path"] for p in projects if p.get("type") == "test"], "scan": scan.get("tests"),

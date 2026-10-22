@@ -296,6 +296,25 @@ def linux_reports(c):
     return {r: f"{OUT}/linux/{r}/linux-readiness.html" for r in c.repos if os.path.exists(os.path.join(OUT, "linux", r, "linux-readiness.json"))}
 
 
+ENGINE_NAMES = {"sqlserver": "SQL Server", "mongodb": "MongoDB", "postgresql": "PostgreSQL", "mysql": "MySQL", "oracle": "Oracle",
+                "redis": "Redis", "memcached": "Memcached", "aerospike": "Aerospike"}
+
+
+def connection_rows(scan_r):
+    """Connection strings grouped by server / database / engine (a read and a read-write string to one database are one row):
+    [{host, database, engine, engine_name, provider, auth, localdb, count, file, line}]."""
+    out = {}
+    for cs in (scan_r or {}).get("connection_strings", []):
+        eng = cs.get("engine", "sqlserver")
+        key = ((cs.get("host") or "").lower(), (cs.get("database") or "").lower(), eng)
+        if key in out:
+            out[key]["count"] += 1
+            continue
+        out[key] = {**{k: cs.get(k) for k in ("host", "database", "provider", "auth", "localdb", "file", "line")},
+                    "engine": eng, "engine_name": ENGINE_NAMES.get(eng, eng), "count": 1}
+    return list(out.values())
+
+
 def third_party(c):
     """External services (endpoints + service SDK packages), on-premises dependencies, identity providers."""
     sdks = data("service_sdks.json")["sdks"]
@@ -317,10 +336,14 @@ def third_party(c):
             else:
                 row["needs"] = "Outbound HTTPS from AWS; check IP allow-listing (new egress IPs), credentials and TLS" if e["kind"] == "external" else "Hard-coded public IP: move to DNS/config; partner allow-list"
                 ext.append(row)
-        for cs in c.scan[r].get("connection_strings", []):
+        for cs in connection_rows(c.scan[r]):  # one row per server / database / engine
             if cs.get("host") and not cs.get("localdb") and cs["host"] not in (".", "(local)", "localhost"):
-                onprem.append({"system": f"{cs['host']} / {cs.get('database') or '-'}", "protocols": "sql", "used_by": ", ".join(apps_for_files([cs["file"]], inv, apps)) or "-",
-                               "references": 1, "evidence": f"{cs['file']}:{cs['line']}", "repo": r, "needs": "Database server: convert for PostgreSQL (dual or PostgreSQL-only) or keep reachable"})
+                sql = cs["engine"] == "sqlserver"
+                onprem.append({"system": f"{cs['host']} / {cs.get('database') or '-'}", "protocols": "sql" if sql else cs["engine"],
+                               "used_by": ", ".join(apps_for_files([cs["file"]], inv, apps)) or "-", "references": cs["count"],
+                               "evidence": f"{cs['file']}:{cs['line']}", "repo": r,
+                               "needs": "Database server: convert for PostgreSQL (dual or PostgreSQL-only) or keep reachable" if sql
+                               else f"{cs['engine_name']} server: network path from AWS, or move it to the AWS managed equivalent (not part of the SQL Server conversion)"})
         for p in c.scan[r].get("packages", []):
             m = next((s for s in sdks if s["_rx"].match(p["id"])), None)
             if not m:

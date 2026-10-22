@@ -175,7 +175,7 @@ def main():
             for k in ("why_not", "then", "risks", "sign_off"):
                 c.setdefault(k, g.get(k, []))
             entry = {"id": a["id"], "repo": repo, "name": a["name"], "type": a["type"], "entry": a["entry"], "framework_family": a["framework_family"],
-                     "target_frameworks": a["target_frameworks"], "loc": a["loc"], "projects": a["projects"], **c, "decision_source": "rules"}
+                     "target_frameworks": a["target_frameworks"], "loc": a["loc"], "loc_own": a.get("loc_own", a["loc"]), "projects": a["projects"], **c, "decision_source": "rules"}
             d = decisions.get(a["id"])
             if d:
                 entry.update({k: v for k, v in d.items() if k in ("r7", "target", "rationale", "options", "risk", "confidence", "notes", "why_not", "then", "risks", "sign_off")})

@@ -329,16 +329,22 @@ class Scan:
         """Allow-list view from the codebase-documenter's network_endpoints.py: ports, inbound listeners, bare host settings
         (Smtp:Host, Kafka:BootstrapServers), UNC shares, WCF client endpoints and outbound call sites. Destinations the line
         scan did not see become endpoint findings too, so findings and allow-list agree."""
-        d = documenter_dir()
-        if not d:
-            self.facts["network"] = None
-            return
-        sys.path.insert(0, os.path.join(d, "scripts"))
-        try:
-            import network_endpoints as NE
-        except ImportError:
-            self.facts["network"] = None
-            return
+        try:  # this skill's own copy first, by path (the documenter's folder is ahead on sys.path); the documenter's as a fallback
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("network_endpoints", os.path.join(os.path.dirname(os.path.abspath(__file__)), "network_endpoints.py"))
+            NE = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(NE)
+        except (ImportError, OSError):
+            d = documenter_dir()
+            if not d:
+                self.facts["network"] = None
+                return
+            sys.path.insert(0, os.path.join(d, "scripts"))
+            try:
+                import network_endpoints as NE
+            except ImportError:
+                self.facts["network"] = None
+                return
         try:  # URLs and calls inside copied libraries (highcharts, jspdf ...) are not the application's destinations
             import vendor_files
             lib = set(vendor_files.scan(self.root))
@@ -498,7 +504,9 @@ class Scan:
             if inner:
                 return self.connection(rp, project, name, inner.group(1).replace("&quot;", ""), provider, line)
         host = re.split(r"[\\,:]", server.replace("tcp:", ""))[0] if server else ""
-        entry = {"file": rp, "line": line, "name": name, "provider": provider, "server": server, "host": host, "database": db,
+        store = re.search(r"(?i)mongo|memcache|aerospike|redis|npgsql|postgres|mysql|oracle", f"{name} {provider} {cs}")  # Server=...;Database=... is not only SQL Server
+        engine = {"mongo": "mongodb", "memcache": "memcached", "npgsql": "postgresql", "postgres": "postgresql"}.get(store.group(0).lower(), store.group(0).lower()) if store else "sqlserver"
+        entry = {"file": rp, "line": line, "name": name, "provider": provider, "server": server, "host": host, "database": db, "engine": engine,
                  "auth": "integrated" if integrated else ("sql-login" if pw_present else "unspecified"), "password_in_config": pw_present,
                  "attachdb": "attachdbfilename" in cs.lower(), "localdb": "(localdb)" in server.lower(),
                  "template": bool(TEMPLATE_FILE.search(os.path.basename(rp))), "git_ignored": self.git_ignored(rp)}
@@ -531,7 +539,7 @@ class Scan:
                                "Secrets Manager + rotation", "trivial", ["S11"])
             self.add(r, project, rp, line, f'{name}: "…password=<masked>…"')
         if host and not entry["localdb"] and host not in (".", "(local)", "localhost", "127.0.0.1"):
-            self.endpoint(host, "sql", rp, project, line, f"connection string '{name}' -> {host}", "config")
+            self.endpoint(host, "sql" if engine == "sqlserver" else engine, rp, project, line, f"connection string '{name}' -> {host}", "config")
 
     @staticmethod
     def line_of(text, needle):

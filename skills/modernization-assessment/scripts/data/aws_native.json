@@ -782,7 +782,7 @@
    "detect": {
     "packages": "^(Alachisoft\\.NCache\\.\\w+|NCache\\.\\w+|NCache\\w*)$",
     "client": "\\b(CacheManager\\.GetCache|ICache|NCache)\\b|using\\s+Alachisoft\\.NCache",
-    "keyword": "ncache",
+    "keyword": "(?-i:NCache)|\\bncache\\b|alachisoft",
     "config_keys": "(?i)ncache",
     "config_values": ":9800\\b"
    },

@@ -104,8 +104,19 @@ def conversion_hours(p, fan_in, est, wire=None):
     code_k = (p.get("loc_handwritten", p.get("loc_code")) or 0) / 1000.0
     mark_k = (p.get("loc_markup") or 0) / 1000.0
     cf, why = complexity_factor(p, fan_in, est, wire)
+    other = (est.get("ui_split_types") or {}).get(t)
+    if other and "loc_ui" in p:
+        # only the UI (page / control code and its markup) is rewritten at the UI rate; handlers, services, data access and
+        # the rest of the project's code port at the rate of the project type named in ui_split_types (mechanical work)
+        ui_k = min((p.get("loc_ui") or 0) / 1000.0, code_k)
+        orate = est["conversion_hours_per_kloc"].get(other, est["conversion_hours_per_kloc"]["unknown"])
+        ui = [rate[i] * ui_k + mrate[i] * mark_k for i in (0, 1)]
+        rest = [fixed[i] + orate[i] * (code_k - ui_k) for i in (0, 1)]
+        why += f"; UI code {ui_k:.1f} of {code_k:.1f} KLOC at the {t} rate, the rest at the {other} rate"
+        return scale(add(ui, rest), cf), scale(ui, cf), cf, why, code_k
     base = [fixed[i] + rate[i] * code_k + mrate[i] * mark_k for i in (0, 1)]
-    return scale(base, cf), cf, why, code_k
+    whole = scale(base, cf)
+    return whole, (whole if t in set(est["ai_assistance"].get("redesign_project_types", [])) else [0.0, 0.0]), cf, why, code_k
 
 
 def postgres_hours(dbi, findings, n_apps_with_data, est, db_f, dual=False, red_f=None, collect=None, pkg=None, pos=0.4):
@@ -365,12 +376,14 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                 if not p or p["type"] == "database" or pp in converted:
                     continue
                 converted.add(pp)  # a project referenced by several applications is ported once
-                h, cf, why, kloc = conversion_hours(p, fan_in.get(pp, 0), est, wiring.get(pp))
-                h = scale(h, rscale)
+                h, hred, cf, why, kloc = conversion_hours(p, fan_in.get(pp, 0), est, wiring.get(pp))
+                h, hred = scale(h, rscale), scale(hred, rscale)
+                hmech = [max(h[i] - hred[i], 0.0) for i in (0, 1)]
                 code_manual = add(code_manual, h)
-                items.append({"pkg": wp_id, "lo": h[0], "hi": h[1], "kind": "red" if p["type"] in red_types else "code", "pos": rpos})
-                if p["type"] in red_types:
-                    red_manual = add(red_manual, h)
+                for kind, part in (("code", hmech), ("red", hred)):
+                    if part[1] > 0:
+                        items.append({"pkg": wp_id, "lo": part[0], "hi": part[1], "kind": kind, "pos": rpos})
+                red_manual = add(red_manual, hred)
                 lines.append({"item": f"Port {p['name']} ({p['type']}, {p.get('loc_code', 0):,} lines) to {cfg.get('target_dotnet')}", "manual_hours": r1(h),
                               "kloc": round(kloc, 2), "markup_kloc": round((p.get("loc_markup") or 0) / 1000.0, 2), "complexity_factor": cf,
                               "complexity_why": why, "size_factor": round(rscale, 3)})
@@ -438,7 +451,7 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
         # database code: every scenario, then the selected one
         dbf = [f for f in fs if f["category"] == "database" or f.get("db")]
         dbs = [p for p in inv["projects"] if p["type"] == "database"]
-        conns = {(c.get("host"), c.get("database")) for c in scan.get("connection_strings", []) if c.get("database") and not c.get("localdb")}
+        conns = {(c.get("host"), c.get("database")) for c in scan.get("connection_strings", []) if c.get("database") and not c.get("localdb") and c.get("engine", "sqlserver") == "sqlserver"}
         names = [p["name"] for p in dbs] or sorted({d for _, d in conns}) or (["(databases referenced by the code)"] if dbf else [])
         if not names:
             continue
