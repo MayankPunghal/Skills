@@ -28,6 +28,15 @@ POPPINS_SB = '<w:rFonts w:ascii="Poppins SemiBold" w:cs="Poppins SemiBold" w:eas
 TOC_INDENT = {1: 0, 2: 360, 3: 720, 4: 1080}
 
 
+def _remove(path):
+    """Delete a helper file (temp script, check PDF) if it is there; never fails."""
+    try:
+        if path and os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
 def _top_level(body):
     return re.findall(r"<w:p[ >].*?</w:p>|<w:tbl>.*?</w:tbl>|<w:sectPr.*?</w:sectPr>", body, re.S)
 
@@ -177,14 +186,16 @@ class BrandedDocx(Docx):
         ps = ("$ErrorActionPreference='Stop';$w=New-Object -ComObject Word.Application;$w.Visible=$false;$w.DisplayAlerts=0;"
               "try{$d=$w.Documents.Open($args[0],$false,$true);$d.Repaginate();$d.Bookmarks.ShowHidden=$true;$o=@{};foreach($n in $args[1].Split(',')){if($d.Bookmarks.Exists($n)){$o[$n]=$d.Bookmarks.Item($n).Range.Information(3)}};"
               "$d.Close($false);$o|ConvertTo-Json -Compress}finally{$w.Quit()}")
+        f = None
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as f:
                 f.write(ps)
             r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", f.name, os.path.abspath(path), ",".join(names)], capture_output=True, text=True, timeout=300)
-            os.unlink(f.name)
             return {k: int(v) for k, v in json.loads(r.stdout.strip().splitlines()[-1]).items()}
         except Exception:
             return {}
+        finally:
+            _remove(f and f.name)
 
     def _pdf_pages(self, path):
         """{bookmark: page} from Word's own PDF export of the first pass (the bookmark positions Word reports while hidden can be a page
@@ -199,18 +210,20 @@ class BrandedDocx(Docx):
         pdf = os.path.splitext(os.path.abspath(path))[0] + ".toc-check.pdf"
         ps = ("$ErrorActionPreference='Stop';$w=New-Object -ComObject Word.Application;$w.Visible=$false;$w.DisplayAlerts=0;"
               "try{$d=$w.Documents.Open($args[0],$false,$true);$d.SaveAs2($args[1],17);$d.Close($false)}finally{$w.Quit()}")
+        f = None
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as f:
                 f.write(ps)
             subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", f.name, os.path.abspath(path), pdf], capture_output=True, text=True, timeout=300)
-            os.unlink(f.name)
             doc = pymupdf.open(pdf)
             norm = lambda t: re.sub(r"\s+", " ", t).strip()
             texts = [norm(p.get_text()) for p in doc]
             doc.close()
-            os.unlink(pdf)
         except Exception:
             return {}
+        finally:
+            _remove(f and f.name)
+            _remove(pdf)
         start = next((i for i, t in enumerate(texts) if "Table of Contents" in t), 0) + 1
         out, cur = {}, start
         for _lvl, text, bm in self.toc:

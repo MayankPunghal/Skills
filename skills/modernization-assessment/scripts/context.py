@@ -163,6 +163,12 @@ def main():
                "--release-step. Mapping workbook back: check_mapping.py --workbook <file>")
     else:
         nxt = "build_report.py and build_html_report.py after any change, then verify_report.py"
+    ref = os.path.join(OUT, "reference", "README.md")
+    if os.path.exists(ref):
+        stale = any(os.path.getmtime(p) > os.path.getmtime(ref) for p in glob.glob(os.path.join(OUT, "report", "*.md")) + [os.path.join(root, ISSUES_LOG)] if os.path.exists(p))
+        print(f"CONTEXT PACK: {ref} (start here: scope, outputs, notes from earlier sessions){' - stale, re-run reference.py' if stale else ''}")
+    elif reports:
+        print("CONTEXT PACK: none yet - run reference.py (assessment/reference/: where everything is, for the next session)")
     n, still = issues_log(root, cfg.get("client") or "")
     print(f"SKILL ISSUES: {n} logged ({still} open) in {ISSUES_LOG}. Log every script failure, misleading output, false gate, "
           "unclear step or workaround there as it happens (symptom, cause, workaround, suggested fix).")

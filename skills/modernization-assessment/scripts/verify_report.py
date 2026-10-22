@@ -164,7 +164,7 @@ def main():
     for inv in invs.values():
         vals |= secret_values(inv["root"])
     htmls = glob.glob(os.path.join(OUT, "report", "*.html"))
-    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))         + glob.glob(os.path.join(OUT, "report", "*.xlsx"))
+    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))         + glob.glob(os.path.join(OUT, "report", "*.xlsx"))         + [p for p in glob.glob(os.path.join(OUT, "reference", "**", "*"), recursive=True) if os.path.isfile(p)]
     leaks = []
     def text_of(p):  # an .xlsx is a zip of XML parts: check the cell text, with XML escapes undone
         if p.lower().endswith(".xlsx"):
