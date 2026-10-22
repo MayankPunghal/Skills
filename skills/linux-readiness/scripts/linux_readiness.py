@@ -51,11 +51,21 @@ SECRET_WORDS = r"password|passwd|pwd|secret|apikey|api_key|accesskey|access_key|
 SECRET_RX = re.compile(r"(?i)(\w*(?:" + SECRET_WORDS + r")\w*[\"']?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^;,\"'\s<>]+)")
 # <add key="ApiSecret" value="..."/>: the secret word is in the key attribute, the value in the next one
 SECRET_ATTR_RX = re.compile(r"(?i)(key\s*=\s*[\"'][^\"']*(?:" + SECRET_WORDS + r")[^\"']*[\"']\s+value\s*=\s*[\"'])[^\"']*")
+# credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"): (prefix)(value)(suffix)
+CODE_CREDENTIALS = [
+    re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
+    re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
+    re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+]
 
 
 def mask(text):
     """Never copy a secret value into a report: keep the key, replace the value."""
     text = SECRET_ATTR_RX.sub(lambda m: m.group(1) + "***", text)
+    for rx in CODE_CREDENTIALS:
+        text = rx.sub(lambda m: m.group(1) + "***" + m.group(3), text)
     return SECRET_RX.sub(lambda m: m.group(1) + (m.group(2)[0] + "***" + m.group(2)[0] if m.group(2)[:1] in "\"'" else "***"), text)
 
 
@@ -408,7 +418,7 @@ def main():
         failed |= not res["passed"]
         tidy = len(res["waivers_ignored"]) + len(res["waivers_unused"])
         print(f"linux readiness{' ' + title if a.all else ''}{' (Dockerfile only)' if a.dockerfile_only else ''}: {'PASS' if res['passed'] else 'FAIL'} "
-              f"block {s['block_open']} open / {s['block_waived']} waived, warn {s['warn']}, info {s['info']}; {s['rules_hit']}/{s['rules_checked']} checks hit, "
+              f"block {s['block_open']} open / {s['block_waived']} waived, warn {s['warn']}, info {s['info']}; {s['rules_hit']}/{s['rules_checked']} automated checks hit, "
               f"{s['checklist_items']} manual{f'; {tidy} waivers to tidy' if tidy else ''} -> {hp}")
     sys.exit(1 if a.gate and failed else 0)
 

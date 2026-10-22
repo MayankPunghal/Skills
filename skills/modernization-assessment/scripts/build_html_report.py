@@ -322,10 +322,10 @@ def component(name, c):
         return f'<div class="card prose">{md_to_html(txt)}</div>'
     if name.startswith("block:"):
         key = name.split(":", 1)[1]
-        fn = BR.BLOCKS.get(key)
+        out = BR.block(c, key)
         title = BLOCK_TITLES.get(key)
         head = f"<h3>{html.escape(title)}</h3>" if title else ""
-        return f'<div class="card prose">{head}{md_to_html(fn(c))}</div>' if fn else ""
+        return f'<div class="card prose">{head}{md_to_html(out)}</div>' if out is not None else ""
     return f'<div class="component" data-component="{html.escape(name)}"></div>'
 
 

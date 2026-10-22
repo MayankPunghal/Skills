@@ -154,7 +154,7 @@ Every application plan shows, besides **Why** and **Options considered**:
 - **Risks** and **Signs off**.
 
 They come from `r7_guidance` in `data/decision_rules.json` (per R, with sources); a reviewer's decision in
-`decisions.json` can override any of the four lists.
+`decisions.json` can override any of the four lists. Write each as a JSON list of strings; a single string is accepted and read as a one-item list (the same holds for `notes` and `risks`).
 
 **Retire, then what?** Retire never means "delete and hope". Name what takes over each capability (another application,
 which screens or calls move there and who builds them; a SaaS; a read-only archive; nothing), prove there are no

@@ -1,6 +1,15 @@
 {
- "_doc": "Known NuGet packages: match = regex on the package id (case-insensitive, anchored). status: blocker (no modern .NET/Linux path), replace (framework-specific; a successor exists), windows-only (runs on .NET 10 but not on Linux), ok (cross-platform on .NET 10; upgrade version), remove (provided by the platform), licence (works, but licence/cost needs a decision). vulnerable_below: versions below this have published advisories (check online lookup for the full list). Sources: package pages on nuget.org and vendor docs; refresh with --online lookups.",
+ "_doc": "Known NuGet packages: match = regex on the package id (case-insensitive, anchored). status: blocker (no modern .NET/Linux path), replace (framework-specific; a successor exists), windows-only (runs on .NET 10 but not on Linux), ok (cross-platform on .NET 10; upgrade version), remove (provided by the platform), licence (works, but licence/cost needs a decision). vulnerable_below: versions below this have published advisories (check online lookup for the full list). only_below: the entry applies only when a version in use is below this one (a major version that changed the programming model). rewrite: true marks an application's main framework whose successor is a different programming model: classify_apps.py drafts the application as Refactor, not Replatform. Sources: package pages on nuget.org and vendor docs; refresh with --online lookups.",
  "packages": [
+  {
+   "match": "Microsoft\\.Bot\\.(Builder|Connector)(\\..+)?",
+   "only_below": "4.0.0",
+   "status": "replace",
+   "sev": "High",
+   "rewrite": true,
+   "note": "Bot Framework SDK v3 targets .NET Framework only and is retired; v4 is a different programming model (adapters, dialogs, turn context, state accessors), so the bot logic is rewritten, not ported.",
+   "replacement": "Bot Framework SDK v4 on ASP.NET Core (Microsoft.Bot.Builder 4.x), or Amazon Lex V2 for the conversation layer"
+  },
   {
    "match": "Microsoft\\.AspNet\\.Mvc",
    "status": "replace",

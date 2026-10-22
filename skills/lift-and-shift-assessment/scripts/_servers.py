@@ -9,7 +9,7 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from _common import data, read_text
+from _common import data, read_json, read_text
 import _xlsx
 
 
@@ -48,8 +48,9 @@ def import_servers(path, sheet=None):
                 break
     if "name" not in idx:
         raise SystemExit(f"No server-name column found in {path} (looked for {cfg['columns']['name']}); header was: {rows[hi][:12]}")
+    extra = (read_json("assessment.json", {}) or {}).get("server_roles_extra") or []  # client-specific name patterns stay in the workspace, not the skill
     roles = [(r["role"], r["label"], re.compile(r["name_regex"]) if r.get("name_regex") else None, re.compile(r["app_regex"]) if r.get("app_regex") else None)
-             for r in cfg["roles"]]
+             for r in extra + cfg["roles"]]
     envs = [(e["env"], re.compile(e["regex"])) for e in cfg["env_prefixes"]]
     servers = []
 

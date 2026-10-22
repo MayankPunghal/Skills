@@ -49,10 +49,13 @@ def main():
     client = re.sub(r"[^\w.-]+", "-", cfg.get("client") or "Client").strip("-")
     out = a.out or os.path.join(OUT, "report", f"{client}-Modernization-Tracker.xlsx")
 
-    fj = read_json(os.path.join(OUT, "report", "findings.json"), {}) or {}
-    findings = fj["findings"] if isinstance(fj, dict) else fj
-    if not findings:
+    fp = os.path.join(OUT, "report", "findings.json")
+    if not os.path.exists(fp):
         raise SystemExit("no assessment/report/findings.json: run build_report.py first")
+    fj = read_json(fp, [])
+    findings = (fj.get("findings") or []) if isinstance(fj, dict) else (fj or [])  # build_report.py writes a list; [] = nothing found
+    if not findings:
+        print("no findings (no .NET code in scope, or nothing found): the Findings sheets are empty, the other sheets are still written")
     cats = {c["id"]: c for c in data("categories.json")["categories"]}
     cls = read_json(os.path.join(OUT, "classification.json"), {}) or {}
     app_name = {x["id"]: x["name"] for x in cls.get("applications", [])}

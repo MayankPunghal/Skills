@@ -24,6 +24,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import mask  # noqa: E402
 from _mdhtml import write_pair  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -201,6 +202,14 @@ def config_entries(src, det):
     return out
 
 
+def n_settings(cfg):
+    """Distinct settings to re-point: the same key repeated in Web.config and its transforms (Debug, Release, ...) or
+    in several attributes of one element counts once per file family; unnamed lines count one each."""
+    fam = lambda f: re.sub(r"\.(debug|release|staging|prod\w*|qa|uat|dev\w*|test)(?=\.config$)", "", f.replace("\\", "/").lower())  # noqa: E731
+    named = {(os.path.dirname(fam(f)), n) for f, _, n in cfg if n != "?"}
+    return len(named) + sum(1 for _, _, n in cfg if n == "?")
+
+
 def hours(target, n_prov, legacy, n_cons, n_cfg, with_fixed, consumer_fixed):
     pp = target.get("legacy_per_provider_file", target["per_provider_file"]) if legacy else target["per_provider_file"]
     fx = target["fixed"] if with_fixed else (consumer_fixed if (n_cons or n_cfg) else [0, 0])
@@ -256,7 +265,7 @@ def scan(root, library_sources=(), facts=None, choices=None, factors=None, catal
         options = []
         chosen = choices.get(svc["id"]) or svc["targets"][0]["id"]
         for t in svc["targets"]:
-            man = hours(t, len(prov), legacy, len(sites), len(cfg), bool(prov), cfix)
+            man = hours(t, len(prov), legacy, len(sites), n_settings(cfg), bool(prov), cfix)
             lib_work = []
             for l in used_libs:
                 lp = lib_prov[l.name]
@@ -275,8 +284,8 @@ def scan(root, library_sources=(), facts=None, choices=None, factors=None, catal
             "wrapper_types": sorted(types | (set().union(*(lib_types[l.name] for l in used_libs)) if used_libs else set())),
             "wrapper_methods": sorted(methods),
             "consumer_sites": len(sites), "consumer_files": len({s[0] for s in sites}),
-            "consumer_examples": [{"file": f, "line": n, "text": t} for f, n, t in sites[:12]],
-            "config_entries": len(cfg), "config_names": sorted({n for _, _, n in cfg}),
+            "consumer_examples": [{"file": f, "line": n, "text": mask(t)} for f, n, t in sites[:12]],
+            "config_entries": n_settings(cfg), "config_lines": len(cfg), "config_names": sorted({n for _, _, n in cfg}),
             "config_files": sorted({f for f, _, _ in cfg}),
             "legacy_api": legacy, "options": options, "chosen": chosen, "supersedes_optional": svc.get("supersedes_optional", [])})
     return {"root": root, "libraries": [l.name for l in libs], "factors": factors, "services": out,

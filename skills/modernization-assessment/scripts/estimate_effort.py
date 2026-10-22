@@ -371,6 +371,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
             cat = f["category"]
             if mode in ("retire", "repurchase"):
                 return True
+            if mode == "static":  # files served from S3 + CloudFront: only addresses, settings and security headers carry over
+                return cat not in ("connectivity", "configuration-secrets", "security", "front-end")
             if mode == "retain":
                 return cat not in rules["retain_relevant_categories"] or (desktop and cat in ("file-handling", "time-culture", "hypervisor", "packages", "build-delivery"))
             if mode == "rehost":
@@ -398,14 +400,17 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                               "complexity_why": why, "size_factor": round(rscale, 3)})
                 explain_rows.append((name, p["name"], p["type"], round(kloc, 2), cf, why, r1(h)))
             fixed_other = [0.0, 0.0]
-            if mode in ("retain", "retire", "repurchase", "rehost"):
-                key = {"retain": "retain_desktop" if desktop else "retain_server", "rehost": "retain_server", "retire": "retire", "repurchase": "repurchase"}[mode]
+            if mode in ("retain", "retire", "repurchase", "rehost", "static"):
+                key = {"retain": "retain_desktop" if desktop else "retain_server", "rehost": "retain_server", "retire": "retire", "repurchase": "repurchase",
+                       "static": "static_content"}[mode]
                 fixed_other = list(est["other_r_hours"][key])
                 items.append({"pkg": wp_id, "lo": fixed_other[0], "hi": fixed_other[1], "kind": "fixed", "pos": rpos})
                 lines.append({"item": {"retain_desktop": "Repoint service endpoints in the desktop client",
                                        "retain_server": "Repoint connection strings, endpoints and identity settings for the new network (code and configuration only)",
                                        "retire": "Remove the application (code, configuration, references)",
-                                       "repurchase": "Write the integration code for the replacement product (selection and licences excluded)"}[key], "manual_hours": fixed_other})
+                                       "repurchase": "Write the integration code for the replacement product (selection and licences excluded)",
+                                       "static_content": "Publish the static files to Amazon S3 behind CloudFront: build step, cache headers, error pages, redirects"}[key],
+                              "manual_hours": fixed_other})
             for f in findings:
                 if f["id"] in costed:
                     continue
@@ -438,6 +443,8 @@ def compute(root, cfg, est, rules, cls, hosting, database, ai_on, engineers, exp
                     "drivers": [x["title"] for x in sorted(fl, key=lambda x: -x["hours"][1])[:5]]}
 
         def app_mode(x):
+            if x.get("content_only") and x["r7"] not in ("Retire", "Repurchase"):
+                return "static"
             desktop = x["type"] in rules["desktop_types"]
             base = {"Retire": "retire", "Repurchase": "repurchase", "Retain": "retain", "Rehost": "retain", "Relocate": "retain"}.get(x["r7"], "port")
             if base in ("retire", "repurchase") or desktop:

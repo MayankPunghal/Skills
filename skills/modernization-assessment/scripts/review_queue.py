@@ -27,6 +27,8 @@ def main():
     os.chdir(root)
     if a.decisions:
         cls = read_json(os.path.join(OUT, "classification.json"))
+        if not cls:
+            raise SystemExit("no assessment/classification.json yet: run classify_apps.py first, then review_queue.py --decisions")
         dec = read_json(os.path.join(OUT, "decisions.json"), {}) or {}
         draft = {x["id"]: {"name": x["name"], "r7": x["r7"], "target": x["target"], "rationale": x["rationale"], "options": x.get("options", []),
                            "by": "", "date": ""} for x in cls["applications"] if x["id"] not in dec}

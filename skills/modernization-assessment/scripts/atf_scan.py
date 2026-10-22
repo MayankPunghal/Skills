@@ -288,7 +288,10 @@ def main():
     root, cfg = load_config()
     repos = repos_in_scope(root, a.repo)
     if not repos:
-        sys.exit("no inventoried repositories: run discover_estate.py first")
+        st = read_json(os.path.join(OUT, "state.json"), {"repos": {}}) or {"repos": {}}
+        out = [r for r, v in st["repos"].items() if v.get("scope") == "out"]
+        sys.exit(f"nothing to scan: {len(out)} repositories have no .NET project (the AWS Transform scanner reads .NET code only)" if out
+                 else "no inventoried repositories: run discover_estate.py first")
     os.makedirs(ATF, exist_ok=True)
     for p in a.imports:
         rows = load_rows(p)

@@ -55,6 +55,13 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
     rationale, options, hybrid = [], [], None
     if typ == "database":
         return {"r7": "Replatform", "target": t["database"], "rationale": ["SQL Server database project: see the database assessment."], "options": []}
+    if proj.get("content_only") and typ not in rules["desktop_types"]:  # discover_estate.py: no .cs / .vb anywhere in the project
+        return {"r7": "Replatform", "target": t.get("static-content", "Static files on Amazon S3 behind Amazon CloudFront (no .NET runtime)"),
+                "rationale": [f"No compiled code in the project ({sum((proj.get('files_by_ext') or {}).values()):,} content files): the pages, scripts and "
+                              "images are served as static files; nothing is ported to .NET."],
+                "options": ["Keep on IIS (EC2) if the site relies on IIS features (URL rewrite rules, server-side includes): check web.config."],
+                "windows_bound": [], "web_forms_pages": pages, "kloc": kloc, "risk": "Low", "confidence": "High", "notes": [], "hybrid": False,
+                "findings_by_severity": dict(sev), "linux_ready": True, "content_only": True}
     if typ in rules["desktop_types"]:
         r7, target = "Retain", t["windows-desktop"]
         rationale.append(f"{typ.upper()} desktop client: runs only on Windows, even on .NET 10.")
@@ -113,6 +120,11 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
     else:
         r7, target = "Replatform", t["linux-container"].format(target=target_fw)
         rationale.append(f"{typ} on {', '.join(tfms) or fam}: portable to {target_fw} on Linux; findings below are code changes, not architectural blockers.")
+    rewrite = sorted({f.get("package") or f["rule"] for f in fs if f.get("rewrite")})  # package_map "rewrite": the framework itself has no port
+    if rewrite and r7 == "Replatform":
+        r7 = "Refactor"
+        rationale.append(f"Built on {', '.join(rewrite)}: this version has no modern .NET build and its successor is a different programming model, "
+                         "so the code that uses it is rewritten (Refactor), not ported.")
     if bound and r7 in ("Replatform", "Refactor"):
         rationale.append(f"Windows-bound items to replace during the port: {', '.join(bound)}.")
     # hybrid / shared libraries
@@ -133,6 +145,12 @@ def classify(app, inv, fs, rules, cfg, shared_users, name_counts):
     risk = "High" if sev["Blocker"] or len(bound) >= 2 else ("Medium" if sev["High"] >= 3 else "Low")
     needs = sum(1 for f in fs if f.get("confidence") == "Needs verification")
     confidence = "High" if needs <= 2 and sev["Blocker"] == 0 else ("Medium" if needs <= 8 else "Low")
+    outside = sorted({x for f in fs if f["rule"] == "DEP-OUTSIDE-REPO" for x in f.get("libraries", [])})
+    if outside:  # part of the code is not in the repository: the draft cannot be sure nothing blocks the move
+        confidence = {"High": "Medium", "Medium": "Low"}.get(confidence, confidence)
+        risk = "Medium" if risk == "Low" else risk
+        rationale.append(f"Builds against {len(outside)} libraries outside this repository ({', '.join(x.split(' (')[0] for x in outside[:5])}"
+                         f"{', ...' if len(outside) > 5 else ''}): not assessed here, so this draft and the estimate exclude them.")
     return {"r7": r7, "target": target, "rationale": rationale, "options": options, "windows_bound": bound, "web_forms_pages": pages,
             "kloc": kloc, "risk": risk, "confidence": confidence, "notes": notes, "hybrid": bool(hybrid),
             "findings_by_severity": dict(sev), "linux_ready": not bound and not ui and typ not in rules["desktop_types"] and not linux_issues}
@@ -179,6 +197,9 @@ def main():
             d = decisions.get(a["id"])
             if d:
                 entry.update({k: v for k, v in d.items() if k in ("r7", "target", "rationale", "options", "risk", "confidence", "notes", "why_not", "then", "risks", "sign_off")})
+                for k in ("notes", "risks", "why_not", "then", "sign_off"):  # lists of strings; one string is one item, never one per character
+                    if isinstance(entry.get(k), str):
+                        entry[k] = [entry[k]] if entry[k].strip() else []
                 g = rules.get("r7_guidance", {}).get(entry["r7"].split()[0].split("/")[0].strip(), {})
                 for k in ("why_not", "then", "risks", "sign_off"):  # a changed R brings its own guidance unless the reviewer wrote it
                     if k not in d:

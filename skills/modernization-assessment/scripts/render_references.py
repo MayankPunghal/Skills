@@ -66,11 +66,14 @@ def main():
                  "packages are detected from their files (native binaries only under runtimes/win-*, net*-windows builds only) and from "
                  "dependencies on Windows-only packages; unmaintained packages (no release in four years) are flagged.",
            "With `online_package_lookup` the scanner also reads api.nuget.org: the latest version's target frameworks, deprecation (with alternative), published",
-           "advisories for the versions in use, and the licence expression. Unknown packages that support .NET Standard / .NET in their latest version are marked ok.", "",
-           "| Package id (regex) | Status | Severity | Note | Replacement | Known-vulnerable below |", "| --- | --- | --- | --- | --- | --- |"]
+           "advisories for the versions in use, and the licence expression. Unknown packages that support .NET Standard / .NET in their latest version are marked ok.",
+           "An entry with **Applies below** matches only when a version in use is below that one (a later major version changed the programming model). "
+           "**Rewrite** marks an application's main framework whose successor is a different programming model: `classify_apps.py` drafts the application as Refactor, not Replatform.", "",
+           "| Package id (regex) | Status | Severity | Note | Replacement | Known-vulnerable below | Applies below | Rewrite |",
+           "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for p in pm:
         vb = ", ".join(f"{k} < {v}" for k, v in (p.get("vulnerable_below") or {}).items())
-        out.append(f"| `{esc(p['match'])}` | {p['status']} | {p['sev']} | {esc(p['note'])} | {esc(p['replacement'])} | {vb} |")
+        out.append(f"| `{esc(p['match'])}` | {p['status']} | {p['sev']} | {esc(p['note'])} | {esc(p['replacement'])} | {vb} | {p.get('only_below', '')} | {'yes' if p.get('rewrite') else ''} |")
     write_text(os.path.join(SKILL_DIR, "references", "package-map.md"), "\n".join(out) + "\n")
     print(f"rendered {len(rules)} rules and {len(pm)} package entries")
 

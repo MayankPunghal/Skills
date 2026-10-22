@@ -926,7 +926,13 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--name", default=None)
     a = ap.parse_args()
-    write(inventory(a.root, a.name), a.out)
+    inv = inventory(a.root, a.name)
+    seen = (inv.get("summary") or {}).get("files_scanned") or {}
+    if not any(seen.get(x) for x in CODE_EXT + VB_EXT):  # it inventories SQL called from code, not SQL definitions
+        raise SystemExit(f"{a.root}: no C# or VB files, nothing to scan: raw_sql.py lists SQL that application code sends "
+                         "(stored-procedure calls, raw statements), not the procedures a database project or script folder defines. "
+                         "For SQL definitions use the SQL parser (codebase-documenter sql_parse.py --root <dir> --ext .sql,.txt).")
+    write(inv, a.out)
 
 
 if __name__ == "__main__":

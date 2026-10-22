@@ -1,6 +1,6 @@
 """Linux readiness check (run, do not read): a thin entry point to the linux-readiness skill, which owns the scanner.
 
-    python scripts/linux_readiness.py <repo-or-solution-folder> [--out <dir>] [--waivers waivers.json]
+    python scripts/linux_readiness.py <repo-or-solution-folder | repository name> [--out <dir>] [--waivers waivers.json]
                                       [--level block|warn|info] [--gate] [--title NAME]
     python scripts/linux_readiness.py --all    (in an assessment workspace: every inventoried repository,
                                                 output to assessment/linux/<repo>/)
@@ -14,6 +14,8 @@ output are the linux-readiness skill's (its reference/linux-readiness.md).
 Where it looks, in order: the LINUX_READINESS_DIR environment variable, a sibling folder named linux-readiness (the
 installer puts it next to this skill), ~/.claude/skills/linux-readiness, ~/.agents/skills/linux-readiness.
 Imported as a module, it exposes the scanner's functions (scan, render, load_rules, ...). Standard library only.
+In an assessment workspace a repository name (as in assessment/inventory/<name>.json) stands for its folder, and the
+output defaults to assessment/linux/<name>/: this also works for a repository with no .NET project.
 """
 import importlib.util
 import os
@@ -52,5 +54,26 @@ def _load():
 _impl = _load()
 globals().update({k: v for k, v in vars(_impl).items() if not k.startswith("__") and k not in ("skill_dir", "catalogue_path")})
 
+def _repo_name_to_folder(argv):
+    """`linux_readiness.py <repo>` in a workspace: the inventoried repository's folder, output to assessment/linux/<repo>."""
+    import json
+    for i in range(1, len(argv)):
+        a = argv[i]
+        if a.startswith("-") or argv[i - 1] in ("--out", "--waivers", "--level", "--title", "--explain"):
+            continue
+        inv = os.path.join("assessment", "inventory", f"{a.lower()}.json")
+        if os.path.exists(a) or not os.path.isfile(inv):
+            return argv
+        root = (json.load(open(inv, encoding="utf-8")) or {}).get("root")
+        if not root:
+            return argv
+        print(f"{a}: repository folder {root}")
+        argv = argv[:i] + [root] + argv[i + 1:]
+        return argv + ([] if "--out" in argv else ["--out", os.path.join("assessment", "linux", a.lower())])
+    return argv
+
+
 if __name__ == "__main__":
+    import sys
+    sys.argv = _repo_name_to_folder(sys.argv)
     _impl.main()

@@ -108,7 +108,13 @@ def inventory(root, skip_dirs=()):
                        "sqlglot is installed). Run codebase-documenter install_prerequisites.py and rescan.")
         print("WARN db inventory: " + res["note"])
     else:
-        for r in sp.scan_files(root, skip):
+        skipped = []
+        try:  # codebase-documenter 1.16.3+: T-SQL kept as .txt (and UTF-16) is read too; larger files are listed, not parsed
+            files = sp.scan_files(root, skip, skipped=skipped)
+        except TypeError:
+            files = sp.scan_files(root, skip)
+        res["skipped_sql_files"] = [{"file": f, "reason": why} for f, why in skipped]
+        for r in files:
             if r.get("fatal"):
                 res["parse_errors"].append({"file": r["id"], "line": 0, "message": r["fatal"]})
                 continue

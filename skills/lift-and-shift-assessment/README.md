@@ -5,6 +5,11 @@ A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, 
 It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
 
+## Changed in 1.1.3
+
+- **Branch check without GitLab (branch_evidence.py).** With no token, no GitLab origin or a GitLab error, the branch check reads the local clone's git history instead (branches, tags, recent merges) and says so, rather than leaving the repository without branch evidence. Same file as modernization-assessment.
+- **Client-neutral defaults (same files as modernization-assessment).** The server roles are the generic set (`partner-api`, `xml-api`); a client's own host-name patterns go in the workspace's `assessment.json` as `server_roles_extra`. The company-domain guess reads only the folders nearest the repositories.
+
 ## Changed in 1.1.2
 
 - **No false internal hosts from backslashes (network_endpoints.py).** A UNC path (`\\server\share`) must start a value. A `\u017F` inside a regex character range, a drive path such as `C:\temp` and sample paths in publish scripts are no longer reported as servers named `u017F`, `temp` or `full`.

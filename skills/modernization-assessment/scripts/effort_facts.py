@@ -273,6 +273,7 @@ def collect(repo, cfg):
     facts = {"repo": repo, "root": root, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "git": git_facts(root)}
     facts["solutions"] = [{"file": s.get("path") or s.get("file"), "projects": s.get("projects")} for s in inv.get("solutions", [])]
     facts["projects"] = [{"path": p["path"], "type": p.get("type"), "frameworks": p.get("target_frameworks"), "sdk_style": p.get("sdk_style"),
+                          "content_only": bool(p.get("content_only")),
                           "packages_config": p.get("packages_config"), "output_type": p.get("output_type"), "deployable": p.get("deployable"),
                           "loc_handwritten": p.get("loc_handwritten"), "loc_markup": p.get("loc_markup"), "loc_generated": p.get("loc_generated"),
                           "loc_exec": p.get("loc_exec"), "loc_config": (p.get("loc") or {}).get("config"), "files_by_ext": p.get("files_by_ext"),
@@ -282,6 +283,7 @@ def collect(repo, cfg):
     facts["web"] = web_census(root, projects)
     facts["service_references"] = service_refs(root)
     facts["binary_references"] = scan.get("binary_references", [])
+    facts["outside_repo_references"] = scan.get("outside_repo_references", {})  # libraries the estimate does not cover
     facts["packages"] = [{"id": p["id"], "versions": p.get("versions"), "status": p.get("status"), "note": p.get("note"),
                           "replacement": p.get("replacement"), "supports_modern": (p.get("nuget") or {}).get("supports_modern"),
                           "latest": p.get("latest"), "frameworks": p.get("frameworks"), "runs_on_linux": p.get("runs_on_linux"),

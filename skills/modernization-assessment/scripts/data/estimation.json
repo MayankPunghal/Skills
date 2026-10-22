@@ -450,7 +450,7 @@
   }
  },
  "other_r_hours": {
-  "_doc": "Code and configuration work for applications that are not ported: retire, repurchase (integration code only), retain on Windows (repoint connection strings and endpoints), desktop client (repoint service endpoints).",
+  "_doc": "Code and configuration work for applications that are not ported: retire, repurchase (integration code only), retain on Windows (repoint connection strings and endpoints), desktop client (repoint service endpoints), static content (a project with no compiled code, published to S3 + CloudFront).",
   "retire": [
    1,
    4
@@ -466,6 +466,10 @@
   "retain_desktop": [
    2,
    4
+  ],
+  "static_content": [
+   2,
+   6
   ]
  },
  "hosting_scenarios": {

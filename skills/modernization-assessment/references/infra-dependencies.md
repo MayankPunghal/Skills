@@ -37,7 +37,7 @@ A lift-and-shift moves servers, so the question "what does this repository need 
 - **No values.** Evidence text is `config key: <name>` or a masked code line. Only host names, IPs and ports are kept, because they are what ties a dependency to a server. Tokens that look like keys, hashes, namespaces or file names are never kept as hosts.
 
 ## Tying the code to the client's server list
-- `map_infra.py --servers <file.xlsx|csv>` imports the list (`_servers.py`): the largest sheet (or `--sheet`), header found by synonyms in `scripts/data/server_roles.json`. Every server gets **roles from its name or installed software** by editable rules (`app-biz`, `app-web`, `redis`, `elasticsearch`, `kafka`, `ftp`, `smtp`, `sql-server`, ...), shown with where the role came from. Edit `server_roles.json` to match the client's naming and rerun.
+- `map_infra.py --servers <file.xlsx|csv>` imports the list (`_servers.py`): the largest sheet (or `--sheet`), header found by synonyms in `scripts/data/server_roles.json`. Every server gets **roles from its name or installed software** by editable rules (`app-biz`, `app-web`, `redis`, `elasticsearch`, `kafka`, `ftp`, `smtp`, `sql-server`, ...), shown with where the role came from. Edit `server_roles.json` to match the client's naming and rerun. Name patterns that belong to one client (a product name in its host names) go in that workspace's `assessment.json` instead, so the skill stays client-neutral: `"server_roles_extra": [{"role": "orders-api", "label": "Orders API server", "name_regex": "(?i)ordapi\\d", "app_regex": ""}]`; they are tried before the built-in roles.
 - Link status per repository and server type:
 
 | Status | Meaning |

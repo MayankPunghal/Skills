@@ -357,7 +357,7 @@ def network_access(repo, inv, facts, cfgrows, host_kind, private_ip, company, in
     return out
 
 
-_GENERIC_TOKENS = {"repos", "repo", "src", "code", "source", "sourcefuse", "projects", "client", "clients", "gitlab", "github", "work", "dev", "main"}
+_GENERIC_TOKENS = {"repos", "repo", "src", "code", "source", "projects", "client", "clients", "gitlab", "github", "work", "dev", "main", "users", "documents", "desktop"}
 _INTERNAL_TLDS = {"local", "lan", "internal", "corp", "intranet", "localdomain", "home"}  # internal names are handled as internal host names, not company domains
 _SECOND_LEVEL = {"co", "com", "org", "net", "gov", "ac", "edu"}
 
@@ -375,7 +375,7 @@ def detect_company_domains(cfg):
     a folder of the repository path (client Acme + repos/Acme/ws -> acme.com). Returns [(domain, hosts)] by count."""
     tokens = set(re.findall(r"[a-z0-9]+", (cfg.get("client") or "").lower()))
     for r in cfg.get("estate_roots") or []:
-        tokens |= set(re.findall(r"[a-z0-9]+", r.lower().replace("\\", "/")))
+        tokens |= set(re.findall(r"[a-z0-9]+", "/".join(r.lower().replace("\\", "/").rstrip("/").split("/")[-4:])))  # the folders nearest the repositories, not the workstation's own
     stems = {t[:5] for t in tokens if len(t) >= 5 and t not in _GENERIC_TOKENS}
     seen = {}
     sdir = os.path.join(OUT, "scan")

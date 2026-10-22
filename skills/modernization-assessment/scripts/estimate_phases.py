@@ -26,7 +26,8 @@ import os
 import re
 import sys
 
-from _common import OUT, load_config, load_state, read_json, utf8_stdout, write_json
+from _common import OUT, data, load_config, load_state, read_json, utf8_stdout, write_json
+import _findings as F
 from _mdhtml import write_pair
 
 # rate per unit (low, high) hours. Basis: a reference modernization plan priced item by item for a tool-run port of a
@@ -87,21 +88,33 @@ RATES = CLAUDE_FIRST  # set per build from estimate-inputs.json "rate_profile"
 # dotnet-modernization skill as clean-up after the engine's run. One database tool ("db_tool": "db-agent" = the DB
 # porting agent, or "claude" = Claude with the DB porting skills when the agent is not approved or the repository is
 # too complex for it). The rates are the same whichever engine runs: they are engineer time to run, review and fix.
-ENGINES = {"devtx": "AWS DevTx Version Upgrade Toolkit", "aws-transform": "AWS Transform for .NET"}
+ENGINES = {"devtx": "AWS DevTx Version Upgrade Toolkit", "aws-transform": "AWS Transform for .NET",
+           "claude": "Claude with the dotnet-modernization skill"}
 ENGINE_COVERS = {  # work items the engine's own run carries out (the rest of stage B is Claude clean-up)
     "devtx": {"B1", "B3", "B5", "B9", "B10", "B11"},  # KB 01/27, 06, 28 (CallContext), 25/26 (Web Forms), 19 (containers)
     "aws-transform": {"B1", "B3", "B9", "B10"},       # projects, packages, Web Forms -> Blazor; CallContext / containers left
+    "claude": None,                                   # None = Claude ports and cleans up every stage B item itself
 }
 DB_TOOLS = {"db-agent": "the DB porting agent", "claude": "Claude with the DB porting skills"}
+
+
+def port_engine(inp):
+    v = inp.get("port_engine", {}).get("value", "devtx")
+    return v if v in ENGINES else "devtx"
+
+
+def covers(eng, iid):
+    return ENGINE_COVERS[eng] is None or iid in ENGINE_COVERS[eng]
 
 
 def db_tool(inp):
     v = inp.get("db_tool", {}).get("value", "db-agent")
     return v if v in DB_TOOLS else "db-agent"
-FIXED_OWNER = {"B2": "Claude", "B12": "Engineers + DevOps", "A8": "Engineers (design)", "A9": "DevOps (configuration)",
+FIXED_OWNER = {"B2": "Claude", "B13": "Claude + DevOps (static hosting)", "B12": "Engineers + DevOps", "A8": "Engineers (design)", "A9": "DevOps (configuration)",
                "A10": "Engineers (PostgreSQL test environment)"}
 PHASES = [  # (id, title, who, items): the readable view; the detail table keeps every line item
     ("P1", "Prepare: baseline build, golden request/response files, page smoke tests", "claude", ["B2"]),
+    ("P1s", "Static content: publish to S3 + CloudFront (nothing to port)", "claude", ["B13"]),
     ("P2", "Port to .NET 10 with the engine", "engine", None),
     ("P3", "Clean-up of what the engine leaves", "claude", None),
     ("P4", "Data access: PostgreSQL path beside SQL Server", "db", ["A1", "A2", "A3", "A4", "A5", "A5b", "A8"]),
@@ -111,23 +124,22 @@ PHASES = [  # (id, title, who, items): the readable view; the detail table keeps
 
 
 def owner(iid, stage, inp):
-    eng = inp.get("port_engine", {}).get("value", "devtx")
+    eng = port_engine(inp)
     if iid in FIXED_OWNER:
         return FIXED_OWNER[iid]
     if stage == "A":
         return DB_TOOLS[db_tool(inp)]
     if stage == "S":
         return "Claude (clean-up)"
-    return ENGINES[eng] if iid in ENGINE_COVERS[eng] else f"Claude (clean-up after {ENGINES[eng]})"
+    return ENGINES[eng] if covers(eng, iid) else f"Claude (clean-up after {ENGINES[eng]})"
 
 
 def phases(I, inp):
-    eng = inp.get("port_engine", {}).get("value", "devtx")
+    eng = port_engine(inp)
     out = []
     for pid, title, who, ids in PHASES:
         if ids is None:
-            cov = ENGINE_COVERS[eng]
-            ids = [x["id"] for x in I if x["stage"] == "B" and x["id"] not in FIXED_OWNER and ((x["id"] in cov) == (pid == "P2"))]
+            ids = [x["id"] for x in I if x["stage"] == "B" and x["id"] not in FIXED_OWNER and (covers(eng, x["id"]) == (pid == "P2"))]
         elif ids == "S":
             ids = [x["id"] for x in I if x["stage"] == "S"]
         its = [x for x in I if x["id"] in ids]
@@ -185,7 +197,10 @@ def occ(facts, rule, projects=None):
 
 
 def line(items, stage, iid, label, parts, basis, status="VERIFIED", note="", tool=None):
-    """parts: [(quantity, unit, rate key or (low, high))]; quantity 0 parts are dropped."""
+    """parts: [(quantity, unit, rate key or (low, high))]; quantity 0 parts are dropped, and so is an item whose every
+    part is 0 (it describes something this repository does not have). An item with no parts (a decision) is kept."""
+    if parts and not any(q for q, _, _ in parts):
+        return
     lo = hi = 0.0
     drivers = []
     for q, unit, rate in parts:
@@ -205,6 +220,8 @@ def build(f, inp):
     envs = inp["environments"]["value"]
     retired = set(inp.get("retire_projects", {}).get("value", []))
     ui_retired = inp.get("admin_ui", {}).get("value") == "retire"
+    static = [p for p in f["projects"] if p["path"] not in retired and p.get("content_only")]  # no compiled code: published as files
+    retired |= {p["path"] for p in static}
     keep = [p for p in f["projects"] if p["path"] not in retired]
     deployables = [p for p in keep if p.get("deployable")]
     sq = f["sql"]["summary"]
@@ -215,12 +232,12 @@ def build(f, inp):
     # ---------------- Stage B: port to .NET 10 on Linux containers
     bins = {b["assembly"] for b in f["binary_references"] if b["project"] not in retired}
     line(I, "B", "B1", "Build + pipeline: SDK-style projects, PackageReference, Library references, Linux CI build",
-         [(len(f["solutions"]), "solution", "solution_build"), (sum(1 for p in keep if not p["sdk_style"]), "legacy project files", "project_sdk"),
-          (len(f["packages"]), "NuGet packages", "package"), (len(bins), "binary (non-NuGet) references", "binary_ref")],
+         [(len(f["solutions"]) if keep else 0, "solution", "solution_build"), (sum(1 for p in keep if not p["sdk_style"]), "legacy project files", "project_sdk"),
+          (len(f["packages"]) if keep else 0, "NuGet packages", "package"), (len(bins) if keep else 0, "binary (non-NuGet) references", "binary_ref")],
          "reference plan B1 16-32 h (one web solution, agent-scaffolded)")
     pages = sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for w in web.values())
     line(I, "B", "B2", "Parity harness: golden request/response files per API request type, page smoke tests",
-         [(1, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
+         [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
           (0 if ui_retired else pages, "admin pages", "page_smoke")],
          "reference plan B2 24-40 h for 14 templates; automated tests counted in facts.json", "INFERRED")
     kloc = sum((p["loc_handwritten"] or 0) + (p["loc_markup"] or 0) for p in keep) / 1000
@@ -254,7 +271,7 @@ def build(f, inp):
         if n:
             parts.append((n, rule, rate))
     line(I, "B", "B7", "Windows-only APIs and hosting assumptions (formatters, COM+, crypto, time zones, paths, machine name, caches)",
-         parts, "modernization-assessment per-occurrence rates; time zones: containers run UTC")
+         parts or [(0, "occurrences", (0, 0))], "modernization-assessment per-occurrence rates; time zones: containers run UTC")
     cfg = [c for c in f["config"] if not c["transform"]]
     sections = {s for c in cfg for s in c["custom_sections"]}
     line(I, "B", "B8", "Configuration + secrets: web.config to appsettings / env / Secrets Manager, protected sections, custom sections",
@@ -287,6 +304,8 @@ def build(f, inp):
     line(I, "B", "B11", "Containerise: Linux image per deployable, health endpoint, stdout logging, task definition inputs",
          [(len(deployables), "deployables", "containerise"), (len(deployables) if any(x["rule"] == "LOG-NO-HEALTHCHECK" for x in f["findings"]) else 0, "health endpoints", "health")],
          "3-6 h per deployable plus health check (earlier calibrated draft)")
+    line(I, "B", "B13", "Static content: publish to Amazon S3 behind CloudFront (build step, cache headers, error pages, redirects); nothing is ported",
+         [(len(static), "content-only projects", (1.5, 4))], "a project with no compiled code (discover_estate.py content_only); estimation.json other_r_hours", "INFERRED")
     line(I, "B", "B12", "Canary / cutover support",
          [(len(deployables) * envs, f"deployable x environment ({len(deployables)} x {envs})", "canary_env_deployable")],
          "reference plan B8 24-40 h for 3 environments", inp["environments"].get("status", "UNKNOWN"))
@@ -360,9 +379,34 @@ def finish(I, f, inp):
                  f"aws_native.py rates x AI factor ({opt['factor']}); wrapper: {svc['client_code']}", "VERIFIED", opt["work"])
             I[-1]["drivers"] = ["; ".join(x for x in ev if x) + f": manual-equivalent {opt['manual_hours'][0]:g}-{opt['manual_hours'][1]:g} h"]
     # extra work items found in review that no quantity covers: estimate-inputs.json "extra_items" [{id, stage, label, low, high, basis}]
-    for x in (inp.get("extra_items") or {}).get("value", []):
+    extra = (inp.get("extra_items") or {}).get("value", [])
+    for x in extra:
         I.append({"stage": x.get("stage", "B"), "id": x["id"], "label": x["label"], "low": x["low"], "high": x["high"], "drivers": [x.get("drivers", "")] if x.get("drivers") else [],
                   "basis": x.get("basis", "review"), "status": x.get("status", "INFERRED"), "note": x.get("note", ""), "tool": None})
+    # manual findings (assessment/reviews/<repo>.manual.json) price themselves from their effort_key, as estimate_effort.py
+    # does, unless an extra item names them ("finding": the finding id or its rule id) and so replaces that price
+    named = {str(x.get(k)) for x in extra for k in ("id", "finding", "rule") if x.get(k)}
+    ecfg = data("estimation.json")
+    ai = ecfg["ai_assistance"]
+    fac = ai["engineer_paced"] if inp.get("rate_profile", {}).get("value") == "engineer-paced" else ai
+    n = 0
+    for m in F.load(".", f["repo"]):
+        k = m.get("effort_key") or "small-change"
+        if not m.get("manual") or m.get("baseline") or m["id"] in named or m.get("rule") in named:
+            continue
+        if k.startswith("db-") and not inp.get("database_port", {}).get("value", True):
+            continue
+        fh = ecfg["finding_hours"].get(k) or ecfg["finding_hours"]["small-change"]
+        o = max(1, m.get("occurrences") or 1)
+        fc = fac["redesign_factor"] if k in ai["redesign_effort_keys"] else fac["db_factor"] if k.startswith("db-") else fac["code_factor"]
+        lo, hi = (round(min(fh["fixed"][i] + fh["per"][i] * (o - 1), fh["cap"][i]) * fc[i], 1) for i in (0, 1))
+        if hi <= 0:
+            continue
+        n += 1
+        I.append({"stage": "A" if k.startswith("db-") else "B", "id": f"M{n}", "label": f"{m.get('title') or m.get('rule')} (manual finding)",
+                  "low": lo, "high": hi, "drivers": [f"{m['id']}: effort_key {k}, {o} occurrence(s)"],
+                  "basis": "manual finding: estimation.json finding_hours x ai_assistance (an extra item naming it replaces this)",
+                  "status": "INFERRED", "note": "", "tool": None})
     for x in I:
         x["tool"] = owner(x["id"], x["stage"], inp)
     return I
@@ -485,11 +529,15 @@ def inputs_for(repo, f, cfg, d):
     sqlcs |= {f"host:{r['target']}" for r in cmap.get("rows", []) if r.get("type") == "connection string host" and r.get("port") == 1433
               and not nonsql.search(r.get("setting", "")) and r.get("target", "").lower() not in {(c.get("host") or "").lower() for c in f.get("connection_strings", [])}}
     dbs = (cfg.get("scenario") or {}).get("database", "dual")
+    sqs = (f.get("sql") or {}).get("summary") or {}
+    db_code = bool(sqlcs or (sqs.get("stored_procedures") or {}).get("call_sites") or (sqs.get("raw_sql") or {}).get("statements")
+                   or any((v or {}).get("hits") if isinstance(v, dict) else v for v in (sqs.get("data_access_api") or {}).values()))
     defaults = {
         "environments": {"value": n_env or 3, "status": "VERIFIED" if n_env else "UNKNOWN",
                          "question": "How many environments does each application run in (dev, staging, prod assumed)?",
                          "note": "From the intake answers." if n_env else "Assumed dev, staging, prod: ask the client."},
-        "admin_ui": {"value": "port", "status": "UNKNOWN" if any(w["totals"]["pages"] > 1 for w in f.get("web", {}).values()) else "VERIFIED",
+        "admin_ui": {"value": "port" if any(w["totals"]["pages"] for w in f.get("web", {}).values()) else "none",
+                     "status": "UNKNOWN" if any(w["totals"]["pages"] > 1 for w in f.get("web", {}).values()) else "VERIFIED",
                      "note": "Port the Web Forms admin pages (Blazor / Razor Pages) or retire them? Set \"retire\" to drop item B10.",
                      "question": "Port the Web Forms admin pages (Blazor / Razor Pages), or retire them?"},
         "retire_projects": {"value": [], "status": "UNKNOWN", "note": "Project paths to leave out entirely.",
@@ -507,16 +555,18 @@ def inputs_for(repo, f, cfg, d):
                                             and not any(re.match(rx, b["assembly"], re.I) for rx in svc_pkgs)}),
                            "status": "INFERRED", "note": "DLLs that become a current nuget.org package (the scan's DLL table); clients of server-hosted services are priced in stage S."},
         "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
-        "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis}]; added to the main estimate."},
+        "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis, finding}]; added to the main estimate. Manual findings are priced from their effort_key unless an extra item names them in \"finding\" (finding id or rule id)."},
         "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources and networking (DevOps)", "status": "INFERRED", "note": ""},
         "buffer": {"value": 0.15, "status": "INFERRED", "note": "Planning buffer on the subtotal."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},
         "team": {"value": [1, 2], "status": "INFERRED", "note": "Calendar shown for 1 and 2 developers."},
         "port_engine": {"value": engine if engine in ENGINES else "devtx", "status": "VERIFIED" if engine in ENGINES else "UNKNOWN",
-                        "note": "One porting engine per repository: \"devtx\" or \"aws-transform\" (plan_execution.py decides); same hours either way.",
+                        "note": "One porting engine per repository: \"devtx\", \"aws-transform\" or \"claude\" (plan_execution.py decides); same hours either way.",
                         "question": "Which porting engine: AWS Transform for .NET or the AWS DevTx Version Upgrade Toolkit? (same hours either way)"},
         "db_tool": {"value": "db-agent", "status": "INFERRED", "note": "\"db-agent\" (the DB porting agent) or \"claude\" (Claude with the DB porting skills)."},
-        "database_port": {"value": dbs != "none", "status": "VERIFIED", "note": f"Assessment scenario database = {dbs}."},
+        "database_port": {"value": dbs != "none" and db_code, "status": "VERIFIED" if db_code else "INFERRED",
+                          "note": f"Assessment scenario database = {dbs}." + ("" if db_code else " No database code in this repository (no SQL connection string, "
+                                  "procedure call or SQL statement): nothing to port here" + ("; data access may sit in the libraries outside it." if f.get("outside_repo_references") else "."))},
         "aws_native": {"value": intake.get("aws_native", "later") == "now", "status": "VERIFIED" if intake.get("aws_native") else "UNKNOWN",
                        "note": "Intake: move server-hosted services to AWS managed services now (in the total) or later (listed, not in the total).",
                        "question": "Move the server-hosted services (caches, mail, logging, ...) to AWS managed services now (priced in) or later?"},
@@ -543,6 +593,11 @@ def inputs_for(repo, f, cfg, d):
         changed = True
     if inp.get("db_tool", {}).get("value") not in DB_TOOLS:  # a tool name this version does not know
         inp["db_tool"]["value"] = "db-agent"
+        changed = True
+    outside = sorted({x.split(" (")[0] for v in (f.get("outside_repo_references") or {}).values() for x in v})
+    if outside and "outside this repository" not in str(inp["excluded"].get("value", "")):  # scan_repo.py DEP-OUTSIDE-REPO
+        inp["excluded"]["value"] = (f"Libraries outside this repository, not assessed or priced here: {', '.join(outside)}; "
+                                    + str(inp["excluded"].get("value") or "")).rstrip("; ")
         changed = True
     if changed or not os.path.exists(p):
         write_json(p, inp)
@@ -583,16 +638,20 @@ def estimate_repo(repo, cfg, a):
     res["calendar_weeks"] = {str(n): [round(tot_lo / (n * hpd * 5), 1), round(tot_hi / (n * hpd * 5), 1)] for n in team}
     os.makedirs(a.out, exist_ok=True)
 
-    eng_name = ENGINES[inp.get("port_engine", {}).get("value", "devtx")]
+    eng_name = ENGINES[port_engine(inp)]
     db_name = DB_TOOLS[db_tool(inp)]
     ph = phases(I, inp)
     res["phases"] = ph
     json.dump(res, open(os.path.join(a.out, "estimate.json"), "w", encoding="utf-8"), indent=1)
+    all_static = bool(f["projects"]) and all(p.get("content_only") for p in f["projects"])
     L = [f"# Modernization estimate: {f['repo']}", "",
-         f"Tool-run, no hand-coding. **{eng_name}** ports the code (one engine for the whole repository); **Claude** with the "
-         f"dotnet-modernization skill cleans up what that engine does not cover; **{db_name}** adds the PostgreSQL path beside SQL Server. "
-         "Engineers run the tools, approve plans, review, fix what the gates reject and sign off. "
+         ("Static content only: no project has compiled code, so nothing is ported to .NET; the files are published to S3 + CloudFront. " if all_static else
+          f"Tool-run, no hand-coding. **{eng_name}** ports the code (one engine for the whole repository)"
+          + ("; " if port_engine(inp) == "claude" else "; **Claude** with the dotnet-modernization skill cleans up what that engine does not cover; "))
+         + (f"**{db_name}** adds the PostgreSQL path beside SQL Server. " if inp.get("database_port", {}).get("value", True) else "No database code change is planned. ")
+         + "Engineers run the tools, approve plans, review, fix what the gates reject and sign off. "
          "Planning grade, +-25%. Quantities come from facts.json, rates from estimate_phases.py, assumptions from estimate-inputs.json.", "",
+         f"**Not in this estimate:** {inp.get('excluded', {}).get('value') or '-'}", "",
          f"**Total {res['total'][0]}-{res['total'][1]} h** (subtotal {res['subtotal'][0]}-{res['subtotal'][1]} h + {buf:.0%} buffer) = "
          f"{res['dev_days'][0]}-{res['dev_days'][1]} dev-days at {hpd} h.", "",
          "## Plan", "", "| Phase | Who | What | Hours |", "|---|---|---|---|"]
@@ -643,6 +702,9 @@ def main():
     st = load_state(root)
     repos = [a.repo] if a.repo else sorted(r for r, v in st["repos"].items() if v.get("scope") != "out"
                                            and os.path.exists(os.path.join(OUT, "effort", r, "facts.json")))
+    if not repos and st["repos"] and all(v.get("scope") == "out" for v in st["repos"].values()):
+        print("no .NET repository in scope: nothing to port, so no phased estimate (sql_estate.py covers repositories of SQL scripts)")
+        return
     if not repos:
         raise SystemExit("no effort facts: run effort_facts.py first")
     allp = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {"repos": {}}) or {"repos": {}}
@@ -650,8 +712,10 @@ def main():
         res = estimate_repo(r, cfg, a)
         if res:
             allp["repos"][r] = {k: res[k] for k in ("phases", "stages", "subtotal", "buffer", "total", "dev_days", "hours_per_day", "calendar_weeks", "scenarios")}
-            allp["repos"][r]["engine"] = ENGINES[res["inputs"].get("port_engine", {}).get("value", "devtx")]
+            allp["repos"][r]["engine"] = ENGINES[port_engine(res["inputs"])]
             allp["repos"][r]["db_tool"] = DB_TOOLS[db_tool(res["inputs"])]
+            allp["repos"][r]["database_port"] = bool(res["inputs"].get("database_port", {}).get("value", True))
+            allp["repos"][r]["excluded"] = res["inputs"].get("excluded", {}).get("value", "")
             allp["repos"][r]["open"] = [k for k, v in res["inputs"].items() if isinstance(v, dict) and v.get("status") == "UNKNOWN"]
     allp["total"] = [sum(v["total"][0] for v in allp["repos"].values()), sum(v["total"][1] for v in allp["repos"].values())]
     write_json(os.path.join(OUT, "effort", "estimate-phases.json"), allp)

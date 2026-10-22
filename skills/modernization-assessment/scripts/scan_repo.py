@@ -101,6 +101,17 @@ ENV_TOKENS = re.compile(r"(?i)(^|[.\-])(intra|intranet|internal|corp|lan|uat|sit
 PLACEHOLDER_HOSTS = {"url", "host", "hostname", "server", "servername", "yourserver", "myserver", "domain", "site", "webapihelppage", "your-domain", "yourdomain", "foo", "bar", "test", "example", "machine", "computer", "localhost"}
 
 
+CONFIG_EXT = {".config", ".csproj", ".vbproj", ".fsproj", ".props", ".targets", ".json", ".xml", ".pubxml"}
+
+
+def minified(text):
+    """A minified or bundled script (long lines): third-party code whose test strings and URLs are not the client's."""
+    if len(text) < 4000:
+        return False
+    lines = text.splitlines() or [""]
+    return max(len(x) for x in lines) > 2000 or len(text) / len(lines) > 250
+
+
 def host_kind(host):
     h = host.lower().strip("[]")
     if IP_RX.fullmatch(h):
@@ -120,6 +131,7 @@ def load_rules():
         r["_any"] = re.compile("|".join(f"(?i:{p[4:]})" if p.startswith("(?i)") else f"(?:{p})" for p in r["pat"]), re.M)
         r["_req"] = re.compile(r["requires"], re.M) if r.get("requires") else None
         r["_not"] = re.compile(r["not"]) if r.get("not") else None
+        r["_used"] = re.compile(r["used_in_code"]) if r.get("used_in_code") else None
         r["_types"] = set(r["types"])
     return rules
 
@@ -138,6 +150,7 @@ class Scan:
         self.root = inv["root"]
         self.rules = load_rules()
         self.findings = {}
+        self.used_in_code = set()  # rules whose "used_in_code" pattern matched a C# / VB file
         self.facts = {"files_scanned": Counter(), "lines_scanned": 0, "rules_run": len(self.rules), "endpoints": {}, "connection_strings": [],
                       "secret_settings": [], "case_checks": 0, "case_mismatches": 0, "tests": {}, "skipped_large": [], "health_endpoints": []}
         self.pdirs = sorted(((os.path.normpath(os.path.dirname(os.path.join(self.root, p["path"]))), p) for p in inv["projects"]), key=lambda x: -len(x[0]))
@@ -288,11 +301,16 @@ class Scan:
                     text = read_text(path)
                 except OSError:
                     continue
+                if ftype == "js" and minified(text):  # a bundle or third-party SDK: its strings are not the client's code
+                    self.facts.setdefault("skipped_bundles", []).append(rp)
+                    continue
                 self.facts["files_scanned"][ftype] += 1
                 self.scan_text(rp, path, ftype, text)
 
     def scan_text(self, rp, path, ftype, text):
         clean = blank_comments(text, ftype)
+        if ftype in ("cs", "vb"):
+            self.used_in_code.update(r["id"] for r in self.rules if r["_used"] and r["_used"].search(clean))
         lines = None
         project = self.project_of(path)
         cl = COMMENT_LINE.get(ftype)
@@ -395,7 +413,7 @@ class Scan:
                         if not later:
                             continue
                         host = later.group(1)
-                    if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS:
+                    if SKIP_HOSTS.match(host) or host.startswith("{") or "$" in host or host.lower() in PLACEHOLDER_HOSTS or ("." not in host and len(host) < 3):
                         continue
                     self.endpoint(host, scheme, rp, project, i, line, ftype)
             if IP_RX.search(line) and not IP_SKIP_LINE.search(line):
@@ -571,7 +589,8 @@ class Scan:
             with ThreadPoolExecutor(max_workers=8) as ex:
                 list(ex.map(lambda kv: nuget_info(kv[0], sorted(kv[1]["versions"]), cache), list(allp.items())))
         for pid, a in sorted(allp.items(), key=lambda x: x[0].lower()):
-            m = next((e for e in pm if e["_rx"].match(pid)), None)
+            vers = [v for v in a["versions"] if v]  # an entry with "only_below" applies only when a version in use is below it
+            m = next((e for e in pm if e["_rx"].match(pid) and (not e.get("only_below") or any(ver_lt(v, e["only_below"]) for v in vers))), None)
             row = {"id": pid, "versions": sorted(v for v in a["versions"] if v), "projects": sorted(a["projects"]),
                    "status": m["status"] if m else "unknown", "note": m["note"] if m else "", "replacement": m["replacement"] if m else "",
                    "severity": m["sev"] if m else "Info"}
@@ -656,6 +675,8 @@ class Scan:
                 r["id"] = f"PKG-{slug(pid)}"
                 r["baseline"] = bool((m or {}).get("baseline")) or (row["status"] == "replace" and row["severity"] in ("Info", "Low"))
                 f = self.add(r, "(repository)", first, line, f"{pid} {', '.join(row['versions'])}", count=len(a["projects"]))
+                if (m or {}).get("rewrite"):  # the app's main framework: its successor is a different programming model (classify_apps.py: Refactor)
+                    f["rewrite"], f["projects"] = True, sorted(a["projects"])
                 f["package"] = pid
                 f["projects_affected"] = sorted(a["projects"])
             if row.get("vulnerable"):
@@ -764,7 +785,8 @@ class Scan:
                              "hint": b["hint"], "built_for": built_txt, "other_builds": ", ".join(others) or "none next to this DLL",
                              "nuget": nuget_txt, "runs_on_linux": linux, "action": action,
                              "source": "; ".join(source[:3]) or "no source in the inventoried repositories",
-                             "package_map": (m or {}).get("status", "")})
+                             "package_map": (m or {}).get("status", ""),
+                             "outside_repo": not os.path.normcase(full).startswith(os.path.normcase(os.path.abspath(self.root)) + os.sep)})
                 blocker = linux.startswith(("no", "unknown"))
                 if blocker:
                     r = self.synthetic("PKG-BINARY-REFERENCE", "packages", f"DLL {b['name']} has no build that runs on .NET 10 / Linux", "High",
@@ -776,6 +798,31 @@ class Scan:
                                  f"{b['name']} -> {b['hint']}")
                     f["package"] = b["name"]
         self.facts["binary_references"] = rows
+        self.outside_repo(rows)
+
+    def outside_repo(self, rows):
+        """Code the projects build against that lives outside this repository (HintPath DLLs or ProjectReferences into sibling
+        folders): its code, and any database access inside it, is not in this assessment or its estimate."""
+        out = defaultdict(list)
+        for b in rows:
+            if b.get("outside_repo"):
+                out[b["project"]].append(f"{b['assembly']} ({b['hint']})")
+        for p in self.inv["projects"]:
+            for pr in p.get("project_references", []):
+                if pr.replace("\\", "/").startswith("../"):
+                    out[p["path"]].append(f"{os.path.splitext(os.path.basename(pr))[0]} (project {pr})")
+        self.facts["outside_repo_references"] = {k: sorted(set(v)) for k, v in out.items()}
+        for proj, libs in sorted(out.items()):
+            libs = sorted(set(libs))
+            r = self.synthetic("DEP-OUTSIDE-REPO", "dependencies", f"Builds against {len(libs)} libraries outside this repository (not in this estimate)", "High",
+                               "Confirmed", "These libraries are referenced from folders outside the repository, so their code is not assessed here: "
+                               "their porting work, their Windows-only APIs and any database access inside them are missing from the findings and "
+                               "the estimate, and the project cannot move until they do.",
+                               "Assess the repositories that hold them (or ask the client for them) and port them first; until then quote this "
+                               "estimate with these libraries named as excluded.", "", "trivial", ["S3"],
+                               f"Where is the source of {', '.join(x.split(' (')[0] for x in libs[:6])}, and is it in scope?")
+            f = self.add(r, proj, proj, 1, "; ".join(libs)[:400], count=len(libs))
+            f["baseline"], f["libraries"] = True, libs  # adds no hours itself: it names what the hours leave out
 
     def find_line_any(self, relfile, needles):
         """Line of the first needle found (a PackageReference before a comment that mentions the package)."""
@@ -998,9 +1045,18 @@ class Scan:
     def result(self):
         using_rx = re.compile(r"^\s*(using\s+[\w.]+\s*;|Imports\s+[\w.]+)\s*$")
         rule_by_id = {r["id"]: r for r in self.rules}
+        static = {p["path"] for p in self.inv["projects"] if p.get("content_only")}
         for f in self.findings.values():
             r = rule_by_id.get(f["rule"])
+            if f["project"] in static and f["rule"] in ("WEB-WEBFORMS-UI", "WEB-WEBFORMS-AJAX"):
+                f["severity"], f["confidence"], f["effort_key"] = "Low", "Likely", "trivial"
+                f["note"] = "The project has no compiled code (no .cs / .vb): these pages are static files. Serve them as HTML from S3 + CloudFront."
+                continue
             if not r or any(p.startswith((r"^\s*using", r"^\s*Imports")) for p in r["pat"]):
+                continue
+            if r.get("_used") and f["rule"] not in self.used_in_code and all(os.path.splitext(x)[1].lower() in CONFIG_EXT for x in f["files"]):
+                f["severity"], f["confidence"], f["effort_key"] = "Low", "Likely", "trivial"
+                f["note"] = "Declared in configuration only: no C# / VB code uses it. Remove the section and confirm the build and a smoke test."
                 continue
             if f["evidence"] and all(using_rx.match(e["text"]) for e in f["evidence"]) and f["occurrences"] == len(f["evidence"]):
                 f["severity"], f["confidence"], f["effort_key"] = "Low", "Likely", "trivial"

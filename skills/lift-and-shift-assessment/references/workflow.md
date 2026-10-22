@@ -32,6 +32,7 @@ Run from the workspace folder. `python` is `py` on Windows. Every script prints 
 
 - `scan_repo.py --all [--offline]` reads each repository: line rules for what changes on AWS, packages, network endpoints, scheduled jobs.
 - `map_infra.py --servers <DevOps list.xlsx> --all` imports the server list (names, environments, operating systems, hypervisors, installed applications) first and maps servers and services each project connects to, the config settings holding addresses, paths and credentials, and the network destinations.
+  - Host-name patterns that belong to one client go in the workspace's `assessment.json` as `server_roles_extra` (same fields as a role in `scripts/data/server_roles.json`), not in the skill.
 - Only the findings that serve a lift-and-shift matter here (the rule ids named in the intake `when_found` lists and the counts in solutions.py). Package-health and security findings are not part of this assessment.
 
 ## 6: solutions and third party

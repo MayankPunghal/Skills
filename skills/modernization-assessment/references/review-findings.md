@@ -38,6 +38,9 @@ Scanners find patterns; the reviewer decides what they mean. Review is required 
      "why": "...", "fix": "...", "alt": "", "effort_key": "small-change"}]
    ```
 
+   - A manual finding's id is `<repo>:<rule>` (`<repo>:<rule>:2` and so on for a second one with the same rule). Give it a verdict in `assessment/reviews/<repo>.json` keyed by that id, by `<repo>:<rule>`, or by the rule id alone. The positional id older runs used (`<repo>:<rule>:<n>`) still works.
+   - Every manual finding is priced in the phased estimate (`estimate_phases.py`, items M1, M2 ...) from its `effort_key` (`data/estimation.json` finding hours, AI-assisted). An `extra_items` entry in `estimate-inputs.json` that names the finding (`"finding": "<id or rule>"`) replaces that price instead of adding to it.
+
 6. **Rerun:** `classify_apps.py`, then `estimate_effort.py`, then `build_report.py`. Rescanning never loses reviews, because verdicts are keyed by finding ID.
 
 ## Judgment calls the scanner leaves to you

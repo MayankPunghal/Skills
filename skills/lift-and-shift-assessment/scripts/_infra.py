@@ -77,7 +77,7 @@ def plausible_host(h, port):
         return False
     if port:
         return not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)  # a bare name with a port; random-looking mixes are keys
-    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (an underscore name needs a trailing number: sig_cruise_itineraries is a key, not a host); never camel-case mixes with digits
+    # bare names without a port: SBSQL01, Redis-Production, dev_redis_1 (an underscore name needs a trailing number: sig_order_items is a key, not a host); never camel-case mixes with digits
     return bool(re.fullmatch(r"[A-Za-z][A-Za-z]*[-_]?\d{1,3}", h) or re.fullmatch(r"[A-Za-z0-9]+(-[A-Za-z0-9]+)+", h) or re.fullmatch(r"[A-Za-z0-9]+(_[A-Za-z0-9]+)*_\d{1,3}", h)) and not re.search(r"[a-z][A-Z]\d|\d[A-Za-z]+\d", h)
 
 

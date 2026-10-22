@@ -23,6 +23,10 @@ It does what a senior business analyst, architect and technical writer would do,
 8. **Package**: one zip with a single README that any agent can follow to install the project skill.
 
 
+## Changed in 1.16.3
+
+- **T-SQL in other file extensions (sql_parse.py).** Database script repositories often save procedures as `.txt`, `.prc`, `.tab`, `.viw`, `.fnc`, `.trg` or `.udf`. These are now read when their start looks like T-SQL (UTF-16 included); prose files are not. Files over 2 MB (data loads) are left out and listed under `skipped` in the output. New options: `--ext`, `--sniff`, `--max-bytes`.
+
 ## Changed in 1.16.2
 
 - **No false internal hosts from backslashes (network_endpoints.py).** A UNC path (`\\server\share`) must start a value. A `\u017F` inside a regex character range, a drive path such as `C:\temp` and sample paths in publish scripts are no longer reported as servers named `u017F`, `temp` or `full`.

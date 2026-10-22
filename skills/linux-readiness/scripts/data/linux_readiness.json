@@ -5451,6 +5451,7 @@
      ]
     }
    ],
+   "context": "ApartmentState|Application\\.(Run|EnableVisualStyles)|System\\.Windows|ComImport|ComVisible|Activator\\.CreateInstance|Marshal\\.|GetTypeFromProgID|\\bInterop\\.",
    "automated": true
   },
   {
@@ -6892,6 +6893,7 @@
      ]
     }
    ],
+   "unless_in_line": "<appSettings\\b[^>]*\\bfile\\s*=|\\bconfigSource\\s*=",
    "automated": true
   },
   {

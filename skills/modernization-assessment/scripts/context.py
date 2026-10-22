@@ -63,6 +63,10 @@ def main():
     print(f"ASSESSMENT TYPE: {ASSESSMENT_TYPES.get(cfg.get('assessment_type'), 'not chosen yet (intake questionnaire pending)')}")
     print(f"REPOS: {len(repos)} in scope (.NET) · scanned {steps['scan']} · graphed {steps['graph']} · server dependencies mapped {steps['infra']}"
           + (f" · {len(out_of_scope)} out of scope (no .NET project, listed in the inventory workbook)" if out_of_scope else ""))
+    if out_of_scope and not repos:
+        print("SCOPE: no repository has a .NET project. This skill assesses .NET code, so the scan, graph, 7R and estimate steps do not apply. "
+              "The report states the scope with evidence (section 2.1: file types, artefacts, SQL objects), and verify_report.py accepts it. "
+              "Database scripts: sql_estate.py. Findings you record by hand: assessment/reviews/<repo>.manual.json (references/review-findings.md).")
     fs, unreviewed, needs = [], 0, 0
     for r in repos:
         inv = F.load_inventory(root, r)
@@ -117,6 +121,18 @@ def main():
                "(references/intake.md); the answers choose the assessment type")
     elif pending_discover:
         nxt = "discover_estate.py"
+    elif not repos and out_of_scope:  # no .NET project anywhere: state the scope on evidence instead of the .NET pipeline
+        sql_todo = [r for r in out_of_scope if not os.path.exists(os.path.join(OUT, "sql", r, "db-inventory.json"))
+                    and ((F.load_inventory(root, r) or {}).get("artefacts") or {}).get("sql")]
+        if sql_todo:
+            nxt = f"sql_estate.py   ({len(sql_todo)} repositories with SQL scripts and no .NET project: database inventory)"
+        elif todo:
+            nxt = (f"write narratives: {', '.join(sorted(todo))} (references/write-report.md); state the scope first. Optional: linux_readiness.py <repo> "
+                   "for a Linux check, and what you find by hand in assessment/reviews/<repo>.manual.json")
+        elif not reports:
+            nxt = "build_report.py"
+        else:
+            nxt = "build_html_report.py, build_summary.py and build_tracker.py, then verify_report.py"
     elif atf_todo and pending_scan:
         nxt = f"atf_scan.py   (AWS Transform codebase scanner, RadNet then RaSQL: {len(atf_todo)} repositories without atf.json; references/atf-and-phased-estimate.md)"
     elif pending_scan:

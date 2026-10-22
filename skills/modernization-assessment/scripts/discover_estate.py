@@ -390,6 +390,8 @@ def inventory_repo(name, repo_root, cfg):
         p["complexity"] = project_metrics(b.get("cx_files", []))
         p["languages"] = sorted(k for k in b["loc"] if k in ("C#", "VB.NET", "F#"))
         p["type"] = classify(p, b["ext"], {"servicebase": b["servicebase"], "hosted": b["hosted"]})
+        # no compiled code at all (pages, scripts, images only): static content, hosted as files, nothing to port
+        p["content_only"] = p["type"] != "database" and p.get("ext") != ".sqlproj" and not p["loc_handwritten"] and             not any(b["ext"].get(x) for x in (".cs", ".vb", ".fs")) and bool(p["files_by_ext"])
         p["deployable"] = p["type"] in DEPLOYABLE
     # Web Site projects: folders with web.config + pages but no project file owning them
     websites = []

@@ -24,7 +24,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-from _common import skip_dir, OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
+from _common import CODE_CREDENTIALS, skip_dir, OUT, data, load_config, load_state, read_json, read_text, utf8_stdout
 import _findings as F
 import build_report as BR
 
@@ -50,9 +50,14 @@ def secret_values(inv_root):
                     for mk in root.iter("machineKey"):
                         vals.update(v for k, v in mk.attrib.items() if k.lower().endswith("key"))
                 elif low.endswith((".cs", ".vb")) and os.path.getsize(p) < 2_000_000:
-                    for m in LITERAL.finditer(read_text(p)):  # a value equal to its own constant name (const string FooToken = "FooToken") is a key name, not a secret
+                    code = read_text(p)
+                    for m in LITERAL.finditer(code):  # a value equal to its own constant name (const string FooToken = "FooToken") is a key name, not a secret
                         if m.group(3).lower() != re.match(r"\w+", m.group(0)).group(0).lower():
                             vals.add(m.group(3))
+                    for rx in CODE_CREDENTIALS:  # GetBytes("user:password"), "Basic <base64>", NetworkCredential(u, "p"), ...
+                        for m in rx.finditer(code):
+                            vals.add(m.group(2))
+                            vals.update(x for x in m.group(2).split(":")[1:] if len(x) >= 6)
                 elif re.search(r"(?i)^(?!launchsettings)[\w.-]*(settings|secrets)[\w.-]*\.json$", low):
                     vals.update(re.findall(r'(?i)"[^"]*(?:password|secret|token|apikey|key)[^"]*"\s*:\s*"([^"]{6,})"', read_text(p)))
                     vals.update(m.strip() for m in re.findall(r"(?i)(?:password|pwd)\s*=\s*([^;\"]+)", read_text(p)))
@@ -95,7 +100,11 @@ def main():
         dbi = (read_json(sp, {}) or {}).get("db_inventory") or {}
         if dbi.get("note"):
             gaps0.append(f"{r}: SQL not parsed ({dbi['note'][:80]})")
-    results.append(("every repository analysed", bool(repos) and not gaps0, f"{len(repos)} repositories" + (f"; {'; '.join(gaps0[:6])}" if gaps0 else "")))
+    out_scope = sorted(r for r, v in st["repos"].items() if v.get("scope") == "out")
+    no_code = not repos and bool(out_scope)  # every repository holds no .NET project: a valid result, stated in section 2.1
+    results.append(("every repository analysed", (bool(repos) or no_code) and not gaps0,
+                    (f"no .NET project in scope ({len(out_scope)} repositories with none: scope stated in section 2.1)" if no_code else f"{len(repos)} repositories")
+                    + (f"; {'; '.join(gaps0[:6])}" if gaps0 else "")))
     # 1 evidence
     bad, missing = [], []
     cache = {}
@@ -164,7 +173,7 @@ def main():
     for inv in invs.values():
         vals |= secret_values(inv["root"])
     htmls = glob.glob(os.path.join(OUT, "report", "*.html"))
-    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))         + glob.glob(os.path.join(OUT, "report", "*.xlsx"))         + [p for p in glob.glob(os.path.join(OUT, "reference", "**", "*"), recursive=True) if os.path.isfile(p)]
+    outputs = reports + htmls + glob.glob(os.path.join(OUT, "report", "*.csv")) + glob.glob(os.path.join(OUT, "report", "*.json")) + glob.glob(os.path.join(OUT, "findings", "*.json"))         + glob.glob(os.path.join(OUT, "report", "*.xlsx"))         + [p for p in glob.glob(os.path.join(OUT, "reference", "**", "*"), recursive=True) if os.path.isfile(p)]         + [p for p in glob.glob(os.path.join(OUT, "linux", "**", "*"), recursive=True) if os.path.isfile(p) and p.lower().endswith((".md", ".html", ".json", ".csv"))]
     leaks = []
     def text_of(p):  # an .xlsx is a zip of XML parts: check the cell text, with XML escapes undone
         if p.lower().endswith(".xlsx"):
@@ -185,8 +194,9 @@ def main():
                 leaks.append(os.path.basename(p))
                 break
     url_cred = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:(?!\*\*\*)[^\s/@\"'<>]+@")  # scheme://user:password@host
-    for p in outputs:
-        if url_cred.search(text_of(p)):
+    for p in outputs:  # credential shapes that must never reach an output unmasked, whatever the extractor found
+        t = text_of(p)
+        if url_cred.search(t) or any(rx.search(t) for rx in CODE_CREDENTIALS):
             leaks.append(os.path.basename(p))
     results.append(("no secret values in outputs", not leaks, f"checked {len(vals)} secret values from client config/code against {len(outputs)} files" + (f"; LEAK in {', '.join(sorted(set(leaks)))}" if leaks else "")))
     # 7 structure
@@ -197,7 +207,8 @@ def main():
     twin = os.path.splitext(main[0])[0] + ".html" if main else ""
     stale = os.path.exists(twin) and os.path.getmtime(twin) < os.path.getmtime(main[0]) - 1
     hours = est.get("hours") if est.get("basis") == "hours" else None
-    ok7 = not absent and bool(est.get("totals", {}).get("likely_days") or hours) and os.path.exists(oq) and bool(htmls) and not stale
+    estimated = "totals" in est or bool(hours) or no_code  # 0 h is a valid estimate; with no .NET code there is nothing to estimate
+    ok7 = not absent and estimated and os.path.exists(oq) and bool(htmls) and not stale
     results.append(("report structure", ok7, f"missing sections: {', '.join(absent) or 'none'}; estimate: {'yes' if est else 'no'}; open questions: {'yes' if os.path.exists(oq) else 'no'}; "
                     f"HTML report: {'stale (rerun build_html_report.py)' if stale else ('yes' if htmls else 'missing (run build_html_report.py)')}"))
     # 8 dependencies: project interdependencies and workflow tracing
@@ -210,7 +221,7 @@ def main():
         sec45 = report.split("### 4.5 ", 1)[1].split("### 4.6 ", 1)[0] if "### 4.5 " in report and "### 4.6 " in report else ""
         sec46 = report.split("### 4.6 ", 1)[1].split("### 4.7 ", 1)[0] if "### 4.6 " in report and "### 4.7 " in report else ""
     miss_proj = [p["name"] for inv in invs.values() for p in inv["projects"] if p["name"] not in sec45]
-    apps = [x["name"] for x in cls["applications"] if x.get("r7") != "Retire"]
+    apps = [x["name"] for x in cls["applications"] if x.get("r7") != "Retire" and not x.get("content_only")]  # static files have no workflows
     npath = os.path.join(OUT, "narrative", "dependencies.md")
     ntext = read_text(npath) if os.path.exists(npath) else ""
     no_wf = [] if is_lift else [n for n in apps if "#### " + n + " " not in sec46 and n not in ntext]

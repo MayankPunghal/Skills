@@ -6,7 +6,7 @@ shown beside the estimate and is never part of its total.
 import os
 import re
 
-from _common import skip_dir, SOURCE_DIR_SKIP, data, read_text, rel
+from _common import skip_dir, SOURCE_DIR_SKIP, data, mask, read_text, rel
 
 SOURCE_EXT = (".cs", ".vb", ".config", ".cshtml", ".aspx")
 # Comments are blanked (line numbers kept); string literals are left alone so a // inside a URL is not read as a comment.
@@ -45,7 +45,7 @@ def scan_repo(root, inv):
         files = hits[it["id"]]
         if files:
             out.append({"id": it["id"], "title": it["title"], "aws": it["aws"], "why": it["why"], "hours": it["hours"], "per_file": it["per_file"],
-                        "count": len(files), "files": [{"file": f, "line": v[0], "text": v[1]} for f, v in sorted(files.items())][:5]})
+                        "count": len(files), "files": [{"file": f, "line": v[0], "text": mask(v[1])} for f, v in sorted(files.items())][:5]})
     return out
 
 

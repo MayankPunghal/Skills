@@ -15,7 +15,9 @@ Order: shared class libraries first, simplest first (they unblock the applicatio
 applications in the estimate's timeline order.
 For each package it writes a short stream table (who does what, hours) and the clean-up grouped by playbook; every
 finding with its owner, playbook and files stays in assessment/execution-plan.json. Also: data access (raw SQL,
-procedure calls, result-set procedures) and the AWS managed-service swaps.
+procedure calls, result-set procedures), the AWS managed-service swaps and the work found in review (estimate-inputs.json
+"extra_items" per repository: stage A to the database stream, B to Claude, S to the AWS swaps). A repository with no
+database code gets no database stream, whatever the scenario says.
 Writes assessment/execution-plan.json, assessment/report/execution-plan.md and its .html twin.
 Defaults: assessment.json "execution": {"port_engine": "devtx", "db_tool": "db-agent" for dual else "claude"}.
 """
@@ -128,9 +130,10 @@ def main():
                                                      order.index(p["name"]) if p["name"] in order else 999, p["repo"]))
     by_stream = Counter()
     for p in pk:
-        if p.get("mode") in ("retire", "repurchase"):
+        if p.get("mode") in ("retire", "repurchase", "static"):
             plan["packages"].append({"name": p["name"], "repo": p["repo"], "kind": p["kind"], "r7": p.get("r7"), "mode": p.get("mode"),
-                                     "likely_hours": p.get("likely_hours"), "streams": {}, "items": [], "note": f"{p.get('mode')}: no code work"})
+                                     "likely_hours": p.get("likely_hours"), "streams": {}, "items": [],
+                                     "note": "static content: publish to S3 + CloudFront, no port" if p.get("mode") == "static" else f"{p.get('mode')}: no code work"})
             continue
         names = [re.match(r"Port (\S+) ", c.get("item", "")).group(1) for c in p.get("conversion", []) if re.match(r"Port (\S+) ", c.get("item", ""))]
         modern = bool(names) and all(mod.get(n) for n in names)
@@ -157,7 +160,8 @@ def main():
         rsq = inv.get("raw_sql") or {}
         pc = inv.get("procedure_calls") or []
         plan.setdefault("data_access", []).append({
-            "repo": repo, "database_option": (d or {}).get("selected", "none"), "tool": DB_TOOLS[db_tool] if d and d.get("selected") != "none" else None,
+            "repo": repo, "database_option": (d or {}).get("selected") or f"no database code here (scenario {db_sel})" + (
+                "; data access may sit in the libraries outside this repository" if (read_json(os.path.join(root, OUT, "scan", f"{repo}.json"), {}) or {}).get("outside_repo_references") else ""), "tool": DB_TOOLS[db_tool] if d and d.get("selected") != "none" else None,
             "procedures": len(pc), "procedure_call_sites": ((rsq.get("stored_procedures") or {}).get("call_sites")),
             "result_set_procedures": sum(1 for x in pc if set(x.get("apis") or []) & {"ExecuteReader", "Fill", "DataAdapter", "ExecuteXmlReader"}),
             "multi_result_procedures": sum(1 for x in pc if x.get("multi_result")),
@@ -169,12 +173,21 @@ def main():
     for d in est.get("databases", []):
         o = (d.get("options") or {}).get(d.get("selected")) or {}
         by_stream["db"] += o.get("likely_hours") or 0
+    extra_stream = {"A": "db", "B": "claude", "S": "aws-native"}
+    for repo in sorted({p["repo"] for p in pk}):  # work found in review that no quantity covers (estimate_phases.py prices it too)
+        for x in ((read_json(os.path.join(root, OUT, "effort", repo, "estimate-inputs.json"), {}) or {}).get("extra_items") or {}).get("value") or []:
+            lo, hi = float(x.get("low") or 0), float(x.get("high") or 0)
+            k = extra_stream.get(str(x.get("stage", "B")).upper(), "claude")
+            by_stream[k] += (lo + hi) / 2
+            plan.setdefault("extra_items", []).append({"repo": repo, "id": x.get("id"), "stage": x.get("stage", "B"), "stream": k,
+                                                       "label": x.get("label", ""), "hours": [lo, hi], "basis": x.get("basis", "")})
     for o in est.get("optional", []):
         if o.get("in_estimate"):  # AWS managed-service swaps chosen at intake: their own work, not inside any work package
             by_stream["aws-native"] += o.get("likely_hours") or 0
     plan["hours_by_stream"] = {k: round(v) for k, v in by_stream.most_common()}
     json.dump(plan, open(os.path.join(root, OUT, "execution-plan.json"), "w", encoding="utf-8"), indent=1)
 
+    has_db = any(d.get("selected") != "none" for d in est.get("databases", []))
     who = {"prepare": "Claude", "engine": SHORT[engine], "linux": "Claude (Linux readiness rules)", "claude": "Claude",
            "db": DB_TOOLS[db_tool], "aws-native": "Claude", "outside": "DB team / DevOps / client"}
     L = [f"# Execution plan: {cfg.get('client', 'Client')}", "",
@@ -182,7 +195,8 @@ def main():
          "engineers run them, approve plans, review and sign off. No hand-coding is planned.", "",
          f"- **Porting engine (one for every project):** {ENGINES[engine]}",
          f"- **Clean-up:** Claude, playbook by playbook, for what {SHORT[engine]} does not cover",
-         f"- **Data access:** {DB_TOOLS[db_tool]} (database option: {db_sel})",
+         (f"- **Data access:** {DB_TOOLS[db_tool]} (database option: {db_sel})" if has_db else
+          f"- **Data access:** no database code found in the assessed code, so no database stream (scenario: {db_sel})"),
          "- **Already on modern .NET:** Linux readiness check only, no engine run",
          f"- **AWS managed services:** {'in scope' if in_scope else 'listed, not in scope (intake aws_native)'}",
          "- **Order:** shared class libraries first, simplest first; then the applications in the timeline order", "",
@@ -226,6 +240,10 @@ def main():
         for d in plan["data_access"]:
             L.append(f"| {d['repo']} | {d['database_option']} | {d['tool'] or '-'} | {d['procedures']} | {d['procedure_call_sites'] or 0} | "
                      f"{d['result_set_procedures']} | {d['multi_result_procedures']} | {d['raw_sql_statements'] or 0} | {d['dynamic_sql'] or 0} |")
+    if plan.get("extra_items"):
+        L += ["", "## Work found in review (estimate-inputs.json extra_items)", "", "| Repository | Id | Stream | Work | Hours | Basis |", "|---|---|---|---|---|---|"]
+        for x in plan["extra_items"]:
+            L.append(f"| {x['repo']} | {x['id']} | {who[x['stream']]} | {x['label']} | {x['hours'][0]:g}-{x['hours'][1]:g} | {x['basis']} |")
     if plan.get("aws_native"):
         L += ["", "## AWS managed-service swaps (Claude)", "", "| Repository | Service | AWS target | Hours | Where |", "|---|---|---|---|---|"]
         for s in plan["aws_native"]:

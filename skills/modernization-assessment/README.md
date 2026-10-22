@@ -177,6 +177,20 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.3.1
+
+Fixes from five field runs (a static content repository, a Bot Framework v3 app, two class-library repositories and a SQL scripts repository). `scripts/selftest.py` now rebuilds each case and fails if it comes back.
+- **Static content.** A web project with no C# is Replatform to Amazon S3 + CloudFront, priced as publishing only (item B13, 1.5-4 h); nothing is ported and no database stage is added. Its Web Forms UI findings drop to Low.
+- **Framework rewrites.** Bot Builder / Connector v3 is a rewrite package (`rewrite`, `only_below` in the package map): the application is drafted as Refactor, not Replatform.
+- **Libraries outside the repository.** `..\` project references and HintPaths outside the repository become a High `DEP-OUTSIDE-REPO` finding, lower the confidence, and are listed under "Not in this estimate".
+- **No-.NET estates.** A repository with only SQL scripts is out of scope, but `sql_estate.py` inventories its objects and the server features it uses (xp_cmdshell, linked servers, SQL Agent ...), and T-SQL in `.txt`/`.prc` files is read. An estate with no .NET gets a report, summary and tracker that say so; `verify_report.py`, `raw_sql.py`, `build_tracker.py`, `atf_scan.py` and `context.py` handle it.
+- **Manual findings count.** Each `.manual.json` finding gets a stable id (`<repo>:<rule>`), takes a verdict by that id or its rule id, and is priced in the phased estimate (items M1 ...).
+- **The claude port engine** is accepted by `estimate_phases.py` (it was silently replaced); a line whose quantities are all 0 is left out; the database stage needs data-access code.
+- **Fewer false findings.** Minified bundles are not scanned; hosts shorter than 3 characters are ignored; CFG-HARDCODED-SECRET skips DOM ids and key names; AppFabric only in config is Low; ClientServices membership providers are not AUTH-FORMS-MEMBERSHIP; settings repeated in Web.config transforms count once.
+- **Secrets.** Credentials written in code (`GetBytes("user:pass")`, `"Basic <base64>"`, `NetworkCredential`, `AuthenticationHeaderValue`) are masked everywhere, including `assessment/linux/`, and `verify_report.py` fails if one leaks.
+- **Client-neutral defaults.** Client-specific server name patterns move to the workspace's `assessment.json` (`server_roles_extra`); the company-domain guess reads only the folders nearest the repositories, not the workstation path.
+- **Branch check without GitLab** falls back to the local clone's history. `linux_readiness.py` accepts a repository name. `decisions.json` list fields accept a single string. `open_questions_extra` in `assessment.json` adds hand-written open questions.
+
 ## Changed in 3.3.0
 
 - **A report a .NET developer can act on.** The HTML screens are regrouped: Start here (Overview with "What to do first", Migration order), Projects (Projects & 7R, Dependencies, Code graph), What to change (Work items, Sign-in & access, Packages, Linux, .NET modernization, integrations, data, hosting, delivery), Plan, Reference. The scans and the data are unchanged; only the display is.

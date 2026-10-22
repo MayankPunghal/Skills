@@ -13,6 +13,8 @@
    limits, StateServer session, globalization, system.net, modules) and Windows-only code: must hit the expected checks;
    an ASP.NET Core app's web.config must not count as modules and handlers.
 6. Catalogue consistency: every rule's automated flag matches its patterns' file types, and every cited source exists.
+7. Boilerplate that is not a finding: <appSettings file=> is not a log path (a log4net file target is), [STAThread] on a
+   console Main with no COM or UI is not reported (STA with COM is), and credentials written in code are masked.
 Run it after every change to scripts/data/linux_readiness.json or linux_readiness.py. Exit 1 on any failure.
 Fixtures go to a temporary folder (deleted unless --keep). Standard library only.
 """
@@ -346,6 +348,59 @@ public class AuditModule : IHttpModule
 """,
 }
 
+# Boilerplate that looks like a hit but is not (field reports): a console Main with [STAThread] and no COM, and an
+# <appSettings file=> include. Com/Program.cs (STA plus COM) and Job/log4net.config (a real log file) must still hit.
+# The credentials in Job/Client.cs must never reach the report.
+NOISE = {
+    "Tool/Program.cs": """using System;
+
+static class Program
+{
+    [STAThread]
+    static void Main(string[] args) { Console.WriteLine("batch run"); }
+}
+""",
+    "Tool/App.config": """<?xml version="1.0"?>
+<configuration>
+  <appSettings file="c:\\cfg\\common.config"><add key="Mode" value="batch" /></appSettings>
+</configuration>
+""",
+    "Com/Program.cs": """using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+static class Program
+{
+    static void Main()
+    {
+        var t = new Thread(Work);
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+    }
+    [ComImport, Guid("00000000-0000-0000-0000-000000000001")] interface IShell { }
+    static void Work() { }
+}
+""",
+    "Job/log4net.config": """<log4net>
+  <appender name="File" type="log4net.Appender.RollingFileAppender">
+    <file value="c:\\logs\\job.log" />
+  </appender>
+</log4net>
+""",
+    "Job/Client.cs": """using System;
+using System.Net;
+using System.Text;
+
+class Client
+{
+    string Basic() => Convert.ToBase64String(Encoding.ASCII.GetBytes("apiuser:S3cr3tPw!x"));
+    string Header() => "Basic dXNlcjpwYXNzd29yZA==";
+    ICredentials Creds() => new NetworkCredential("svc", "Hunter22pw");
+    string Doc() => "Basic authentication is used";
+}
+""",
+}
+
 
 def write(root, files):
     for rel, text in files.items():
@@ -461,6 +516,26 @@ def main():
     check(not bad, f"every rule's automated flag matches its patterns' file types (wrong: {bad or 'none'})")
     unknown = [r["id"] for r in cat["rules"] for s in r["sources"] if s != "K" and s not in cat["sources"]]
     check(not unknown, f"every cited source exists (unknown: {unknown or 'none'})")
+
+    # Boilerplate that is not what a check is about (field reports): a settings include is not a log path, [STAThread] on
+    # a console Main with no COM is harmless; a real log4net file target and STA with COM still hit
+    noise = os.path.join(base, "boilerplate")
+    shutil.rmtree(noise, ignore_errors=True)
+    write(noise, NOISE)
+    run(noise, "--out", os.path.join(out, "noise"))
+    res = json.load(open(os.path.join(out, "noise", "linux-readiness.json"), encoding="utf-8"))
+    by = {}
+    for h in res["hits"]:
+        by.setdefault(h["rule"], set()).add(h["file"])
+    check(by.get("LNX-CFG-LOG-PATH") == {"Job/log4net.config"}, f"LNX-CFG-LOG-PATH hits the log4net target only, not <appSettings file=> (hit: {sorted(by.get('LNX-CFG-LOG-PATH', []))})")
+    check(by.get("LNX-API-STA-THREADS") == {"Com/Program.cs"}, f"LNX-API-STA-THREADS needs COM or UI nearby (hit: {sorted(by.get('LNX-API-STA-THREADS', []))})")
+    sys.path.insert(0, HERE)
+    import linux_readiness
+    code_text = NOISE["Job/Client.cs"]
+    masked = linux_readiness.mask(code_text)
+    leaked = [v for v in ("S3cr3tPw!x", "dXNlcjpwYXNzd29yZA==", "Hunter22pw") if v in masked]
+    check(not leaked, f"credentials written in code (basic-auth GetBytes, Basic header, NetworkCredential) are masked (leaks: {leaked or 'none'})")
+    check("Basic authentication is used" in masked, "plain prose that mentions Basic is not masked")
 
     code, msg = run("--explain", "LNX-CTR-USER-MISSING")
     check(code == 0 and "Fix:" in msg, "--explain describes a check")

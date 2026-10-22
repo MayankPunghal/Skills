@@ -2,7 +2,7 @@
 name: linux-readiness
 description: Checks a .NET code base for everything that works on Windows but breaks or behaves differently in a Linux container on AWS (ECS, EKS, Fargate), and says how to fix each hit. Covers file name case, paths, time zones, ICU culture, encodings, shell calls, environment, DPAPI and certificates, Windows auth and integrated security, SQL Server and ODBC, registry, WMI, COM, System.Drawing, IIS hosting, Dockerfiles, secrets and CI. Works on .NET Framework code before a port, ported code and apps already on .NET 5+. Read-only and masks secrets; writes a JSON, Markdown and HTML report, gates a build with waivers, and has a Dockerfile-only mode. Use when the user asks whether a .NET app is ready for Linux, Docker, containers, ECS, EKS or Fargate, what will break on Linux, to check a .NET Dockerfile, to explain a Linux readiness check, or to gate a pipeline on Linux readiness.
 metadata:
-  version: 1.0.1
+  version: 1.0.2
 user-invocable: true
 argument-hint: "[help · scan · gate · dockerfile · explain · waivers · selftest] [folder | Dockerfile | LNX-ID]"
 allowed-tools:
@@ -22,6 +22,7 @@ One scanner, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/lin
 - Fix guide by area
 - Related reading
 - Relation to the other skills
+- Changed in 1.0.2
 - Changed in 1.0.1
 - Maintaining this skill
 
@@ -44,7 +45,7 @@ Bare `/linux-readiness` (or `help`): ask for, or detect, the folder; say whether
 | `dockerfile <folder\|Dockerfile>` | `linux_readiness.py <folder-or-Dockerfile> --dockerfile-only --out <dir> [--gate]` (Dockerfile, entrypoint and `.dockerignore` checks only; writes `linux-readiness-dockerfile.*`) | "Check my Dockerfile for the .NET app" |
 | `explain <LNX-ID\|prefix\|words>` | `linux_readiness.py --explain <query>`: level, what breaks, regex, filters, fix and source URL; a prefix (`LNX-CTR`) or words (`time zone`) list matching checks; no query lists all | "Why did LNX-CTR-USER-MISSING fire?" |
 | `waivers` | Write or review `waivers.json` (format below), then rerun the scan with `--waivers` | "Accept the registry read until sprint 3" |
-| `selftest` | `selftest.py`: clean .NET 10 fixture must pass, legacy fixture must fail with secrets masked, waiver rules hold, an ECS-wiring fixture hits its checks, and no rule is silently switched off | after changing a rule |
+| `selftest` | `selftest.py`: clean .NET 10 fixture must pass, legacy fixture must fail with secrets masked, waiver rules hold, an ECS-wiring fixture hits its checks, boilerplate that is not a finding stays quiet (`<appSettings file=>`, `[STAThread]` with no COM), credentials in code are masked, and no rule is silently switched off | after changing a rule |
 
 Scripts (run them, do not read them):
 
@@ -185,6 +186,12 @@ Copied from the dotnet-modernization skill's playbooks; read the one for the are
 - **modernization-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits of checks its own rules do not cover become costed findings.
 - **dotnet-modernization** runs it as the `linux` gate of `verify.py` after a port and fixes hits by playbook.
 - The scanner and catalogue exist **once**, here. The other two skills have a thin `scripts/linux_readiness.py` that loads this skill (from `LINUX_READINESS_DIR`, a sibling `linux-readiness` folder, or `~/.claude/skills` / `~/.agents/skills`), so the installer brings this skill with them.
+
+## Changed in 1.0.2
+
+- **Credentials written in code are masked.** `GetBytes("user:password")` for a Basic header, `"Basic <base64>"` / `"Bearer <token>"`, `new NetworkCredential("user", "password")` and `AuthenticationHeaderValue("Basic", "...")` show `***` in every report; prose such as "Basic authentication" is left alone.
+- **Fewer false hits.** `LNX-CFG-LOG-PATH` skips `<appSettings file=...>` and `configSource=` includes (a log4net or NLog file target still hits). `LNX-API-STA-THREADS` needs COM, WinForms/WPF or an STA apartment nearby: `[STAThread]` on a console `Main` alone is not reported.
+- The scan summary says "automated checks hit". `selftest.py` gained section 7 for all of the above.
 
 ## Changed in 1.0.1
 

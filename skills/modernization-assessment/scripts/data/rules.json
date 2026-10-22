@@ -1859,6 +1859,7 @@
    "why": "Forms auth tickets and Membership providers do not exist in ASP.NET Core; password hashes need a migration strategy.",
    "fix": "Move to ASP.NET Core cookie authentication + ASP.NET Core Identity (or an external IdP); migrate users with a rehash-on-login strategy.",
    "alt": "ASP.NET Core Identity / Cognito",
+   "not": "ClientAuthenticationMembershipProvider|ClientRoleProvider|ClientServices\\.Providers|ClientWindowsAuthenticationMembershipProvider",
    "effort": "medium-change",
    "baseline": true,
    "refs": [
@@ -2247,7 +2248,7 @@
    "pat": [
     "(?i)\\b\\w*(password|passwd|pwd|secret|apikey|api_key|accesskey|access_key|clientsecret|client_secret|token)\\w*\\s*(=|:)\\s*@?\"[^\"\\s]{6,}\""
    ],
-   "not": "(?i)(\"\\s*\\+|string\\.Empty|placeholder|example|\\{0\\}|Resources\\.|ErrorMessage|DisplayName|\\[Display|PasswordChar|Text\\s*=\\s*\"|Label|Required|\"(your[-_ ]|<|\\{|enter|change|todo|xxx|sample|dummy|placeholder|insert|replace))",
+   "not": "(?i)(\"\\s*\\+|string\\.Empty|placeholder|example|\\{0\\}|Resources\\.|ErrorMessage|DisplayName|\\[Display|PasswordChar|Text\\s*=\\s*\"|Label|Required|\"(your[-_ ]|<|\\{|enter|change|todo|xxx|sample|dummy|placeholder|insert|replace)|[=:]\\s*@?\"(?:[#.][\\w-]+|[a-z_-]*(?:pass|pwd|secret|token|key)[a-z_-]*)\")",
    "why": "Credentials in source code travel with every clone and cannot be rotated.",
    "fix": "Move to AWS Secrets Manager; rotate the exposed credential.",
    "alt": "AWS Secrets Manager",
@@ -4984,6 +4985,7 @@
    "why": "AppFabric Caching is a Windows Server service, and its client package targets .NET Framework (verify the TFMs of the version in use). The cache has to move with the code.",
    "fix": "Move the cache to Amazon ElastiCache (Valkey or Redis OSS) and rewrite the cache calls on StackExchange.Redis (verify the engine and client version).",
    "alt": "ElastiCache with StackExchange.Redis",
+   "used_in_code": "\\bDataCache\\w*|Microsoft\\.ApplicationServer\\.Caching\\.\\w+\\s*[(.]",
    "effort": "medium-change",
    "refs": [
     "S33"

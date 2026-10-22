@@ -73,12 +73,17 @@ py -X utf8 scripts/estimate_phases.py [--repo X] [--compare '{"earlier estimate"
   | Phase | Who | Items |
   |---|---|---|
   | P1 Prepare: baseline build, golden request/response files, page smoke tests | Claude | B2 |
+  | P1s Static content: publish to S3 + CloudFront (a project with no C#: nothing to port) | Claude + DevOps | B13 |
   | P2 Port with the engine | the engine | what the engine covers of B1-B11 |
   | P3 Clean-up of what the engine leaves | Claude | the rest of B |
   | P4 Data access: PostgreSQL path beside SQL Server | the DB tool | A1-A8 |
   | P5 Server-hosted services to AWS managed services | Claude | S (from `aws-native.json`) |
   | P6 Verify and cut over | engineers + DevOps | A9, A10, B12 |
 
+- **Engines:** `port_engine` in the inputs is `devtx` (default), `aws-transform` or `claude`. With `claude`, Claude ports and cleans up every stage B item itself, so P2 and P3 are one owner; an unknown value falls back to `devtx`.
+- **Items that are not there:** a line whose every quantity is 0 is left out (no solutions or packages to port in a static repository, no database stage when the code has no SQL). The database stage runs only when the scenario moves the database **and** the code has data access (SQL connections, procedure calls, raw statements or data-access API use); otherwise the estimate says "No database code change is planned."
+- **Manual findings:** each finding in `assessment/reviews/<repo>.manual.json` becomes an item M1, M2 ... priced from its `effort_key` (finding hours in `data/estimation.json` × the AI-assisted factor), unless an `extra_items` entry names it (`finding`, `id` or `rule`).
+- **Not in this estimate:** `excluded` lists what the hours leave out, starting with libraries referenced from outside the repository (`DEP-OUTSIDE-REPO`): they are assessed where their own repository is, or are an open question.
 - **Inputs:** `assessment/effort/<repo>/estimate-inputs.json`, written on the first run.
   - Values the code shows are filled in and marked VERIFIED: ambient-context uses, configuration reads, SQL connections, DLLs that become a current package.
   - The intake answers set environments, AWS managed services now or later, and whether the database moves (scenario database `none` drops stage A).

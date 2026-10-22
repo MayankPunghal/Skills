@@ -58,10 +58,19 @@ def main():
     L = [f"# {client}: modernization summary", "",
          f"{len(c.repos)} repositor{'y' if len(c.repos) == 1 else 'ies'}, {len(apps)} application{'' if len(apps) == 1 else 's'}, {loc:,} lines of code"
          + (" (executable lines, AWS Transform convention)" if loc_exec else " (non-blank)") + f"; target {cfg.get('target_dotnet', 'net10.0')} on Linux containers on AWS. "
-         f"{sum(sev.values())} findings ({', '.join(f'{s} {sev[s]}' for s in SEV if sev[s])}).", ""]
+         f"{sum(sev.values())} finding{'' if sum(sev.values()) == 1 else 's'}" + (f" ({', '.join(f'{s} {sev[s]}' for s in SEV if sev[s])})" if sev else "") + ".", ""]
 
     # ---- bottom line
     L += ["## Bottom line", ""]
+    if not c.repos:
+        one = len(c.out_repos) == 1
+        dbs = [read_json(os.path.join(OUT, "sql", r, "db-inventory.json"), {}) or {} for r in c.out_repos]  # sql_estate.py
+        objs = sum(len(d.get("objects") or []) for d in dbs)
+        L.append(f"- **Scope:** no .NET project in scope: {len(c.out_repos)} repositor{'y holds' if one else 'ies hold'} no .NET code "
+                 f"(report section 2.1 lists what {'it holds' if one else 'they hold'}). There is no port to estimate; anything recorded by hand is in the report's section 5.")
+        if objs:
+            L.append(f"- **SQL estate:** {objs:,} database objects in scripts, with {sum(len(d.get('redesign_items') or []) for d in dbs):,} constructs that need "
+                     "a redesign for PostgreSQL or a decision on AWS (`assessment/sql/<repo>/db-inventory.md`).")
     if reps:
         tot = est.get("total", [0, 0])
         hpd = next(iter(reps.values())).get("hours_per_day", 6)
@@ -69,12 +78,14 @@ def main():
         weeks2 = [max(1, math.ceil(tot[0] / (eng * hpd * 5))), max(1, math.ceil(tot[1] / (eng * hpd * 5)))]
         engines = sorted({v["engine"] for v in reps.values()})
         L.append(f"- **Effort: {h(*tot)}** (planning grade, +-25%, buffer included): about {weeks2[0]}-{weeks2[1]} weeks for a team of {eng}. "
-                 f"Port by {', '.join(engines)}; Claude cleans up what the engine leaves; {next(iter(reps.values()))['db_tool']} adds the PostgreSQL path.")
-    elif c.est.get("totals"):
+                 f"Port by {', '.join(engines)}" + ("; Claude cleans up what the engine leaves" if any(not e.startswith("Claude") for e in engines) else "")
+                 + "".join(f"; {t} adds the PostgreSQL path" for t in sorted({v["db_tool"] for v in reps.values() if v.get("database_port", True)})) + ".")
+    elif c.repos and c.est.get("totals"):
         t = c.est["totals"]
         L.append(f"- **Effort: {t.get('total_days', ['?', '?'])[0]}-{t.get('total_days', ['?', '?'])[1]} person-days** (estimate_effort.py; run effort_facts.py and estimate_phases.py for the phased hours).")
     r7 = Counter(x["r7"] for x in apps)
-    L.append("- **Path:** " + ", ".join(f"{k} {v}" for k, v in r7.most_common()) + ".")
+    if r7:
+        L.append("- **Path:** " + ", ".join(f"{k} {v}" for k, v in r7.most_common()) + ".")
     lv = Counter(r["level"] for r in lin.values())
     if lin:
         L.append(f"- **Linux:** {lv.get('ready', 0)} ready, {lv.get('port', 0)} ready after the port, {lv.get('blocked', 0)} blocked until redesigned, "

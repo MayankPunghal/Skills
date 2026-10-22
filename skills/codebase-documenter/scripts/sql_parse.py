@@ -19,7 +19,7 @@ data-access API nearby or write the keyword in one case (so UI text such as "Sel
 Python API (import from other scripts, modernization-assessment included):
   engine()                         "scriptdom" | "sqlglot" | None
   parse(items)                     items: [{"id", "text"}] -> results in the sqlscan schema (see sqlscan/Program.cs)
-  scan_files(root, skip_dirs)      every .sql file under root -> results (id = path relative to root)
+  scan_files(root, skip_dirs)      every SQL script under root (.sql, plus T-SQL kept as .txt and similar) -> results (id = path relative to root)
   csharp_sql(text)                 SQL candidates in one C# file: [{line, end_line, text, dynamic, holes, context}]
   scan_code(root, skip_dirs)       SQL embedded in .cs files, parsed -> results (id = "path:line")
   transpile_pg(sql)                (postgres_text, ok, message) via sqlglot
@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -266,10 +267,39 @@ def walk(root, exts, skip_dirs=None):
                 yield os.path.join(d, f)
 
 
-def scan_files(root, skip_dirs=None, prefer=None):
-    """Every .sql file under root. A file with a syntax error is re-parsed batch by batch (GO-separated), so one bad
-    batch loses only itself; its errors stay on the result with file line numbers."""
-    items = [{"id": os.path.relpath(p, root).replace("\\", "/"), "text": read_text(p)} for p in walk(root, (".sql",), skip_dirs)]
+# a script kept under another extension (.txt, .tab, .prc ...) is read when it looks like T-SQL: a CREATE / ALTER of an
+# object at the start of a line, or a GO batch separator next to a statement
+TSQL_HINT = re.compile(r"(?im)^\s*(create|alter)\s+(or\s+alter\s+)?(proc(edure)?|function|view|table|trigger|type|index|unique|clustered|"
+                       r"nonclustered|schema|synonym|sequence)\b|^\s*go\s*$(?=[\s\S]{0,4000}^\s*(insert|update|delete|select|exec|declare|set)\b)")
+SNIFF_EXTS = (".txt", ".prc", ".tab", ".viw", ".fnc", ".trg", ".udf")
+MAX_SQL_BYTES = 2_000_000
+
+
+def sql_paths(root, skip_dirs=None, exts=(".sql",), sniff=SNIFF_EXTS, max_bytes=MAX_SQL_BYTES, skipped=None):
+    """SQL script paths under root: every file with an extension in exts, plus files with an extension in sniff whose
+    start looks like T-SQL. Files over max_bytes (data loads) are left out and listed in skipped as (path, reason)."""
+    exts, sniff = tuple(x.lower() for x in exts), tuple(x.lower() for x in sniff if x.lower() not in exts)
+    for p in walk(root, exts + sniff, skip_dirs):
+        size = os.path.getsize(p)
+        if max_bytes and size > max_bytes:
+            if skipped is not None:
+                skipped.append((os.path.relpath(p, root).replace("\\", "/"), f"over {max_bytes // 1000} KB"))
+            continue
+        if p.lower().endswith(sniff):
+            try:
+                head = read_text(p)[:65536]
+            except OSError:
+                continue
+            if not TSQL_HINT.search(head):
+                continue
+        yield p
+
+
+def scan_files(root, skip_dirs=None, prefer=None, exts=(".sql",), sniff=SNIFF_EXTS, max_bytes=MAX_SQL_BYTES, skipped=None):
+    """Every SQL script under root (sql_paths: .sql plus T-SQL kept as .txt and similar; UTF-16 is read too). A file with
+    a syntax error is re-parsed batch by batch (GO-separated), so one bad batch loses only itself; its errors stay on the
+    result with file line numbers. skipped (a list) receives (path, reason) for files left out by size."""
+    items = [{"id": os.path.relpath(p, root).replace("\\", "/"), "text": read_text(p)} for p in sql_paths(root, skip_dirs, exts, sniff, max_bytes, skipped)]
     if not items:
         return []
     res = parse(items, prefer)
@@ -669,7 +699,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="report the available engine; exit 1 if none")
     ap.add_argument("--build", action="store_true", help="build the ScriptDom helper now")
-    ap.add_argument("--root", help="folder to scan (.sql files; with --code also SQL in C#)")
+    ap.add_argument("--root", help="folder to scan (.sql files, plus T-SQL kept as .txt and similar; with --code also SQL in C#)")
+    ap.add_argument("--ext", default=".sql", help="comma-separated extensions always read as SQL (default .sql)")
+    ap.add_argument("--sniff", default=",".join(SNIFF_EXTS), help="comma-separated extensions read only when the file looks like T-SQL (empty: none)")
+    ap.add_argument("--max-bytes", type=int, default=MAX_SQL_BYTES, help="skip (and list) larger files, usually data loads; 0 = no limit")
     ap.add_argument("--code", action="store_true", help="also parse SQL embedded in C# string literals")
     ap.add_argument("--engine", choices=["scriptdom", "sqlglot"], help="force an engine")
     ap.add_argument("--transpile", action="store_true", help="add a PostgreSQL preview (sqlglot) per object / script")
@@ -689,7 +722,9 @@ def main():
     import time
     t = time.time()
     eng = a.engine or engine()
-    files = scan_files(a.root, prefer=eng)
+    skipped = []
+    files = scan_files(a.root, prefer=eng, exts=tuple(x.strip() for x in a.ext.split(",") if x.strip()),
+                       sniff=tuple(x.strip() for x in a.sniff.split(",") if x.strip()), max_bytes=a.max_bytes, skipped=skipped)
     code, stats = scan_code(a.root, prefer=eng) if a.code else ([], {})
     if a.transpile:
         texts = {}
@@ -703,13 +738,15 @@ def main():
             r["postgres_preview"] = {"ok": ok, "text": pg if ok else "", "message": msg}
     objs = sum(len(r.get("objects", [])) for r in files)
     errs = sum(1 for r in files if r.get("errors"))
-    print(f"sql_parse [{eng}]: {len(files)} .sql files, {objs} objects, {errs} files with parse errors"
+    print(f"sql_parse [{eng}]: {len(files)} SQL files, {objs} objects, {errs} files with parse errors"
+          + (f", {len(skipped)} skipped by size (e.g. {skipped[0][0]})" if skipped else "")
           + (f"; C#: {stats['files']} files, {stats['candidates']} SQL-looking literals, {stats['accepted']} parsed as SQL "
              f"({stats['parse_errors']} did not parse, {stats['no_context']} rejected as UI text)" if a.code else "")
           + f" in {time.time() - t:.1f}s")
     if a.out:
         with open(a.out, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump({"engine": eng, "files": files, "code": code, "code_stats": stats}, fh, ensure_ascii=False, indent=1)
+            json.dump({"engine": eng, "files": files, "code": code, "code_stats": stats,
+                       "skipped": [{"file": f, "reason": r} for f, r in skipped]}, fh, ensure_ascii=False, indent=1)
         print(f"written {a.out}")
 
 

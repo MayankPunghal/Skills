@@ -16,8 +16,9 @@ assessment/linux/<repo>/linux-readiness.json   linux_readiness.py (step 3.2, the
 import json
 import os
 import re
+from collections import Counter
 
-from _common import OUT, data, linux_readiness_dir, read_json, slug
+from _common import OUT, data, linux_readiness_dir, mask, read_json, slug
 
 SEV_ORDER = {"Blocker": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
 CONF_ORDER = {"Confirmed": 0, "Likely": 1, "Needs verification": 2}
@@ -86,7 +87,7 @@ def linux_findings(root, repo, raw):
                     "category": LNX_CATEGORY.get(r["area"], "linux-readiness"), "title": linux_title(r),
                     "severity": LNX_SEVERITY[r["level"]], "confidence": "Likely" if known else "Needs verification",
                     "occurrences": len(hs), "files": sorted({h["file"] for h in hs}),
-                    "evidence": [{"file": h["file"], "line": h["line"], "text": h["text"]} for h in hs[:LNX_EVIDENCE]],
+                    "evidence": [{"file": h["file"], "line": h["line"], "text": mask(h["text"])} for h in hs[:LNX_EVIDENCE]],
                     "why": r.get("what", ""), "fix": r.get("fix", ""), "alt": "", "effort_key": LNX_EFFORT[r["level"]],
                     "baseline": False, "source": "linux-readiness"})
     return out
@@ -108,31 +109,50 @@ def load(root, repo, include_dismissed=False):
     reviews = read_json(os.path.join(root, OUT, "reviews", f"{repo}.json"), {}) or {}
     manual = read_json(os.path.join(root, OUT, "reviews", f"{repo}.manual.json"), []) or []
     out = []
+
+    def masked(f):  # every snippet passes the secret mask again, whichever script wrote it
+        if any(e.get("text") and mask(e["text"]) != e["text"].strip()[:220] for e in f.get("evidence") or []):
+            f = dict(f, evidence=[dict(e, text=mask(e["text"])) if e.get("text") else e for e in f["evidence"]])
+        return f
+
+    def reviewed(f, r):  # apply a review verdict; None = dismissed and not wanted
+        if not r:
+            return f
+        f = dict(f)
+        f["review"] = r
+        if r.get("verdict") == "dismissed":
+            if not include_dismissed:
+                return None
+            f["dismissed"] = True
+        for k in ("severity", "confidence", "fix", "alt", "title"):
+            if r.get(k):
+                f[k] = r[k]
+        if r.get("verdict") == "confirmed" and f.get("confidence") != "Confirmed":
+            f["confidence"] = "Confirmed"
+        return f
+
     for f in raw:
-        r = reviews.get(f["id"])
-        if r:
-            f = dict(f)
-            f["review"] = r
-            if r.get("verdict") == "dismissed":
-                if not include_dismissed:
-                    continue
-                f["dismissed"] = True
-            for k in ("severity", "confidence", "fix", "alt", "title"):
-                if r.get(k):
-                    f[k] = r[k]
-            if r.get("verdict") == "confirmed" and f["confidence"] != "Confirmed":
-                f["confidence"] = "Confirmed"
-        out.append(f)
+        f = reviewed(masked(f), reviews.get(f["id"]))
+        if f:
+            out.append(f)
+    seen = Counter()
     for m in manual:
         m = dict(m)
+        rule = m.get("rule", "MAN")
+        seen[rule] += 1
+        legacy = f"{repo}:{rule}:{len(out)}"  # the id this loader gave before manual ids were stable
         m.setdefault("repo", repo)
         m.setdefault("source", "review")
         m.setdefault("occurrences", len(m.get("evidence", [])) or 1)
         m.setdefault("files", sorted({e.get("file") for e in m.get("evidence", []) if e.get("file")}))
-        m.setdefault("id", f"{repo}:{m.get('rule', 'MAN')}:{len(out)}")
+        m.setdefault("id", f"{repo}:{rule}" + (f":{seen[rule]}" if seen[rule] > 1 else ""))
         m.setdefault("baseline", False)
         m.setdefault("effort_key", "small-change")
-        out.append(m)
+        m.setdefault("manual", True)
+        # a manual finding takes a verdict by its id, by repo:rule, by its rule id or by the old positional id
+        m = reviewed(masked(m), reviews.get(m["id"]) or reviews.get(f"{repo}:{rule}") or reviews.get(rule) or reviews.get(legacy))
+        if m:
+            out.append(m)
     return out
 
 

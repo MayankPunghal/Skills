@@ -218,7 +218,7 @@ def linux_readiness_dir():
 
 SECRET_WORDS = r"(?:password|passwd|pwd|user\s*id|uid|secret|api[_-]?key|access[_-]?key|token|client[_-]?secret|account[_-]?key|sharedaccesskey|decryptionkey|validationkey|credential|private[_-]?key)"
 # identifier containing a secret word (TokenValue, dbPassword, ApiKeySecret) followed by = or : and a value (C#, VB, config, JSON, connection strings)
-SECRET_VALUE = re.compile(r"(?i)(\b\w*" + SECRET_WORDS + r"\w*\s*[=:]\s*@?)(\"[^\"]*\"|'[^']*'|[^;\"'\s<>,)]+)")
+SECRET_VALUE = re.compile(r"(?i)(\b\w*" + SECRET_WORDS + r"\w*\s*[=:]\s*@?)(\"[^\"]*\"|'[^']*'|(?!(?:new|null|this|await)\b)[^;\"'\s<>,)]+)")
 # SQL seed rows: ('Group', 'SomeTokenKey', 'value') -> mask the value that follows a secret-like key
 SQL_SECRET_PAIR = re.compile(r"(?i)('[^']*" + SECRET_WORDS + r"[^']*'\s*,\s*N?')([^']*)(')")
 XML_SECRET_ATTR = re.compile(r'(?i)((?:password|pwd|secret|apikey|api_key|token|decryptionKey|validationKey|accountKey|connectionString)\s*=\s*")([^"]*)(")')
@@ -226,6 +226,15 @@ APPSETTING_SECRET = re.compile(r'(?i)(<add\s+key="[^"]*(?:pass|pwd|secret|token|
 # a request header compared with a value written in the code: Headers["X"] == "value" / "value" == Headers["X"]
 HEADER_LITERAL = re.compile(r'(Headers(?:\.Get\(\s*"[\w-]+"\s*\)|\[\s*"[\w-]+"\s*\])\s*[!=]=\s*")([^"]+)(")')
 HEADER_LITERAL_REV = re.compile(r'(")([^"]{6,})("\s*[!=]=\s*[\w.]*Headers\[)')
+# credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"). Each is (prefix)(value)(suffix);
+# verify_report.py uses the same list to catch any that reach an output unmasked.
+CODE_CREDENTIALS = [
+    re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
+    re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
+    re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+]
 
 
 URL_USERINFO = re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s/:@\"'<>]+:)([^\s/@\"'<>]+)(@)")  # scheme://user:password@host
@@ -240,6 +249,8 @@ def mask(line):
     s = SQL_SECRET_PAIR.sub(lambda m: m.group(1) + "***" + m.group(3), s)
     s = SECRET_VALUE.sub(lambda m: m.group(1) + "***", s)
     s = HEADER_LITERAL_REV.sub(lambda m: m.group(1) + "***" + m.group(3), HEADER_LITERAL.sub(lambda m: m.group(1) + "***" + m.group(3), s))
+    for rx in CODE_CREDENTIALS:
+        s = rx.sub(lambda m: m.group(1) + "***" + m.group(3), s)
     return s.strip()[:220]
 
 

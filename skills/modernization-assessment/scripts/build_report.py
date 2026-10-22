@@ -66,6 +66,21 @@ class Ctx:
         for r in self.repos:
             if self.inv[r]:
                 self.findings += F.assign_apps(F.load(root, r), self.inv[r])
+        # repositories with no .NET project: never scanned, but what the assessor recorded by hand (reviews/<repo>.manual.json)
+        # and a Linux readiness run (assessment/linux/<repo>) still reach the report; section 2.1 states what they hold
+        st = read_json(os.path.join(OUT, "state.json"), {"repos": {}}) or {"repos": {}}
+        self.out_repos = sorted(r for r, v in st["repos"].items() if v.get("scope") == "out")
+        self.out_inv = {r: F.load_inventory(root, r) for r in self.out_repos}
+        for r in self.out_repos:
+            fs = F.load(root, r)
+            for f in fs:
+                f.setdefault("apps", [])
+                f.setdefault("project", "")
+                f.setdefault("category", "linux-readiness")
+                f.setdefault("severity", "Medium")
+                f.setdefault("confidence", "Likely")
+                f.setdefault("title", f.get("rule", ""))
+            self.findings += fs
         self.findings.sort(key=F.sort_key)
         self.cls = read_json(os.path.join(OUT, "classification.json"), {"applications": [], "hybrid": []})
         self.est = read_json(os.path.join(OUT, "estimate.json"), {"work_packages": [], "databases": [], "totals": {}, "timeline": [], "assumptions": []})
@@ -99,6 +114,10 @@ def b_headline(c):
     r7 = Counter(a["r7"] for a in c.cls["applications"])
     loc = sum((c.inv[r] or {}).get("totals", {}).get("loc", 0) for r in c.repos)
     hrs = c.est.get("hours") if H.is_hours(c.est) else None  # lift-and-shift track: the hours calculator is the estimate
+    if no_code(c):
+        return table(["Measure", "Value"], [("Scope", f"No .NET project in scope: {len(c.out_repos)} repositories hold no .NET code (section 2.1)"),
+                                            ("Findings", ", ".join(f"{k} {sev[k]}" for k in SEVS if sev[k]) or "none"),
+                                            ("Effort", "Not estimated: there is no .NET code to port")])
     rows = [("Repositories / solutions / projects", f"{len(c.repos)} / {sum(len(c.inv[r]['solutions']) for r in c.repos if c.inv[r])} / {sum(len(c.inv[r]['projects']) for r in c.repos if c.inv[r])}"),
             ("Applications assessed", str(len(c.cls["applications"]))),
             ("Lines of code (C#, VB.NET, markup)", f"{loc:,}"),
@@ -156,7 +175,60 @@ def b_key_risks(c):
     return table(["Ref", "Severity", "Finding", "Where"], rows)
 
 
+NO_CODE_TEXT = "_Not applicable: no .NET project is in scope (section 2.1 says what the repositories hold)._"
+# blocks that describe .NET code, its plan or its estimate: with no .NET project in scope they say so instead of empty tables
+NO_CODE_BLOCKS = {"inventory", "linux-readiness", "linux-checks", "projects-7r", "architecture-diagram", "graph-insights", "wiring", "third-party",
+                  "dependencies", "project-deps", "workflows", "db-dependents", "db-coupling", "migration-order", "order-summary", "database",
+                  "db-inventory", "hybrid", "app-plans", "optional", "auth", "package-actions", "estimate", "scenarios", "multipliers", "timeline",
+                  "sprints", "cost", "methodology", "package-groups", "appendix-packages", "appendix-binaries", "appendix-projects", "appendix-winapi"}
+
+
+def no_code(c):
+    return not c.repos
+
+
+def ext_counts(root):
+    """File extensions in a repository with no .NET project and no other-language files counted (SQL scripts, content)."""
+    n = Counter()
+    if root and os.path.isdir(root):
+        for d, dirs, files in os.walk(root):
+            dirs[:] = [x for x in dirs if x not in (".git", "node_modules", "bin", "obj", "packages")]
+            n.update(os.path.splitext(f)[1].lower() or "(none)" for f in files)
+    return n
+
+
+def b_scope_out(c):
+    """Repositories with no .NET project: what they hold, so the scope statement rests on evidence."""
+    rows = []
+    for r in c.out_repos:
+        inv = c.out_inv.get(r) or {}
+        sc = inv.get("scope") or {}
+        langs = Counter(sc.get("other_language_files") or {}) or ext_counts(inv.get("root"))
+        arte = inv.get("artefacts") or {}
+        lr = read_json(os.path.join(OUT, "linux", r, "linux-readiness.json"), {}) or {}
+        man = sum(1 for f in c.findings if f.get("repo") == r and f.get("source") == "review")
+        dbi = read_json(os.path.join(OUT, "sql", r, "db-inventory.json"), {}) or {}  # sql_estate.py
+        sqlx = (", ".join(f"{k} {v:,}" for k, v in sorted((dbi.get("kinds") or {}).items(), key=lambda x: -x[1])[:5])
+                + f"; redesign items {len(dbi.get('redesign_items') or [])}") if dbi else "not run (sql_estate.py)"
+        rows.append((r, f"{(inv.get('totals') or {}).get('files', 0):,}", ", ".join(f"{k} {v:,}" for k, v in langs.most_common(6)) or "-",
+                     ", ".join(f"{k} {len(v):,}" for k, v in sorted(arte.items(), key=lambda x: -len(x[1]))[:6]) or "-",
+                     ", ".join(sc.get("ecosystems") or []) or "-",
+                     sqlx if (inv.get("artefacts") or {}).get("sql") or dbi else "-",
+                     f"{len(lr.get('hits', []))} hits" if lr else "not run", str(man)))
+    return table(["Repository (no .NET project)", "Files", "File types", "Artefacts", "Ecosystems", "SQL objects", "Linux check", "Findings recorded by hand"], rows)
+
+
 def b_scope(c):
+    out = ("\n\n**Repositories with no .NET project.** Not scanned, graphed or estimated by this assessment (it covers .NET code); "
+           "what they hold is listed so the scope is stated on evidence. Findings the assessor recorded by hand "
+           "(assessment/reviews/<repo>.manual.json) and a Linux readiness run (assessment/linux/<repo>) are included in section 5.\n\n"
+           + b_scope_out(c)) if c.out_repos else ""
+    if not c.repos:
+        return "_No repository with a .NET project is in scope._" + out
+    return b_scope_in(c) + out
+
+
+def b_scope_in(c):
     rows = []
     for r in c.repos:
         inv, s = c.inv[r], c.scan[r]
@@ -170,6 +242,11 @@ def b_scope(c):
 
 
 def b_method(c):
+    if no_code(c):  # nothing below ran: say what did
+        return table(["Step", "What was done"], [
+            ("Inventory", "Repository walk: file types, artefacts (configuration, SQL, scripts, CI, Docker), git history; no .NET project or solution was found"),
+            ("Static checks, code graph, package map, estimate", "Not run: they apply to .NET code only"),
+            ("Review", "Anything the assessor recorded by hand (file and line) is in section 5; the narratives carry the scope statement")])
     rules = data("rules.json")["rules"]
     online = any(c.scan[r].get("online_package_lookup") for r in c.repos)
     rows = [("Inventory", "Solution/project parsing (SDK-style and legacy), target frameworks, project types, packages, lines of code, git history"),
@@ -1387,7 +1464,8 @@ def open_questions(c):
             seen.add(q)
             qs.append(("Code finding", q, f["ref"]))
     for a in c.cls["applications"]:
-        for n in a.get("notes", []):
+        notes = a.get("notes") or []
+        for n in [notes] if isinstance(notes, str) else notes:
             qs.append(("Application", n, a["name"]))
     iv = _infra_view(c)
     for q in (iv or {}).get("questions", []):
@@ -1396,6 +1474,10 @@ def open_questions(c):
             qs.append(("Servers and hosting", q["question"], q["repo"]))
     for q in intake_unanswered(c.cfg):
         qs.append(("Engagement scope", q["ask"], "intake"))
+    for e in c.cfg.get("open_questions_extra") or []:  # intake.py --open-question: every assessment type
+        if isinstance(e, dict) and e.get("question") and (e.get("status") or "open") == "open" and e["question"] not in seen:
+            seen.add(e["question"])
+            qs.append(("Added by hand", e["question"] + (f" ({e['why']})" if e.get("why") else ""), e.get("who") or "assessor"))
     for area, q in STANDARD_QUESTIONS:
         qs.append((area, q, "standard"))
     return qs
@@ -1749,6 +1831,14 @@ def exports(c, rdir):
                 w.writerow([r, e["host"], e["kind"], "; ".join(e["schemes"]), e["occurrences"], "; ".join(e["files"][:20])])
 
 
+def block(c, name):
+    """A generated block by name (None if unknown); code blocks say "not applicable" when no .NET project is in scope."""
+    fn = BLOCKS.get(name)
+    if not fn:
+        return None
+    return NO_CODE_TEXT if name in NO_CODE_BLOCKS and no_code(c) else fn(c)
+
+
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
@@ -1780,8 +1870,8 @@ def main():
             return str(meta.get(name, ""))
         if kind == "narrative":
             return narrative(name)
-        fn = BLOCKS.get(name)
-        return fn(c) if fn else f"_Unknown block {name}._"
+        out = block(c, name)
+        return f"_Unknown block {name}._" if out is None else out
     report = re.sub(r"\{\{(meta|block|narrative):([\w-]+)\}\}", sub, tpl)
     rdir = os.path.join(OUT, "report")
     name = a.out or f"{slug(meta['client']).title().replace('-', '')}-AWS-{'Migration' if lift(cfg) else 'Modernization'}-Assessment.md"
