@@ -227,13 +227,15 @@ APPSETTING_SECRET = re.compile(r'(?i)(<add\s+key="[^"]*(?:pass|pwd|secret|token|
 HEADER_LITERAL = re.compile(r'(Headers(?:\.Get\(\s*"[\w-]+"\s*\)|\[\s*"[\w-]+"\s*\])\s*[!=]=\s*")([^"]+)(")')
 HEADER_LITERAL_REV = re.compile(r'(")([^"]{6,})("\s*[!=]=\s*[\w.]*Headers\[)')
 # credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
-# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"). Each is (prefix)(value)(suffix);
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"), http_auth=("user", "password"). Each is (prefix)(value)(suffix);
 # verify_report.py uses the same list to catch any that reach an output unmasked.
 CODE_CREDENTIALS = [
     re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
     re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
     re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
     re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    # Python / JS: http_auth=("user", "password"), basic_auth=[...], auth=(...), HTTPBasicAuth("user", "password"): the second value is the secret
+    re.compile(r"""(?i)((?:\b(?:http_auth|basic_auth|auth|credentials)\s*=\s*[(\[]|\bHTTP(?:Basic|Digest)Auth\s*\()\s*(?:[rbuf]?["'][^"'\n]*["']|[\w.\[\]]+)\s*,\s*[rbuf]?["'])((?!\*\*\*["'])[^"'\n]+)(["'])"""),
 ]
 
 

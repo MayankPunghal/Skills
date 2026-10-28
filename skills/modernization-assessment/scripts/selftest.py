@@ -44,7 +44,11 @@ SHARED_WITH_LIFT_AND_SHIFT = ["_buildwhy", "_complexity", "_config", "_docx", "_
                               "code_text", "gitlab_projects", "network_endpoints", "scheduled_jobs", "vendor_files", "verify_doc"]
 
 # Fake values only: the test fails if any of them reaches an output.
-FAKE_SECRETS = ("S3cr3tPw!x", "Hunter22pw", "dXNlcjpwYXNzd29yZA==")
+FAKE_SECRETS = ("S3cr3tPw!x", "Hunter22pw", "dXNlcjpwYXNzd29yZA==", "Tupl3Pw9x", "Dig3stPw7q")
+# Python / JS credentials passed as a pair (the leak seen with safe_grep on an Elasticsearch client)
+PY_CREDENTIALS = """es = Elasticsearch(hosts, http_auth=('elastic', 'Tupl3Pw9x'))
+r = requests.get(u, auth=HTTPDigestAuth("svc", "Dig3stPw7q"))
+"""
 
 STOREFRONT = {
     "Storefront.csproj": """<?xml version="1.0" encoding="utf-8"?>
@@ -217,9 +221,9 @@ def main():
 
     # 1. unit checks
     from _common import mask, CODE_CREDENTIALS, data
-    code = CHATDESK["ChatDesk/Services/PartnerClient.cs"]
+    code = CHATDESK["ChatDesk/Services/PartnerClient.cs"] + PY_CREDENTIALS
     m = "\n".join(mask(ln) for ln in code.splitlines())  # mask() works on one evidence line
-    check(not [s for s in FAKE_SECRETS if s in m], "mask() hides credentials written in code (GetBytes user:pass, Basic header, NetworkCredential)")
+    check(not [s for s in FAKE_SECRETS if s in m], "mask() hides credentials written in code (GetBytes user:pass, Basic header, NetworkCredential, http_auth=(user, password))")
     check("new NetworkCredential(" in m and "https://partner.example.com/api/orders" in m, "mask() keeps the code around the credential")
     check(mask('var x = "Basic authentication is used";') == 'var x = "Basic authentication is used";', "prose that mentions Basic is not masked")
     check(not any(rx.search(m) and rx.search(m).group(2) != "***" for rx in CODE_CREDENTIALS), "a masked line no longer matches CODE_CREDENTIALS")

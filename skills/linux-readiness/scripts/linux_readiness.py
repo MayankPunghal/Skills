@@ -58,6 +58,8 @@ CODE_CREDENTIALS = [
     re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
     re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
     re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    # Python / JS: http_auth=("user", "password"), basic_auth=[...], auth=(...), HTTPBasicAuth("user", "password"): the second value is the secret
+    re.compile(r"""(?i)((?:\b(?:http_auth|basic_auth|auth|credentials)\s*=\s*[(\[]|\bHTTP(?:Basic|Digest)Auth\s*\()\s*(?:[rbuf]?["'][^"'\n]*["']|[\w.\[\]]+)\s*,\s*[rbuf]?["'])((?!\*\*\*["'])[^"'\n]+)(["'])"""),
 ]
 
 

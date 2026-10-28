@@ -23,6 +23,10 @@ It does what a senior business analyst, architect and technical writer would do,
 8. **Package**: one zip with a single README that any agent can follow to install the project skill.
 
 
+## Changed in 1.16.5
+
+- **Credentials passed as a pair are masked.** `http_auth=("user", "password")`, `basic_auth=[...]`, `auth=(...)`, `HTTPBasicAuth(...)` / `HTTPDigestAuth(...)` (Python and JS clients such as Elasticsearch or requests) show `***` for the password (safe_grep.py), reported as "credential in code". A search over a Python Elasticsearch client printed the password before this.
+
 ## Changed in 1.16.4
 
 - **Credentials written in code are masked (safe_grep.py).** `GetBytes("user:password")`, `"Basic <base64>"` / `"Bearer <token>"`, `NetworkCredential(...)` and `AuthenticationHeaderValue(...)` show `***`, reported as "credential in code".

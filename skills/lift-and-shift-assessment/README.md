@@ -5,6 +5,12 @@ A Claude Code skill that prices an AWS lift-and-shift (Windows to Windows, EC2, 
 It is the narrow sibling of `modernization-assessment`: that skill assesses a real migration (Linux, native AWS services, modernisation); this one covers only the dev team's work when the applications move as they are.
 
 
+## Changed in 1.1.5
+
+- **Cutting the estate roots retires the dropped repositories (discover_estate.py).** A full discover moves the per-repository results (inventory, scan, findings, infra, config) of repositories no longer under the roots to `assessment/_retired/<date>/` and their state entry to `state.json` `retired`, so the estimate, document and workbook stop counting them. Nothing is deleted.
+- **Estate roots are trimmed (setup_assessment.py, discover_estate.py).** A root with a trailing carriage return (piped from a Windows shell) no longer reads as "estate root not found".
+- **Credentials passed as a pair are masked.** `http_auth=("user", "password")`, `basic_auth=[...]`, `auth=(...)`, `HTTPBasicAuth(...)` / `HTTPDigestAuth(...)` (Python and JS clients such as Elasticsearch or requests) show `***` for the password in evidence (_common.py); `verify_doc.py` fails if one reaches the document or the workbook.
+
 ## Changed in 1.1.4
 
 Fixes from five modernization-assessment field runs that apply here too:

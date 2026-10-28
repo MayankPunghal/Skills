@@ -52,6 +52,10 @@ evals/evals.md              test prompts and expected behaviour
 
 `reference/kb/` is Apache-2.0 (Amazon), see `NOTICE`. The rest belongs to the skill owner.
 
+## Changed in 1.1.3
+
+- **Credentials passed as a pair are masked.** `http_auth=("user", "password")`, `basic_auth=[...]`, `auth=(...)`, `HTTPBasicAuth(...)` / `HTTPDigestAuth(...)` (Python and JS clients such as Elasticsearch or requests) show `***` for the password in residue-scan output, as in the assessment.
+
 ## Changed in 1.1.2
 
 - **The plan's new parts are read.** Work added in review (`extra_items`), static-content packages (publish, nothing to port) and libraries outside the repository (port those first) are handled in the plan-entry step (modernization-assessment 3.3.1).

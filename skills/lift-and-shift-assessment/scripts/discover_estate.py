@@ -15,12 +15,13 @@ import argparse
 import datetime
 import os
 import re
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 
 from _common import (skip_dir, OUT, SOURCE_DIR_SKIP, load_config, load_state, mark, mark_step, read_json, read_text, rel, run,
-                     slug, utf8_stdout, write_json)
+                     save_state, slug, utf8_stdout, write_json)
 from _complexity import file_metrics, project_metrics
 import _scope
 from _loc import count_loc
@@ -422,7 +423,7 @@ def find_repos(roots, cfg):
     repos = {}
     skip = SOURCE_DIR_SKIP | {s.lower() for s in cfg.get("exclude_dirs", [])}
     for r in roots:
-        r = os.path.abspath(r)
+        r = os.path.abspath(r.strip())
         if not os.path.isdir(r):
             print(f"WARN estate root not found: {r}")
             continue
@@ -443,6 +444,28 @@ def find_repos(roots, cfg):
     return {k: v for k, v in repos.items() if k not in set(cfg.get("skip_repos", []))}
 
 
+PER_REPO_DIRS = ("inventory", "scan", "findings", "infra", "config", "graph", "sql")
+
+
+def retire_dropped(root, keep):
+    """Repositories in state but no longer under the estate roots (scope cut): move their per-repo results to
+    assessment/_retired/<date>/<folder>/ (never deleted) and drop them from state, so later steps don't count them."""
+    st = load_state(root)
+    gone = sorted(r for r in st["repos"] if r not in keep)
+    if not gone:
+        return
+    dest = os.path.join(OUT, "_retired", datetime.date.today().isoformat())
+    for r in gone:
+        for d in PER_REPO_DIRS:
+            src = os.path.join(OUT, d, f"{r}.json")
+            if os.path.exists(src):
+                os.makedirs(os.path.join(dest, d), exist_ok=True)
+                shutil.move(src, os.path.join(dest, d, f"{r}.json"))
+        st.setdefault("retired", {})[r] = {"on": datetime.date.today().isoformat(), "moved_to": dest.replace("\\", "/"), **st["repos"].pop(r)}
+    save_state(root, st)
+    print(f"retired {len(gone)} repositories no longer under the estate roots (results moved to {dest}): {', '.join(gone)}")
+
+
 def main():
     utf8_stdout()
     ap = argparse.ArgumentParser()
@@ -454,6 +477,8 @@ def main():
     if not cfg["estate_roots"]:
         sys.exit("estate_roots is empty in assessment.json")
     repos = find_repos(cfg["estate_roots"], cfg)
+    if not a.repo:
+        retire_dropped(root, set(repos))
     st = load_state(root)
     done = 0
     for name, path in sorted(repos.items()):

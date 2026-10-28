@@ -33,12 +33,14 @@ SAFE_VALUE = re.compile(r"(?i)^(true|false|null|none|\{\{.*\}\}|\$\{.*\}|%\w+%|\
                         r"[A-Za-z_][\w.]*\(.*|[A-Za-z_]\w*\s*\+.*)$")
 
 # credentials written as literals in code: GetBytes("user:password") for a Basic header, "Basic <base64>" / "Bearer <token>",
-# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"). Each is (prefix)(value)(suffix).
+# new NetworkCredential("user", "password"), AuthenticationHeaderValue("Basic", "<base64>"), http_auth=("user", "password"). Each is (prefix)(value)(suffix).
 CODE_CREDENTIALS = [
     re.compile(r'((?:GetBytes|ToBase64String|Encode)\s*\(\s*@?")([^":\s]{1,64}:(?!\*\*\*")[^"\s]{1,128})(")'),
     re.compile(r"""(?i)(["']\s*(?:Basic|Bearer)\s+)((?!\*\*\*)(?=[A-Za-z0-9+/=._-]*[0-9+/=])[A-Za-z0-9+/=._-]{8,})()"""),
     re.compile(r'(NetworkCredential\s*\(\s*(?:@?"[^"]*"|[\w.]+)\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
     re.compile(r'(AuthenticationHeaderValue\s*\(\s*"\w+"\s*,\s*@?")((?!\*\*\*")[^"]+)(")'),
+    # Python / JS: http_auth=("user", "password"), basic_auth=[...], auth=(...), HTTPBasicAuth("user", "password"): the second value is the secret
+    re.compile(r"""(?i)((?:\b(?:http_auth|basic_auth|auth|credentials)\s*=\s*[(\[]|\bHTTP(?:Basic|Digest)Auth\s*\()\s*(?:[rbuf]?["'][^"'\n]*["']|[\w.\[\]]+)\s*,\s*[rbuf]?["'])((?!\*\*\*["'])[^"'\n]+)(["'])"""),
 ]
 
 

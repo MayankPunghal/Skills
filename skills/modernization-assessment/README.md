@@ -177,6 +177,10 @@ The skill was called **migration-assessment** up to 2.14.0. The terms are now ke
 - New AWS-native and infrastructure detections with targets and hours: AppFabric and NCache (ElastiCache), Solr (OpenSearch), inbound mail (SES receiving), Cassandra (Keyspaces), RavenDB and Couchbase (DocumentDB or EC2), Neo4j (Neptune); AppConfig feature flags as an optional modernization; MassTransit on SQS as a service SDK.
 - Sources S26-S38 (AWS Transform limits, pricing and data handling, Babelfish, Lambda dates and more).
 
+## Changed in 3.3.3
+
+- **Credentials passed as a pair are masked.** `http_auth=("user", "password")`, `basic_auth=[...]`, `auth=(...)`, `HTTPBasicAuth(...)` / `HTTPDigestAuth(...)` (Python and JS clients such as Elasticsearch or requests) show `***` for the password; `verify_report.py` and `verify_doc.py` catch one that reaches an output. The same pattern is in lift-and-shift-assessment, linux-readiness, codebase-documenter and dotnet-modernization, and `selftest.py` checks all of them.
+
 ## Changed in 3.3.2
 
 - **The same fixes reach the sibling skills.** lift-and-shift-assessment, codebase-documenter and dotnet-modernization get the code-credential masking, the minified-bundle and short-host filters and the secret false-positive pattern where they have their own copy.

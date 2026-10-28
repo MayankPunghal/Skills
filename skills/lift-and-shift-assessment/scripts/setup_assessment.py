@@ -40,7 +40,7 @@ def main():
     if a.client:
         cfg["client"] = a.client
     if a.roots:
-        cfg["estate_roots"] = [os.path.abspath(r).replace("\\", "/") for r in a.roots]
+        cfg["estate_roots"] = [os.path.abspath(r.strip()).replace("\\", "/") for r in a.roots if r.strip()]  # strip: roots piped from a Windows shell carry \r
     if a.prepared_by:
         cfg["prepared_by"] = a.prepared_by
     if a.hosting:

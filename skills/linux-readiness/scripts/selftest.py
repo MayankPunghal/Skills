@@ -532,9 +532,9 @@ def main():
     sys.path.insert(0, HERE)
     import linux_readiness
     code_text = NOISE["Job/Client.cs"]
-    masked = linux_readiness.mask(code_text)
-    leaked = [v for v in ("S3cr3tPw!x", "dXNlcjpwYXNzd29yZA==", "Hunter22pw") if v in masked]
-    check(not leaked, f"credentials written in code (basic-auth GetBytes, Basic header, NetworkCredential) are masked (leaks: {leaked or 'none'})")
+    masked = linux_readiness.mask(code_text) + chr(10) + linux_readiness.mask("es = Elasticsearch(hosts, http_auth=('elastic', 'Tupl3Pw9x'))")
+    leaked = [v for v in ("S3cr3tPw!x", "dXNlcjpwYXNzd29yZA==", "Hunter22pw", "Tupl3Pw9x") if v in masked]
+    check(not leaked, f"credentials written in code (basic-auth GetBytes, Basic header, NetworkCredential, http_auth pair) are masked (leaks: {leaked or 'none'})")
     check("Basic authentication is used" in masked, "plain prose that mentions Basic is not masked")
 
     code, msg = run("--explain", "LNX-CTR-USER-MISSING")

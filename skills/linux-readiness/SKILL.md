@@ -2,7 +2,7 @@
 name: linux-readiness
 description: Checks a .NET code base for everything that works on Windows but breaks or behaves differently in a Linux container on AWS (ECS, EKS, Fargate), and says how to fix each hit. Covers file name case, paths, time zones, ICU culture, encodings, shell calls, environment, DPAPI and certificates, Windows auth and integrated security, SQL Server and ODBC, registry, WMI, COM, System.Drawing, IIS hosting, Dockerfiles, secrets and CI. Works on .NET Framework code before a port, ported code and apps already on .NET 5+. Read-only and masks secrets; writes a JSON, Markdown and HTML report, gates a build with waivers, and has a Dockerfile-only mode. Use when the user asks whether a .NET app is ready for Linux, Docker, containers, ECS, EKS or Fargate, what will break on Linux, to check a .NET Dockerfile, to explain a Linux readiness check, or to gate a pipeline on Linux readiness.
 metadata:
-  version: 1.0.2
+  version: 1.0.3
 user-invocable: true
 argument-hint: "[help · scan · gate · dockerfile · explain · waivers · selftest] [folder | Dockerfile | LNX-ID]"
 allowed-tools:
@@ -22,6 +22,7 @@ One scanner, `scripts/linux_readiness.py`, with one catalogue, `scripts/data/lin
 - Fix guide by area
 - Related reading
 - Relation to the other skills
+- Changed in 1.0.3
 - Changed in 1.0.2
 - Changed in 1.0.1
 - Maintaining this skill
@@ -186,6 +187,10 @@ Copied from the dotnet-modernization skill's playbooks; read the one for the are
 - **modernization-assessment** runs this scanner per repository during an assessment (`--all`, output to `assessment/linux/<repo>`); hits of checks its own rules do not cover become costed findings.
 - **dotnet-modernization** runs it as the `linux` gate of `verify.py` after a port and fixes hits by playbook.
 - The scanner and catalogue exist **once**, here. The other two skills have a thin `scripts/linux_readiness.py` that loads this skill (from `LINUX_READINESS_DIR`, a sibling `linux-readiness` folder, or `~/.claude/skills` / `~/.agents/skills`), so the installer brings this skill with them.
+
+## Changed in 1.0.3
+
+- **Credentials passed as a pair are masked.** `http_auth=("user", "password")`, `basic_auth=[...]`, `auth=(...)`, `HTTPBasicAuth(...)` / `HTTPDigestAuth(...)` (Python and JS clients such as Elasticsearch or requests) show `***` for the password in every report. `selftest.py` section 7 covers it.
 
 ## Changed in 1.0.2
 

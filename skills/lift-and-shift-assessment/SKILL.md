@@ -2,7 +2,7 @@
 name: lift-and-shift-assessment
 description: "Produces a draft AWS lift-and-shift (Windows to Windows, EC2) assessment for a .NET estate of any size: one Word document for the whole project, a small companion workbook, and an estimate in developer working hours, solution by solution. Inventories solutions, projects, deployables and workloads, finds the environment variables, hard-coded addresses, third-party and licensed components and server-to-server connections the dev team must handle, checks that each solution builds, and prices only the work items the user selects. Use when a client's .NET applications move to AWS EC2 as they are (rehost, no C# change) and a dev-hours estimate is needed. Not for modernisation, Linux or native AWS services (use modernization-assessment)."
 metadata:
-  version: 1.1.4
+  version: 1.1.5
 user-invocable: true
 argument-hint: "[help · intake · discover · scan · solutions · third-party · build-check · estimate · build-doc · verify · finalize]"
 allowed-tools:
@@ -42,7 +42,7 @@ You are the dev-team lead's assessor for an AWS rehost. The estate is moved as i
 - **Skill owner log.** Log every script failure, false result or workaround in `SKILL-ISSUES.md` as it happens.
 - **Teams are separate.** The dev team owns application code and configuration only. DevOps owns servers, network, VPN, AD, server images, pipelines and migration tooling; the DB team owns the databases. Their work is never a dev-team risk or cost: it goes in a short hand-off list. Do not ask the user questions that belong to another team; record them as that team's open item.
 - **Never guess where an application runs.** Which application runs on which server comes from the client's mapping workbook (`build_mapping_sheet.py`, then `check_mapping.py`), never from server names. Group or label applications only from what the code shows (controllers, assemblies, READMEs) and say which labels rest on names alone.
-- **Every decision is logged.** A scope or approach decision from a call goes in with `intake.py --decision "<text>" --source "<who, date>"` (and `--client-update` for the 1.1 table) before anything is re-run. Never act on a decision by moving or deleting results: keep them and re-run.
+- **Every decision is logged.** A scope or approach decision from a call goes in with `intake.py --decision "<text>" --source "<who, date>"` (and `--client-update` for the 1.1 table) before anything is re-run. Never act on a decision by moving or deleting results: keep them and re-run. To cut the scope, set the new roots with `setup_assessment.py --roots ...` and re-run from `discover_estate.py`: it retires the repositories no longer under the roots (results kept in `assessment/_retired/<date>/`).
 - **Every Markdown deliverable has an HTML twin** (offline, light and dark, branded when `docx_template` is set). The generators write both.
 - **Nothing is hand-edited.** Every setting has a flag (`setup_assessment.py`, `intake.py`); every deliverable has a script. If something needs a manual step, add the flag or script to the skill and log it in `SKILL-ISSUES.md`.
 
