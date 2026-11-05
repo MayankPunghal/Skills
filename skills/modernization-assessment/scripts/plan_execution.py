@@ -19,7 +19,7 @@ procedure calls, result-set procedures), the AWS managed-service swaps and the w
 "extra_items" per repository: stage A to the database stream, B to Claude, S to the AWS swaps). A repository with no
 database code gets no database stream, whatever the scenario says.
 Writes assessment/execution-plan.json, assessment/report/execution-plan.md and its .html twin.
-Defaults: assessment.json "execution": {"port_engine": "devtx", "db_tool": "db-agent" for dual else "claude"}.
+Defaults: assessment.json "execution": {"port_engine": "devtx", "db_tool": "db-agent" for postgresql else "claude"}.
 """
 import argparse
 import json
@@ -106,7 +106,7 @@ def main():
     ex = cfg.get("execution") or {}
     db_sel = (est.get("scenario") or {}).get("database", "none")
     engine = a.port_engine or ex.get("port_engine") or "devtx"
-    db_tool = a.db_tool or ex.get("db_tool") or ("db-agent" if db_sel == "dual" else "claude")
+    db_tool = a.db_tool or ex.get("db_tool") or ("db-agent" if db_sel in ("dual", "postgresql") else "claude")
     owners, rules = coverage()
     mod = modern_projects(root)
     files_of = {}

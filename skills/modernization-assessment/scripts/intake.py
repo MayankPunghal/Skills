@@ -55,7 +55,7 @@ WORK_ITEMS = ("build_artifacts", "cicd_secrets", "retarget", "validation_cutover
 HOURS_QUESTIONS = ("scope_confirm", "scope_exclusions", "work_items", "retarget_to", "regression_tests", "estimate_basis", "environments",
                    "environments_differ", "pipeline_scope", "pipeline_solutions")
 HOSTING = {"lift-and-shift": "lift-and-shift", "modernize": "modernize", "compare": "modernize"}
-DATABASE = {"keep": "none", "postgresql": "postgresql", "dual": "dual", "later": "none", "unknown": "none"}
+DATABASE = {"keep": "none", "postgresql": "postgresql", "dual": "postgresql", "later": "none", "unknown": "none"}
 
 
 def questions():

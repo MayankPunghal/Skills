@@ -23,7 +23,7 @@ import shutil
 
 from _common import CONFIG_NAME, DEFAULTS, OUT, SKILL_DIR, issues_log, save_config, utf8_stdout, write_json, read_json
 
-NARRATIVE = ["executive-summary", "architecture", "application-plans", "database", "risks-and-questions", "testing-and-merge", "cost", "dependencies"]
+NARRATIVE = ["executive-summary", "architecture", "project-summaries", "application-plans", "database", "risks-and-questions", "testing-and-merge", "cost", "dependencies"]
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
     ap.add_argument("--target", help="target framework moniker (default net10.0)")
     ap.add_argument("--target-hosting", dest="scen_hosting", choices=["modernize", "windows-rehost", "lift-and-shift"],
                     help="client hosting preference (default modernize); normally set by intake.py from the questionnaire")
-    ap.add_argument("--target-database", dest="scen_db", choices=["dual", "postgresql", "none"], help="database code scenario (default dual)")
+    ap.add_argument("--target-database", dest="scen_db", choices=["postgresql", "none"], help="database code scenario (default postgresql; dual-database support is not offered)")
     ap.add_argument("--start-date", dest="scen_start", help="day the team gets codebase access, YYYY-MM-DD: sprint 1 of the coding plan starts then")
     ap.add_argument("--online", action="store_true", help="api.nuget.org lookups for package TFMs/deprecation/vulnerabilities/licences (the default)")
     ap.add_argument("--offline", action="store_true", help="no api.nuget.org lookups (package ids, private ones too, stay on this machine)")
@@ -88,7 +88,7 @@ def main():
         cfg["client_contact"] = a.client_contact.strip()
     if a.build_work_dir:
         cfg["build_work_dir"] = os.path.abspath(a.build_work_dir).replace("\\", "/")
-    cfg.setdefault("scenario", {"hosting": "modernize", "database": "auto"})
+    cfg.setdefault("scenario", {"hosting": "modernize", "database": "postgresql"})
     if a.scen_hosting:
         cfg["scenario"]["hosting"] = a.scen_hosting
     if a.scen_db:

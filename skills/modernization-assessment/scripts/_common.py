@@ -29,7 +29,7 @@ DEFAULTS = {
     "git_activity_days": 180,
     "exclude_dirs": ["bin", "obj", "packages", "node_modules", ".git", ".vs", "TestResults", "dist", "wwwroot/lib", "bower_components"],
     "skip_repos": [],
-    "scenario": {"hosting": "modernize", "database": "dual"},  # hosting: modernize | windows-rehost | lift-and-shift; database: dual | postgresql | none
+    "scenario": {"hosting": "modernize", "database": "postgresql"},  # hosting: modernize | windows-rehost | lift-and-shift; database: postgresql | none (dual SQL Server + PostgreSQL support is not offered: decision 2026-11-05)
     "assessment_type": "",           # set by intake.py from the questionnaire: lift-and-shift | modernize | compare (empty: intake not done)
     "intake": {},                    # questionnaire answers (intake.py); drive assessment_type, scenario, report sections, estate extrapolation
 }

@@ -645,9 +645,10 @@ def main():
         raise SystemExit("run classify_apps.py first")
     sc = cfg.get("scenario") or {}
     hosting = a.hosting or sc.get("hosting") or "modernize"
-    database = a.database or sc.get("database") or "dual"
+    database = a.database or sc.get("database") or "postgresql"
+    database = "postgresql" if database == "dual" else database  # decision 2026-11-05: PostgreSQL only, no dual-database support
     if database == "auto":  # setup_assessment.py's placeholder when no database scenario was chosen
-        database = "dual"
+        database = "postgresql"
     if hosting not in est["hosting_scenarios"] or hosting.startswith("_"):
         raise SystemExit(f"unknown hosting scenario '{hosting}': use {', '.join(k for k in est['hosting_scenarios'] if not k.startswith('_'))} (assessment.json scenario.hosting)")
     if database not in ("dual", "postgresql", "none"):

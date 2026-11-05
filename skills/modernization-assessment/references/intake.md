@@ -29,7 +29,7 @@ The questions live in `scripts/data/intake.json`; edit wording there, not in cod
 | `goal` | What does the client want from the move? | `lift-and-shift` (move as it is), `modernize`, `compare` (not decided) |
 | `os_today` | Server operating systems today | `windows`, `linux`, `both`, `unknown` |
 | `platform` | Where the servers run and who manages them | free text (e.g. "Proxmox, vendor-managed") |
-| `db_engine` | What happens to the database engine | `keep`, `postgresql`, `dual`, `later` |
+| `db_engine` | What happens to the database engine | `keep`, `postgresql`, `later` (`dual` is no longer offered: PostgreSQL only) |
 | `db_hosting` | Where the databases run on AWS | `ec2`, `rds`, `undecided`, `none` |
 | `aws_native` | Replace servers with AWS managed services | `no`, `later` (future options, not costed), `now` (costed) |
 | `code_access` | How much code we can see | `all`, `sample` |

@@ -73,13 +73,12 @@ def main():
                      "a redesign for PostgreSQL or a decision on AWS (`assessment/sql/<repo>/db-inventory.md`).")
     if reps:
         tot = est.get("total", [0, 0])
-        hpd = next(iter(reps.values())).get("hours_per_day", 6)
-        eng = c.est.get("engineers") or 2  # the same team size as the report's at-a-glance duration
-        weeks2 = [max(1, math.ceil(tot[0] / (eng * hpd * 5))), max(1, math.ceil(tot[1] / (eng * hpd * 5)))]
+        tm = est.get("time") or {"weeks": "?", "months": "?"}
         engines = sorted({v["engine"] for v in reps.values()})
-        L.append(f"- **Effort: {h(*tot)}** (planning grade, +-25%, buffer included): about {weeks2[0]}-{weeks2[1]} weeks for a team of {eng}. "
+        L.append(f"- **Effort: about {est.get('expected', 0):,} h** (most likely {h(*tot)}; plan for {est.get('commit', 0):,} h to be safe; buffer included): "
+                 f"{tm['weeks']:g} weeks or {tm['months']:g} months of work. "
                  f"Port by {', '.join(engines)}" + ("; Claude cleans up what the engine leaves" if any(not e.startswith("Claude") for e in engines) else "")
-                 + "".join(f"; {t} adds the PostgreSQL path" for t in sorted({v["db_tool"] for v in reps.values() if v.get("database_port", True)})) + ".")
+                 + "".join(f"; {t} moves the database code to PostgreSQL" for t in sorted({v["db_tool"] for v in reps.values() if v.get("database_port", True)})) + ".")
     elif c.repos and c.est.get("totals"):
         t = c.est["totals"]
         L.append(f"- **Effort: {t.get('total_days', ['?', '?'])[0]}-{t.get('total_days', ['?', '?'])[1]} person-days** (estimate_effort.py; run effort_facts.py and estimate_phases.py for the phased hours).")

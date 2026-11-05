@@ -35,7 +35,6 @@
    "options": [
     {"value": "keep", "label": "Keep the same engine", "help": "For example SQL Server stays SQL Server. No database code change."},
     {"value": "postgresql", "label": "Move to PostgreSQL", "help": "Convert the database and its code; SQL Server is removed."},
-    {"value": "dual", "label": "Support both", "help": "The applications run on SQL Server and on PostgreSQL."},
     {"value": "later", "label": "Decide later", "help": "Keep the engine for now; the report still shows the PostgreSQL options side by side."}
    ],
    "sets": "scenario.database"

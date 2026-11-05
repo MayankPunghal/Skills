@@ -137,8 +137,8 @@ def headline(st):
     ph = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {}) or {}
     for repo, x in sorted((ph.get("repos") or {}).items()):
         lo, hi = (x.get("total") or [0, 0])[:2]
-        dd = x.get("dev_days") or ["?", "?"]
-        lines.append(f"- **{repo}**: {lo}–{hi} h phased estimate ({dd[0]}–{dd[1]} dev-days of {x.get('hours_per_day', '?')} h)")
+        tm = x.get("time") or {}
+        lines.append(f"- **{repo}**: about {x.get('expected', '?')} h phased estimate (range {lo}–{hi} h; {tm.get('weeks', '?')} weeks, {tm.get('months', '?')} months of work)")
         for s in x.get("scenarios") or []:
             if isinstance(s, dict) and s.get("total"):
                 lines.append(f"  - scenario *{s.get('name')}*: {s['total'][0]}–{s['total'][1]} h")

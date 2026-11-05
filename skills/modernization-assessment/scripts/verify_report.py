@@ -154,7 +154,7 @@ def main():
     ok4 = not draft or a.allow_draft
     results.append(("7R decisions reviewed", ok4, f"{len(cls['applications'])} applications; draft (not reviewed): {len(draft)}" + (f" ({', '.join(draft[:6])})" if draft else "") + (" [allowed]" if draft and a.allow_draft else "")))
     # 5 narratives
-    todo = [os.path.basename(p) for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^(?:PENDING|TODO):", open(p, encoding="utf-8").read())]
+    todo = [os.path.basename(p) for p in glob.glob(os.path.join(OUT, "narrative", "*.md")) if re.search(r"(?m)^(?:PENDING|TODO):|DRAFT: rewrite from the code", open(p, encoding="utf-8").read())]
     missing_n = re.findall(r"_Narrative '([\w-]+)' not written yet\._", report)
     results.append(("narratives written", not todo and not missing_n, f"PENDING in: {', '.join(todo) or 'none'}; missing: {', '.join(missing_n) or 'none'}"))
     # 5b finding references: F-numbers are positions in the sorted findings and move on every rescan; narratives cite {{f:RULE}} tags

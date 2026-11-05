@@ -40,3 +40,14 @@ The tone and wording rules for every client-facing text (narratives, reviewer no
 - **Tables** for anything with more than three items of the same shape. **Bullets** for steps and short lists. **Prose** for reasoning.
 - **Refs:** findings are referred to as `F-012` in the report, applications by name, packages by `Id version`. In narratives, decisions and review notes write the tag `{{f:RULE-ID}}` (or `{{f:RULE-ID@project-or-app}}` when the rule fires in several projects), never a raw `F-012`: F-numbers are positions in the sorted findings and change on every rescan. `build_report.py` turns tags into the current numbers and `verify_report.py` fails on raw numbers or tags that match nothing. Numbers from the data are written as `{{v:path}}` tags for the same reason ([write-report.md](write-report.md)).
 - **Headings** come from the template. Narratives start directly with content; don't repeat the heading.
+
+## Plain language (3.4.0)
+
+The readers include managers and delivery leads who do not know the tools' vocabulary. A reader must understand every line without asking.
+- **Say what it is, in everyday words.** "Before/after comparison tests: save what the old app returns for sample requests, check the new app returns the same" instead of "golden-file runner", "parity harness" or "canary".
+- **Name a thing once, then keep the name.** If a technical term is unavoidable (CallContext, ASMX, Web Forms), explain it in the same sentence the first time: "per-request shared data (CallContext)".
+- **No stage letters or item codes as the only label** (A1, B7, 0.3). A code may follow the words, never replace them.
+- **Say who does it and what the output is** for each work item: the DevOps team, the DB team, the .NET team, the tool, Claude.
+- **One headline number.** Hours = expected, then the range, then a safe figure. Never two totals side by side (a "sum of the ranges" and a "rolled up" figure), never per-developer tables: hours, weeks (40 h) and months (168 h) only.
+- **The estimate is AI-assisted.** Class libraries, console apps and API projects are the easy part; Web Forms is where the time goes. Say so, and do not price manual work.
+- **Standing decisions are not re-argued:** PostgreSQL only (no dual database), no re-architecture (no microservices, no merging apps), services we host stay self-hosted (configuration changes only), Angular-only UIs need almost no change.

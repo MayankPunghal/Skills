@@ -96,10 +96,12 @@ class Ctx:
                        "findings": {"total": len(self.findings), **{s.lower(): n for s, n in Counter(f["severity"] for f in self.findings).items()}}})
         p = phased(self)  # {{v:phased.low}}-{{v:phased.high}} h, {{v:phased.scenarios[Engineer-paced rates].low}}: the planning figure in narratives
         if p:
-            VALUES["phased"] = {"low": p["total"][0], "high": p["total"][1], "days_low": round(p["total"][0] / p["hpd"]), "days_high": round(p["total"][1] / p["hpd"]),
-                                "weeks_low": p["weeks"][0], "weeks_high": p["weeks"][1], "engineers": p["engineers"], "profile": p["profile"],
+            VALUES["phased"] = {"low": p["total"][0], "high": p["total"][1], "expected": p["expected"], "commit": p["commit"],
+                                "weeks": p["time"]["weeks"], "months": p["time"]["months"],
+                                "weeks_low": p["time_range"][0]["weeks"], "weeks_high": p["time_range"][1]["weeks"],
+                                "months_low": p["time_range"][0]["months"], "months_high": p["time_range"][1]["months"], "profile": p["profile"],
                                 "buffer_pct": int(round(p["buffer"] * 100)),
-                                "phases": {k: {"low": round(v[0]), "high": round(v[1])} for k, v in p["phases"].items()},
+                                "phases": {k: {"expected": round(v[0])} for k, v in p["phases"].items()},
                                 "scenarios": {k: {"low": v[0], "high": v[1], "delta_low": v[0] - p["total"][0], "delta_high": v[1] - p["total"][1]}
                                               for k, v in p["scenarios"].items()}}
         FINDING_REFS.clear()  # rule -> findings, for {{f:RULE}} tags in narratives (F-numbers change whenever findings change)
@@ -148,15 +150,12 @@ def headline_effort(c, t):
     if not p:
         return None
     lo, hi = p["total"]
-    rows = [(f"Effort (planning figure, {p['profile']})", f"**{lo:,}–{hi:,} h** ({lo / p['hpd']:.0f}–{hi / p['hpd']:.0f} dev-days of {p['hpd']:g} h), {int(round(p['buffer'] * 100))}% buffer included "
-             "(phased estimate, section 8.1)")]
+    rows = [(f"Effort (planning figure, {p['profile']})", f"**About {p['expected']:,} h** (most likely {lo:,}–{hi:,} h; plan for {p['commit']:,} h to be safe), "
+             f"{int(round(p['buffer'] * 100))}% buffer included (phased estimate, section 8.1)")]
     if t.get("likely_hours"):
         rows.append(("Cross-check (parametric model)", f"likely {t['likely_hours']} h; P10–P90 {rng(t.get('total_hours', [0, 0]), ' h')}"))
-    ep = next((v for k, v in p["scenarios"].items() if k.lower().startswith("engineer-paced")), None)
-    if ep:
-        rows.append(("Engineer-paced comparison", f"{ep[0]:,}–{ep[1]:,} h if engineers review every line and hand-fix"))
-    rows.append(("Indicative duration", (f"~{p['weeks'][0]}–{p['weeks'][1]} weeks" if p["weeks"][1] != p["weeks"][0] else f"~{weeks_text(p['weeks'][0])}")
-                 + f" with {p['engineers']} engineers (planning figure; the sprint plan in 8.5 follows the parametric cross-check)"))
+    rows.append(("Effort in weeks and months", f"about {p['time']['weeks']:g} weeks or {p['time']['months']:g} months of work "
+                 f"(range {p['time_range'][0]['weeks']:g}–{p['time_range'][1]['weeks']:g} weeks); hours of work, not a calendar, so it does not assume a team size"))
     return rows
 
 
@@ -1294,18 +1293,24 @@ def phased(c):
     sc, phs = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0.0, 0.0])
     for _, e in ph:
         for x in e.get("phases", []):
-            phs[x["id"]][0] += x.get("low") or 0
-            phs[x["id"]][1] += x.get("high") or 0
+            phs[x["id"]][0] += x.get("expected") or 0
+            phs[x["id"]][1] += x.get("expected") or 0
         for s in e.get("scenarios", []):
             if s.get("total"):
                 sc[s["name"]][0] += s["total"][0]
                 sc[s["name"]][1] += s["total"][1]
-    eng = c.est.get("engineers") or 3
-    hpd = ph[0][1].get("hours_per_day", 6)  # the phased model's productive hours per developer-day (efficiency already in it)
-    per_week = eng * 5 * hpd
-    lo, hi = sum(e["total"][0] for _, e in ph), sum(e["total"][1] for _, e in ph)
-    return {"repos": ph, "total": [lo, hi], "profile": ph[0][1].get("rate_profile", "claude-first"), "buffer": ph[0][1].get("buffer", 0), "hpd": hpd,
-            "scenarios": dict(sc), "phases": dict(phs), "engineers": eng, "weeks": [max(1, math.ceil(lo / per_week)), max(1, math.ceil(hi / per_week))]}
+    # the estate figure is the Monte Carlo roll-up over all repositories (estimate_phases.py), never a sum of ranges
+    est = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {}) or {}
+    if est.get("expected") and set(est.get("repos", {})) >= {r for r, _ in ph}:
+        lo, hi, exp, commit, tm, tr = est["total"][0], est["total"][1], est["expected"], est["commit"], est["time"], est["time_range"]
+    else:
+        lo, hi = sum(e["total"][0] for _, e in ph), sum(e["total"][1] for _, e in ph)
+        exp, commit = sum(e.get("expected", 0) for _, e in ph), sum(e.get("commit", 0) for _, e in ph)
+        tm = {"hours": exp, "weeks": round(exp / 40, 1), "months": round(exp / 168, 1)}
+        tr = [{"weeks": round(lo / 40, 1), "months": round(lo / 168, 1)}, {"weeks": round(hi / 40, 1), "months": round(hi / 168, 1)}]
+    return {"repos": ph, "total": [lo, hi], "expected": exp, "commit": commit, "time": tm, "time_range": tr,
+            "profile": ph[0][1].get("rate_profile", "claude-first"), "buffer": ph[0][1].get("buffer", 0),
+            "scenarios": dict(sc), "phases": dict(phs)}
 
 
 def weeks_text(w):

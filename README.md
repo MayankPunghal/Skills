@@ -5,7 +5,7 @@
 **Production-grade Agent Skills for Claude Code, Codex, Cursor and GitHub Copilot.**
 <br>One command installs them, and Claude picks the right one on its own.
 
-[![Skills](https://img.shields.io/badge/skills-6-6E56CF)](#skills)
+[![Skills](https://img.shields.io/badge/skills-7-6E56CF)](#skills)
 [![Agents](https://img.shields.io/badge/agents-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20Copilot-0A7EA4)](#supported-agents)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.10-3776AB?logo=python&logoColor=white)](https://www.python.org)

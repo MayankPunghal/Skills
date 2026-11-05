@@ -5,9 +5,9 @@
 Run after effort_facts.py. Operating model: tool-run, no hand-coding. One porting engine per repository (AWS Transform
 for .NET, or the AWS DevTx Version Upgrade Toolkit) does the .NET 10 port; Claude with the dotnet-modernization skill
 carries out every remediation pattern the engine leaves and the AWS managed-service swaps, as reviewed batches; the DB
-porting agent (or Claude with the DB porting skills) adds the PostgreSQL path beside SQL Server in the data-access layer.
+porting agent (or Claude with the DB porting skills) moves the data-access code from SQL Server to PostgreSQL (one database, no dual support).
 The hours are engineer time to run the tools, approve plans, review pull requests, fix what the gates reject, decide
-designs and sign off. Planning grade: +-25%. Buffer 15% on the subtotal by default.
+designs and sign off. Planning grade: +-25%. Buffer 10% by default. The total is a Monte Carlo roll-up (likely = P50, range = P10-P90), never the sum of every low to the sum of every high.
 
 Every line = quantity from the code (assessment/effort/<repo>/facts.json) x a rate range per unit (+ a fixed part). Two rate sets: claude-first (default: the engine or Claude writes every line) and engineer-paced (the reference plan; shown as a scenario); estimate-inputs.json "rate_profile" picks one.
 Rates live in RATES below, each with the basis it was set from. Per-repository assumptions live in
@@ -28,6 +28,7 @@ import sys
 
 from _common import OUT, data, load_config, load_state, read_json, utf8_stdout, write_json
 import _findings as F
+import _montecarlo as MC
 from _mdhtml import write_pair
 
 # rate per unit (low, high) hours. Basis: a reference modernization plan priced item by item for a tool-run port of a
@@ -52,7 +53,7 @@ ENGINEER_PACED = {
     "proc": (0.4, 0.8), "call_site": (0.1, 0.2), "multi_result": (2, 4),
     "shim_base": (4, 8), "sql_error_number": (0.5, 1.0), "output_param_proc": (0.5, 1.0), "tvp_proc": (2, 4),
     "for_xml_proc": (3, 6), "cross_db": (2, 4), "cross_db_base": (2, 2), "repoint": (0.5, 1.0), "db_parity_proc": (0.25, 0.5),
-    # DB porting agent (dual database): engineer time per run and per item of its DB contract / report. INFERRED until
+    # DB porting agent (SQL Server to PostgreSQL only): engineer time per run and per item of its DB contract / report. INFERRED until
     # a measured run on the estate: calibrate after the first one.
     "dbagent_run": (4, 8), "dbagent_proc_review": (0.15, 0.3), "dbagent_stmt_review": (0.25, 0.5), "dbagent_open_items": (4, 10),
 }
@@ -81,6 +82,39 @@ CLAUDE_FIRST = {
     "dbagent_run": (1, 2), "dbagent_proc_review": (0.05, 0.1), "dbagent_stmt_review": (0.1, 0.2), "dbagent_open_items": (1, 3),
 }
 RATE_PROFILES = {"claude-first": CLAUDE_FIRST, "engineer-paced": ENGINEER_PACED}
+
+# ---- T-shirt sizing of each project's own port (replaces the per-project / per-KLOC lines of the engine run)
+# Class libraries, console apps and API apps rarely hit a real problem on .NET 10; Web Forms is where the time goes. Hours are
+# AI-assisted (the engine or Claude does the porting, the engineer runs it, reviews and fixes what the build rejects).
+TSHIRT_HOURS = {"XS": (1, 2), "S": (2, 4), "M": (4, 8), "L": (8, 16), "XL": (16, 32)}
+TSHIRT_ORDER = ["XS", "S", "M", "L", "XL"]
+TSHIRT_RULES = ("Size starts from hand-written + markup lines (under 1,000 XS, under 5,000 S, under 20,000 M, under 60,000 L, more XL). "
+                "A class library, console app or API project stays at that size. A WCF / ASMX / Windows service / desktop project goes up one size. "
+                "A Web Forms project is at least L. A project already on SDK style and .NET Core or later is XS.")
+# AI assistance on top of the rates: Claude and AWS Transform shorten the timeline by 20-35% (systemic: one draw for the whole estate).
+# Web Forms UI work (a real redesign) gets less of it; work that waits on environments or people (parity runs, canary, re-points) none.
+AI_CUT = {"code": (0.65, 0.80), "red": (0.85, 1.0), "db": (0.70, 0.85)}
+FIXED_IDS = {"B2", "B12", "A9", "A10"}
+RED_IDS = {"B10"}
+LIKELY_POSITION = 0.25  # the likely hours sit a quarter of the way up each range: effort is right-skewed but the tools make the low end the usual case
+ROLLUP = {"iterations": 4000, "seed": 1, "correlation": 0.3, "factor_position": 0.5}
+HOURS_PER_WEEK, HOURS_PER_MONTH = 40, 168  # 5 days of 8 h; 21 days of 8 h
+
+
+def size_project(p, f, web):
+    """T-shirt size of one project: (size, reason)."""
+    t = (p.get("type") or "").lower()
+    kloc = ((p.get("loc_handwritten") or 0) + (p.get("loc_markup") or 0)) / 1000
+    i = 0 if kloc < 1 else 1 if kloc < 5 else 2 if kloc < 20 else 3 if kloc < 60 else 4
+    why = [f"{kloc:.1f} KLOC"]
+    modern = p.get("sdk_style") and any(re.match(r"net(coreapp)?[5-9]|net1\d", fw or "", re.I) for fw in p.get("frameworks") or [])
+    if modern:
+        return "XS", why + ["already SDK style on modern .NET"]
+    if any(k in t for k in ("wcf", "asmx", "service", "winforms", "wpf", "desktop")):
+        i, why = min(i + 1, 4), why + ["service / desktop project: one size up"]
+    if "webforms" in t:
+        i, why = max(i, 3), why + ["Web Forms: at least L"]
+    return TSHIRT_ORDER[i], why
 RATES = CLAUDE_FIRST  # set per build from estimate-inputs.json "rate_profile"
 # Who does each work item. One porting engine per project (estimate-inputs.json "port_engine": "devtx" = AWS's Version
 # Upgrade Toolkit: Upgrade Assistant + Kiro CLI with its 28-file .NET knowledge base, iterated to a green build; or
@@ -113,13 +147,13 @@ def db_tool(inp):
 FIXED_OWNER = {"B2": "Claude", "B13": "Claude + DevOps (static hosting)", "B12": "Engineers + DevOps", "A8": "Engineers (design)", "A9": "DevOps (configuration)",
                "A10": "Engineers (PostgreSQL test environment)"}
 PHASES = [  # (id, title, who, items): the readable view; the detail table keeps every line item
-    ("P1", "Prepare: baseline build, golden request/response files, page smoke tests", "claude", ["B2"]),
+    ("P1", "Prepare: save what the old app returns for sample requests, so the new app can be compared with it", "claude", ["B2"]),
     ("P1s", "Static content: publish to S3 + CloudFront (nothing to port)", "claude", ["B13"]),
-    ("P2", "Port to .NET 10 with the engine", "engine", None),
-    ("P3", "Clean-up of what the engine leaves", "claude", None),
-    ("P4", "Data access: PostgreSQL path beside SQL Server", "db", ["A1", "A2", "A3", "A4", "A5", "A5b", "A8"]),
-    ("P5", "Server-hosted services to AWS managed services", "claude", "S"),
-    ("P6", "Verify and cut over: data-access parity, connection re-points, canary per environment", "people", ["A10", "A9", "B12"]),
+    ("P2", "Port to .NET 10 with the engine (sized XS to XL per project)", "engine", None),
+    ("P3", "Clean-up of what the engine does not cover", "claude", None),
+    ("P4", "Database code: move from SQL Server to PostgreSQL (SQL Server is dropped, no dual support)", "db", ["A1", "A2", "A3", "A4", "A5", "A5b", "A8"]),
+    ("P5", "Services we host ourselves: configuration changes only (no move to AWS managed services unless chosen)", "claude", "S"),
+    ("P6", "Check and go live: database results match, connections re-pointed, first live traffic per environment", "people", ["A10", "A9", "B12"]),
 ]
 
 
@@ -148,15 +182,16 @@ def phases(I, inp):
         w = {"engine": ENGINES[eng], "claude": "Claude", "db": DB_TOOLS[db_tool(inp)],
              "people": "Engineers + DevOps"}[who]
         out.append({"id": pid, "title": title.replace("the engine", ENGINES[eng]) if pid == "P2" else title, "who": w, "items": [x["id"] for x in its],
-                    "what": [short(x) for x in its], "low": round(sum(x["low"] for x in its), 1), "high": round(sum(x["high"] for x in its), 1)})
+                    "what": [short(x) for x in its], "low": round(sum(x["low"] for x in its), 1), "high": round(sum(x["high"] for x in its), 1),
+                    "expected": round(sum(x.get("exp", 0) for x in its), 1)})
     return out
 
 
-SHORT = {"B1": "SDK-style projects, Linux CI build", "B2": "parity harness", "B3": "engine runs + review", "B4": "HTTP handlers / ASMX entry points",
-         "B5": "CallContext ambient context", "B6": "SOAP service clients", "B7": "Windows-only APIs", "B8": "config + secrets",
-         "B9": "packages", "B10": "admin UI (Web Forms)", "B11": "Linux container + health check", "B12": "canary per environment",
-         "A1": "tool run + plan approval", "A2": "raw SQL", "A3": "procedure contract", "A4": "multi-result sets", "A5": "open items, error numbers",
-         "A5b": "FOR XML results", "A8": "cross-database names", "A9": "connection re-points", "A10": "data-access parity"}
+SHORT = {"B1": "SDK-style projects, Linux CI build", "B2": "before/after comparison tests", "B3": "port each project (T-shirt sized)", "B4": "web request entry points",
+         "B5": "per-request shared data (CallContext)", "B6": "SOAP service clients", "B7": "Windows-only code", "B8": "config + secrets",
+         "B9": "packages", "B10": "admin UI (Web Forms)", "B11": "Linux container + health check", "B12": "first live traffic per environment",
+         "A1": "database tool run + plan approval", "A2": "raw SQL", "A3": "stored procedure names and call forms", "A4": "procedures returning several result sets", "A5": "open items, error numbers",
+         "A5b": "FOR XML results", "A8": "queries across databases", "A9": "connection re-points", "A10": "database results match"}
 
 
 def short(x):
@@ -236,22 +271,24 @@ def build(f, inp):
           (len(f["packages"]) if keep else 0, "NuGet packages", "package"), (len(bins) if keep else 0, "binary (non-NuGet) references", "binary_ref")],
          "reference plan B1 16-32 h (one web solution, agent-scaffolded)")
     pages = sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for w in web.values())
-    line(I, "B", "B2", "Parity harness: golden request/response files per API request type, page smoke tests",
+    line(I, "B", "B2", "Before/after comparison tests: save what the old app returns for each API request type, plus a quick check that each page opens",
          [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
           (0 if ui_retired else pages, "admin pages", "page_smoke")],
          "reference plan B2 24-40 h for 14 templates; automated tests counted in facts.json", "INFERRED")
-    kloc = sum((p["loc_handwritten"] or 0) + (p["loc_markup"] or 0) for p in keep) / 1000
-    line(I, "B", "B3", "Porting engine runs + review of the ported branch",
-         [(len(keep), "projects", "transform_project"), (round(kloc, 1), "KLOC hand-written + markup reviewed", "review_kloc")],
-         "reference plan B3 24-40 h")
+    sizes = {p["path"]: size_project(p, f, web) for p in keep}
+    f["_sizes"] = {k: {"size": v[0], "why": "; ".join(v[1])} for k, v in sizes.items()}
+    by_size = {s: sum(1 for v in sizes.values() if v[0] == s) for s in TSHIRT_ORDER}
+    line(I, "B", "B3", "Port each project to .NET 10 with the tool and check the result (sized XS to XL per project)",
+         [(n, f"{s} project(s)", TSHIRT_HOURS[s]) for s, n in by_size.items()],
+         "T-shirt size per project (TSHIRT_HOURS), AI-assisted: " + TSHIRT_RULES)
     handlers = sum(w["totals"]["handlers"] for w in web.values())
-    line(I, "B", "B4", "HTTP entry points to ASP.NET Core (handlers, ASMX / WCF services, Response.End, Windows auth)",
+    line(I, "B", "B4", "Web request entry points moved to ASP.NET Core (handlers, ASMX / WCF services, Response.End, Windows login)",
          [(handlers, "HTTP handlers", "handler"), (sum(w["totals"]["asmx"] + w["totals"]["svc"] for w in web.values()), "ASMX / .svc services", "asmx_svc"),
           (occ(f, "WEB-RESPONSE-END", [p["path"] for p in keep if f["web"].get(p["path"], {}).get("totals", {}).get("pages", 0) <= 1]), "Response.End / Transfer outside pages", "response_end"),
           (occ(f, "AUTH-WINDOWS"), "Windows-auth configs", "windows_auth")],
          "INFERRED from the handler census; Transform does not port IHttpAsyncHandler plumbing by itself")
     amb = inp.get("ambient_context_uses", {}).get("value", 0)
-    line(I, "B", "B5", "Ambient request context (CallContext / HttpContext.Current) to AsyncLocal / HttpContext",
+    line(I, "B", "B5", "Data shared across one request (CallContext / HttpContext.Current) moved to the .NET 10 way of doing it",
          [(1 if amb else 0, "context class", "ambient_base"), (amb, "uses", "ambient_use"),
           (occ(f, "WEB-HTTPCONTEXT-CURRENT"), "HttpContext.Current", (0.25, 0.5))],
          "INFERRED; .NET Remoting CallContext.HostContext does not exist on .NET 10")
@@ -306,7 +343,7 @@ def build(f, inp):
          "3-6 h per deployable plus health check (earlier calibrated draft)")
     line(I, "B", "B13", "Static content: publish to Amazon S3 behind CloudFront (build step, cache headers, error pages, redirects); nothing is ported",
          [(len(static), "content-only projects", (1.5, 4))], "a project with no compiled code (discover_estate.py content_only); estimation.json other_r_hours", "INFERRED")
-    line(I, "B", "B12", "Canary / cutover support",
+    line(I, "B", "B12", "First live traffic and go-live support",
          [(len(deployables) * envs, f"deployable x environment ({len(deployables)} x {envs})", "canary_env_deployable")],
          "reference plan B8 24-40 h for 3 environments", inp["environments"].get("status", "UNKNOWN"))
 
@@ -315,13 +352,13 @@ def build(f, inp):
     if not inp.get("database_port", {}).get("value", True):
         pass  # no PostgreSQL path in scope (assessment scenario database = none): stage A is not priced
     elif db_tool(inp) == "db-agent":
-        line(I, "A", "A1", "DB porting agent run: analyse, approve the plan, execute (seams, Sql/PostgreSql resources, DB contract), build + checklist, review the pull request",
+        line(I, "A", "A1", "DB porting agent run: analyse, approve the plan, convert the code to PostgreSQL, build + checklist, review the pull request",
              [(1, "run", "dbagent_run")], "the agent's own phases: human approval gate, real build, self-repair", "INFERRED", tool="DB porting agent")
         line(I, "A", "A2", "Review the agent's raw-SQL conversions; redesign statements stay with an engineer",
              [(sum(1 for s in st if not (s["conversion"] or {}).get("redesign")), "statements", "dbagent_stmt_review"),
               (sum(1 for s in st if (s["conversion"] or {}).get("redesign")), "statements (redesign)", "stmt_redesign"),
               (sum(1 for s in st if s["dynamic"]), "statements built at run time", "stmt_dynamic")], "INFERRED", "VERIFIED", tool="DB porting agent + engineer review")
-        line(I, "A", "A3", "Check the DB contract per procedure (PostgreSQL name, call form, argument order) against the DB team's conversion",
+        line(I, "A", "A3", "Check each stored procedure's new PostgreSQL name and call form against the DB team's conversion",
              [(spx["distinct"], "procedures", "dbagent_proc_review")], "the agent writes the contract and lints the code against it", tool="DB porting agent + engineer review")
         line(I, "A", "A4", "Multi-result-set remediation", [(spx["multi_result"], "procedures", "multi_result")], "reference plan A4", tool="DB porting agent")
         line(I, "A", "A5", "Open items from the agent's checklist and report; SQL Server error-number logic",
@@ -329,11 +366,11 @@ def build(f, inp):
               (spx["with_output_params"], "procedures with OUTPUT params", "output_param_proc"), (spx["with_tvp"], "procedures with table-valued params", "tvp_proc")],
              "INFERRED", tool="Engineers")
     else:
-        line(I, "A", "A1", "Provider swap SqlClient -> Npgsql (agent spec on the data-access layer)",
+        line(I, "A", "A1", "Replace the SQL Server driver (SqlClient) with the PostgreSQL driver (Npgsql)",
              [(api.get("System.Data.SqlClient using", {}).get("files", 0) + api.get("Microsoft.Data.SqlClient using", {}).get("files", 0), "files importing SqlClient", "sqlclient_file"),
               (round(api.get("Sql* types (new SqlConnection/Command/Parameter/DataAdapter)", {}).get("hits", 0) / 50, 1), "x50 Sql* object creations", "sql_objects_50")],
              "reference plan A1 40-64 h for a corpus of about 10,000 data-access findings")
-        line(I, "A", "A2", "Raw SQL to PostgreSQL dialect (and parameterise concatenated values)",
+        line(I, "A", "A2", "SQL written in the code rewritten for PostgreSQL (and values passed as parameters)",
              [(sum(1 for s in st if s["parsed"] and not (s["conversion"] or {}).get("rewrite") and not (s["conversion"] or {}).get("redesign")), "statements (auto)", "stmt_auto"),
               (sum(1 for s in st if (s["conversion"] or {}).get("rewrite") and not (s["conversion"] or {}).get("redesign")), "statements (rewrite)", "stmt_rewrite"),
               (sum(1 for s in st if (s["conversion"] or {}).get("redesign")), "statements (redesign)", "stmt_redesign"),
@@ -344,7 +381,7 @@ def build(f, inp):
              [(spx["distinct"], "procedures", "proc"), (spx["call_sites"], "call sites", "call_site")],
              "reference plan A3 24-40 h; per procedure because each converted signature is checked")
         line(I, "A", "A4", "Multi-result-set remediation", [(spx["multi_result"], "procedures", "multi_result")], "reference plan A4")
-        line(I, "A", "A5", "Behaviour shim: exceptions, types, date/time, collation",
+        line(I, "A", "A5", "Behaviour differences between SQL Server and PostgreSQL: errors, types, dates, text comparison",
              [(1, "review", "shim_base"), (api.get("SqlException.Number (error-number logic)", {}).get("hits", 0), "SqlException.Number sites", "sql_error_number"),
               (spx["with_output_params"], "procedures with OUTPUT params", "output_param_proc"), (spx["with_tvp"], "procedures with table-valued params", "tvp_proc")],
              "reference plan A5 16-32 h")
@@ -357,10 +394,10 @@ def build(f, inp):
         sum(1 for s in st if "cross-database" in (s["constructs"] or {}) and "dynamic database name" not in (s["constructs"] or {}))
     line(I, "A", "A8", "Cross-database references", [(1 if xdb else 0, "design", "cross_db_base"), (xdb, "statements / procedures", "cross_db")],
          "reference plan A8 24-40 h (estate-wide)", "VERIFIED" if not xdb else "INFERRED", "the target database grouping decides schema vs separate connection")
-    line(I, "A", "A9", "Connection re-points per environment",
+    line(I, "A", "A9", "Point each environment at its PostgreSQL database",
          [(inp.get("sql_connections", {}).get("value", 1) * envs, "connection x environment", "repoint")], "reference plan A9 12-24 h for 6 waves",
          inp["environments"].get("status", "UNKNOWN"))
-    line(I, "A", "A10", "Data-access parity on PostgreSQL non-prod (read paths compared per procedure)",
+    line(I, "A", "A10", "Check that each database call returns the same results on PostgreSQL (non-production)",
          [(spx["distinct"], "procedures", "db_parity_proc")], "the reference plan gates parity; the DB porting agent runs no live database test", "INFERRED")
 
     return finish(I, f, inp)
@@ -442,7 +479,7 @@ def pg_considerations(f, inp):
     rows = [
         ("Raw SQL statements in code (not in procedures)", raw["statements"], f"{raw['parsed']} parsed, {raw['dynamic']} built at run time, "
          f"{sq['conversion_levels'].get('rewrite', 0)} need a rewrite, {sq['conversion_levels'].get('redesign', 0)} a redesign; {raw['files']} files",
-         "Dialect resource per database (Sql / PostgreSql resources); concatenated values become parameters"),
+         "Statements rewritten to PostgreSQL syntax; concatenated values become parameters"),
         ("Stored procedures called from code", spx["distinct"], f"{spx['call_sites']} call sites", "DB contract per procedure: PostgreSQL name, call form, argument order"),
         ("Procedures that return result sets (refcursor or set-returning function)", len(readers),
          ", ".join(p["name"] for p in readers[:6]) + (f" and {len(readers) - 6} more" if len(readers) > 6 else ""),
@@ -461,7 +498,7 @@ def pg_considerations(f, inp):
          "Map to PostgreSQL SQLSTATE codes (PostgresException.SqlState) on the PostgreSQL path"),
         ("Files using the SqlClient API", api.get("System.Data.SqlClient using", {}).get("files", 0) + api.get("Microsoft.Data.SqlClient using", {}).get("files", 0),
          f"{api.get('Sql* types (new SqlConnection/Command/Parameter/DataAdapter)', {}).get('hits', 0)} Sql* object creations",
-         "Behind a provider seam: SqlClient for SQL Server, Npgsql for PostgreSQL"),
+         "SqlClient replaced by Npgsql (no second driver is kept)"),
         ("SqlBulkCopy", hits(api, "SqlBulkCopy"), "", "Bulk-insert seam over COPY (binary); batch size, column mapping, identity and trigger options reproduced"),
         ("Transactions (SqlTransaction, BeginTransaction, TransactionScope)", hits(api, "SqlTransaction / BeginTransaction") + hits(api, "TransactionScope"), "",
          "An error aborts the whole PostgreSQL transaction (catch-and-continue needs a savepoint); retry on 40001 for RepeatableRead / "
@@ -487,10 +524,45 @@ def pg_considerations(f, inp):
     return L
 
 
+def kind_of(x):
+    """Which AI factor an item gets: fixed (waits on environments or people), red (Web Forms UI), db (stage A) or code."""
+    if x["id"] in FIXED_IDS:
+        return "fixed"
+    return "red" if x["id"] in RED_IDS else "db" if x["stage"] == "A" else "code"
+
+
+def rollup(groups, buf):
+    """Monte Carlo roll-up (_montecarlo.py): the range is P10-P90, likely P50, safe-to-commit P80, with the AI-assistance cut drawn once for
+    the whole estate. Adding every item's low and every item's high (kept only as 'bounds') makes the range about twice as wide as
+    it is. groups: {repo: [items]}. Each item gets "exp": its likely hours, scaled so a repository's items add to its P50."""
+    items = [{"pkg": r, "lo": x["low"], "hi": x["high"], "kind": kind_of(x), "pos": LIKELY_POSITION} for r, I in groups.items() for x in I]
+    sim = MC.simulate(items, AI_CUT, ROLLUP)
+    k = 1 + buf
+    sc = lambda d: {n: round(v * k, 1) for n, v in d.items()}
+    fm = {kd: (lo + hi) / 2 for kd, (lo, hi) in AI_CUT.items()}
+    fm["fixed"] = 1.0
+    per = {}
+    for r, I in groups.items():
+        s_ = sc(MC.summary(sim[r])) if r in sim else {n: 0 for n in ("p10", "p50", "p80", "p90", "mean")}
+        raw = [(x, (x["low"] + x["high"] + x["low"] + LIKELY_POSITION * (x["high"] - x["low"])) / 3 * fm[kind_of(x)]) for x in I]
+        tot = sum(e for _, e in raw) or 1
+        for x, e in raw:
+            x["exp"] = round(e / tot * s_["p50"], 2)
+        per[r] = {**s_, "bounds": [round(sum(x["low"] for x in I) * k, 1), round(sum(x["high"] for x in I) * k, 1)]}
+    est = sc(MC.summary(MC.total(sim, list(groups)))) if sim else {n: 0 for n in ("p10", "p50", "p80", "p90", "mean")}
+    allI = [x for I in groups.values() for x in I]
+    est["bounds"] = [round(sum(x["low"] for x in allI) * k, 1), round(sum(x["high"] for x in allI) * k, 1)]
+    return est, per
+
+
+def weeks_months(h):
+    return {"hours": round(h), "weeks": round(h / HOURS_PER_WEEK, 1), "months": round(h / HOURS_PER_MONTH, 1)}
+
+
 def totals(I, inp):
-    buf = inp.get("buffer", {}).get("value", 0.15)
-    sub_lo, sub_hi = sum(x["low"] for x in I), sum(x["high"] for x in I)
-    return sub_lo, sub_hi, buf, sub_lo * (1 + buf), sub_hi * (1 + buf)
+    buf = inp.get("buffer", {}).get("value", 0.10)
+    est, _ = rollup({"x": I}, buf)
+    return sum(x["low"] for x in I), sum(x["high"] for x in I), buf, est["p10"], est["p90"]
 
 
 def occ_rules(f, pattern):
@@ -528,7 +600,7 @@ def inputs_for(repo, f, cfg, d):
     cmap = read_json(os.path.join(OUT, "config", f"{repo}.json"), {}) or {}
     sqlcs |= {f"host:{r['target']}" for r in cmap.get("rows", []) if r.get("type") == "connection string host" and r.get("port") == 1433
               and not nonsql.search(r.get("setting", "")) and r.get("target", "").lower() not in {(c.get("host") or "").lower() for c in f.get("connection_strings", [])}}
-    dbs = (cfg.get("scenario") or {}).get("database", "dual")
+    dbs = (cfg.get("scenario") or {}).get("database", "postgresql")
     sqs = (f.get("sql") or {}).get("summary") or {}
     db_code = bool(sqlcs or (sqs.get("stored_procedures") or {}).get("call_sites") or (sqs.get("raw_sql") or {}).get("statements")
                    or any((v or {}).get("hits") if isinstance(v, dict) else v for v in (sqs.get("data_access_api") or {}).values()))
@@ -557,7 +629,7 @@ def inputs_for(repo, f, cfg, d):
         "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
         "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis, finding}]; added to the main estimate. Manual findings are priced from their effort_key unless an extra item names them in \"finding\" (finding id or rule id)."},
         "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources and networking (DevOps)", "status": "INFERRED", "note": ""},
-        "buffer": {"value": 0.15, "status": "INFERRED", "note": "Planning buffer on the subtotal."},
+        "buffer": {"value": 0.10, "status": "INFERRED", "note": "Planning buffer for work nobody has listed yet, added to every figure. The range already covers the uncertainty of the listed work."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},
         "team": {"value": [1, 2], "status": "INFERRED", "note": "Calendar shown for 1 and 2 developers."},
         "port_engine": {"value": engine if engine in ENGINES else "devtx", "status": "VERIFIED" if engine in ENGINES else "UNKNOWN",
@@ -591,6 +663,9 @@ def inputs_for(repo, f, cfg, d):
         sc["Engineer-paced rates"] = {"question": "If engineers review every line and hand-fix instead of Claude making every change (reference plan rates)",
                                       "set": {"rate_profile": "engineer-paced"}}
         changed = True
+    if inp.get("buffer", {}).get("value") == 0.15 and inp["buffer"].get("status") == "INFERRED":  # 3.4.0: the buffer is 10% (the range already covers the listed work's uncertainty)
+        inp["buffer"] = defaults["buffer"]
+        changed = True
     if inp.get("db_tool", {}).get("value") not in DB_TOOLS:  # a tool name this version does not know
         inp["db_tool"]["value"] = "db-agent"
         changed = True
@@ -615,6 +690,8 @@ def estimate_repo(repo, cfg, a):
     a.out = d
     I = build(f, inp)
     sub_lo, sub_hi, buf, tot_lo, tot_hi = totals(I, inp)
+    est, per = rollup({f["repo"]: I}, buf)
+    est = per[f["repo"]]
     # scenarios: the same estimate with some assumptions changed (the open client questions)
     scen = []
     for name, sc in inp.get("scenarios", {}).get("value", {}).items():
@@ -629,13 +706,12 @@ def estimate_repo(repo, cfg, a):
         scen.append({"name": name, "question": sc.get("question", ""), "total": [round(t[3]), round(t[4])],
                      "delta": [round(t[3] - tot_lo), round(t[4] - tot_hi)]})
     rate_prof = use_profile(inp)  # the scenarios may have switched the rate set: back to this estimate's own
-    stages = {s: (sum(x["low"] for x in I if x["stage"] == s), sum(x["high"] for x in I if x["stage"] == s)) for s in ("A", "B", "S")}
-    hpd = inp.get("hours_per_day", {}).get("value", 6)
+    stages = {s: (round(sum(x["exp"] for x in I if x["stage"] == s), 1),) * 2 for s in ("A", "B", "S")}  # likely hours per stage (one figure)
     res = {"repo": f["repo"], "items": I, "stages": stages, "subtotal": [round(sub_lo), round(sub_hi)], "buffer": buf,
-           "total": [round(tot_lo), round(tot_hi)], "dev_days": [round(tot_lo / hpd), round(tot_hi / hpd)], "hours_per_day": hpd,
+           "total": [round(est["p10"]), round(est["p90"])], "expected": round(est["p50"]), "commit": round(est["p80"]),
+           "bounds": [round(b) for b in est["bounds"]], "time": weeks_months(est["p50"]),
+           "time_range": [weeks_months(est["p10"]), weeks_months(est["p90"])], "sizes": f.get("_sizes", {}),
            "inputs": inp, "rate_profile": rate_prof, "rates": RATES, "finding_rates": FINDING_RATES, "scenarios": scen}
-    team = inp.get("team", {}).get("value", [1, 2])
-    res["calendar_weeks"] = {str(n): [round(tot_lo / (n * hpd * 5), 1), round(tot_hi / (n * hpd * 5), 1)] for n in team}
     os.makedirs(a.out, exist_ok=True)
 
     eng_name = ENGINES[port_engine(inp)]
@@ -648,22 +724,31 @@ def estimate_repo(repo, cfg, a):
          ("Static content only: no project has compiled code, so nothing is ported to .NET; the files are published to S3 + CloudFront. " if all_static else
           f"Tool-run, no hand-coding. **{eng_name}** ports the code (one engine for the whole repository)"
           + ("; " if port_engine(inp) == "claude" else "; **Claude** with the dotnet-modernization skill cleans up what that engine does not cover; "))
-         + (f"**{db_name}** adds the PostgreSQL path beside SQL Server. " if inp.get("database_port", {}).get("value", True) else "No database code change is planned. ")
+         + (f"**{db_name}** moves the database code from SQL Server to PostgreSQL (SQL Server is dropped, no dual support). " if inp.get("database_port", {}).get("value", True) else "No database code change is planned. ")
          + "Engineers run the tools, approve plans, review, fix what the gates reject and sign off. "
          "Planning grade, +-25%. Quantities come from facts.json, rates from estimate_phases.py, assumptions from estimate-inputs.json.", "",
          f"**Not in this estimate:** {inp.get('excluded', {}).get('value') or '-'}", "",
-         f"**Total {res['total'][0]}-{res['total'][1]} h** (subtotal {res['subtotal'][0]}-{res['subtotal'][1]} h + {buf:.0%} buffer) = "
-         f"{res['dev_days'][0]}-{res['dev_days'][1]} dev-days at {hpd} h.", "",
-         "## Plan", "", "| Phase | Who | What | Hours |", "|---|---|---|---|"]
+         f"**Expected: about {res['expected']:,} hours** ({res['time']['weeks']:g} weeks, {res['time']['months']:g} months of work). "
+         f"Most likely range {res['total'][0]:,}-{res['total'][1]:,} hours (8 times in 10 the real figure falls inside it); to be safe plan for {res['commit']:,} hours. "
+         f"Includes a {buf:.0%} buffer for work nobody has listed yet.", "",
+         "## Plan", "", "| Phase | Who | What | Likely hours |", "|---|---|---|---|"]
     for p in ph:
-        L.append(f"| {p['id']} {p['title']} | {p['who']} | {'; '.join(p['what'])} | {p['low']:.0f}-{p['high']:.0f} |")
-    L += [f"| Buffer {buf:.0%} | | | {sub_lo * buf:.0f}-{sub_hi * buf:.0f} |", f"| **Total** | | | **{res['total'][0]}-{res['total'][1]}** |", ""]
+        L.append(f"| {p['id']} {p['title']} | {p['who']} | {'; '.join(p['what'])} | {p['expected']:.0f} |")
+    L += [f"| **Expected total** (buffer {buf:.0%} included) | | | **{res['expected']:,}** |",
+          f"| Range (P10-P90) | | | {res['total'][0]:,}-{res['total'][1]:,} |", f"| Safe to commit (P80) | | | {res['commit']:,} |", "",
+          f"In weeks and months (40-hour weeks, 21-day months): expected {res['time']['weeks']:g} weeks / {res['time']['months']:g} months; "
+          f"range {res['time_range'][0]['weeks']:g}-{res['time_range'][1]['weeks']:g} weeks / {res['time_range'][0]['months']:g}-{res['time_range'][1]['months']:g} months. "
+          "These are hours of work, not a calendar: how long it takes depends on how many people are on it.", ""]
+    if res["sizes"]:
+        L += ["## Project sizes (T-shirt)", "", TSHIRT_RULES, "", "| Project | Size | Why |", "|---|---|---|"]
+        L += [f"| {k} | {v['size']} | {v['why']} |" for k, v in res["sizes"].items()]
+        L += [""]
     L += profile(f, inp) + [""] + pg_considerations(f, inp)
     L += ["", "## Detail by line item", "", "Every hour figure is INFERRED (an estimate). The last column labels the quantities it is built from.", "",
-          "| # | Phase | Work item | Done by | Hours | How the hours are built | Basis | Quantities |", "|---|---|---|---|---|---|---|---|"]
+          "| # | Phase | Work item | Done by | Likely h | Tool-run range h (before AI cut and roll-up) | How the hours are built | Basis | Quantities |", "|---|---|---|---|---|---|---|---|---|"]
     pof = {i: p["id"] for p in ph for i in p["items"]}
     for x in sorted(I, key=lambda x: (pof.get(x["id"], "P9"), x["id"])):
-        L.append(f"| {x['id']} | {pof.get(x['id'], '')} | {x['label']} | {x['tool']} | {x['low']:g}-{x['high']:g} | {'; '.join(x['drivers']) or '-'} | {x['basis']}"
+        L.append(f"| {x['id']} | {pof.get(x['id'], '')} | {x['label']} | {x['tool']} | {x['exp']:g} | {x['low']:g}-{x['high']:g} | {'; '.join(x['drivers']) or '-'} | {x['basis']}"
                  + (f" ({x['note']})" if x["note"] else "") + f" | {x['status']} |")
     aws = f.get("_aws_native")
     if aws and inp.get("aws_native", {}).get("value") and aws.get("library_hours", [0, 0])[1]:
@@ -674,9 +759,11 @@ def estimate_repo(repo, cfg, a):
         if isinstance(v, dict):
             if k not in ("scenarios", "aws_native_choices", "r7"):
                 L.append(f"- **{k}**: {v.get('value', 'not answered')} ({v.get('status', '')}). {v.get('note', '')}")
-    L += ["", f"## Calendar ({hpd} focused hours a day, 5 days a week)", ""]
-    for n, w in res["calendar_weeks"].items():
-        L.append(f"- {n} developer(s): {w[0]}-{w[1]} weeks of build effort.")
+    L += ["", "## How the total is worked out", "",
+          f"1. Every work item has a low and a high (tool-run, AI-assisted rates). 2. Claude and AWS Transform cut the timeline by "
+          f"{round((1 - AI_CUT['code'][1]) * 100)}-{round((1 - AI_CUT['code'][0]) * 100)}% on ordinary code work (less on Web Forms UI, none on work that waits on environments or people). "
+          f"3. The items are combined by Monte Carlo (4,000 trials, items partly move together): the likely figure is the middle trial (P50), the range the 10th to 90th percentile. "
+          f"Adding every low and every high would give {res['bounds'][0]:,}-{res['bounds'][1]:,} h, a range that is almost never real; it is kept only as the outer bound.", ""]
     if scen:
         L += ["", "## What the open questions change", "", "| If | Client question | Total | Change |", "|---|---|---|---|"]
         for x in scen:
@@ -687,7 +774,7 @@ def estimate_repo(repo, cfg, a):
         for k, v in json.loads(a.compare).items():
             L.append(f"| {k} | {v[0]:g}-{v[1]:g} |")
     write_pair(os.path.join(a.out, "estimate.md"), "\n".join(L) + "\n")
-    print(f"{f['repo']}: B {stages['B'][0]:.0f}-{stages['B'][1]:.0f} h, A {stages['A'][0]:.0f}-{stages['A'][1]:.0f} h, S {stages['S'][0]:.0f}-{stages['S'][1]:.0f} h, total {res['total'][0]}-{res['total'][1]} h")
+    print(f"{f['repo']}: B {stages['B'][0]:.0f} h, A {stages['A'][0]:.0f} h, S {stages['S'][0]:.0f} h likely; expected {res['expected']} h (range {res['total'][0]}-{res['total'][1]}, safe {res['commit']})")
     return res
 
 
@@ -708,18 +795,27 @@ def main():
     if not repos:
         raise SystemExit("no effort facts: run effort_facts.py first")
     allp = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {"repos": {}}) or {"repos": {}}
+    groups = {}
     for r in repos:
         res = estimate_repo(r, cfg, a)
         if res:
-            allp["repos"][r] = {k: res[k] for k in ("phases", "stages", "subtotal", "buffer", "total", "dev_days", "hours_per_day", "calendar_weeks", "scenarios")}
+            allp["repos"][r] = {k: res[k] for k in ("phases", "stages", "subtotal", "buffer", "total", "expected", "commit", "bounds", "time", "time_range", "sizes", "scenarios")}
+            groups[r] = res["items"]
             allp["repos"][r]["engine"] = ENGINES[port_engine(res["inputs"])]
             allp["repos"][r]["db_tool"] = DB_TOOLS[db_tool(res["inputs"])]
             allp["repos"][r]["database_port"] = bool(res["inputs"].get("database_port", {}).get("value", True))
             allp["repos"][r]["excluded"] = res["inputs"].get("excluded", {}).get("value", "")
             allp["repos"][r]["open"] = [k for k, v in res["inputs"].items() if isinstance(v, dict) and v.get("status") == "UNKNOWN"]
-    allp["total"] = [sum(v["total"][0] for v in allp["repos"].values()), sum(v["total"][1] for v in allp["repos"].values())]
+    # estate roll-up over every repository in one simulation (items of different repositories partly move together), not a sum of ranges
+    first = next(iter(allp["repos"].values()))
+    est, _ = rollup({r: v["items"] for r, v in ((r, {"items": groups[r]}) for r in groups)}, first.get("buffer", 0.10))
+    allp["total"] = [round(est["p10"]), round(est["p90"])]
+    allp["expected"], allp["commit"], allp["bounds"] = round(est["p50"]), round(est["p80"]), [round(b) for b in est["bounds"]]
+    allp["time"], allp["time_range"] = weeks_months(est["p50"]), [weeks_months(est["p10"]), weeks_months(est["p90"])]
+    allp["sum_of_repository_ranges"] = [sum(v["total"][0] for v in allp["repos"].values()), sum(v["total"][1] for v in allp["repos"].values())]
     write_json(os.path.join(OUT, "effort", "estimate-phases.json"), allp)
-    print(f"estate: {allp['total'][0]}-{allp['total'][1]} h over {len(allp['repos'])} repositor{'y' if len(allp['repos']) == 1 else 'ies'} -> {OUT}/effort/estimate-phases.json")
+    print(f"estate: expected {allp['expected']:,} h (range {allp['total'][0]:,}-{allp['total'][1]:,}, safe {allp['commit']:,}; "
+          f"{allp['time']['weeks']:g} weeks, {allp['time']['months']:g} months) over {len(allp['repos'])} repositor{'y' if len(allp['repos']) == 1 else 'ies'} -> {OUT}/effort/estimate-phases.json")
 
 
 if __name__ == "__main__":

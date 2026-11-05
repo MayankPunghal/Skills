@@ -248,15 +248,14 @@ def collect(c, cfg):
               "p80": t.get("p80_hours", 0), "bounds": t.get("bounds_hours", [0, 0])}
     ph = [e for e in ((read_json(os.path.join(OUT, "effort", r, "estimate.json"), {}) or {}) for r in c.repos) if e.get("total")]
     if ph:  # the phased tool-run estimate (estimate_phases.py) is the planning figure; the parametric model is the cross-check
-        effort["phased"] = {"h": [sum(e["total"][0] for e in ph), sum(e["total"][1] for e in ph)], "buffer": ph[0].get("buffer", 0),
-                            "days": [sum(e.get("dev_days", [0, 0])[0] for e in ph), sum(e.get("dev_days", [0, 0])[1] for e in ph)]}
+        pz = BR.phased(c)
+        effort["phased"] = {"h": pz["total"], "expected": pz["expected"], "commit": pz["commit"], "buffer": ph[0].get("buffer", 0),
+                            "weeks": pz["time"]["weeks"], "months": pz["time"]["months"]}
     if ph and not H.is_hours(c.est):  # lead with the planning figure; the parametric P50 is the cross-check (Effort tab)
         p = effort["phased"]
         kpis = [k for k in kpis if k[0] not in ("Effort", "Duration")]
-        eng = c.est.get("engineers") or 3
-        hpd = (ph[0].get("hours_per_day") or 6)
-        kpis.insert(3, ("Effort (planning figure)", f"{p['h'][0]}–{p['h'][1]} h", f"≈ {p['days'][0]}–{p['days'][1]} dev-days of {hpd} h · parametric cross-check {t.get('likely_hours', '-')} h"))
-        kpis.insert(4, ("Duration", f"~{max(1, math.ceil(p['days'][0] / eng / 5))}–{max(1, math.ceil(p['days'][1] / eng / 5))} weeks", f"team of {eng} engineers, {hpd} focused hours a day"))
+        kpis.insert(3, ("Effort (planning figure)", f"~{p['expected']:,} h", f"most likely {p['h'][0]:,}–{p['h'][1]:,} h · plan for {p['commit']:,} h to be safe · parametric cross-check {t.get('likely_hours', '-')} h"))
+        kpis.insert(4, ("In weeks and months", f"~{p['weeks']:g} weeks · {p['months']:g} months", "hours of work, no team size assumed"))
     lbuild = []
     for r in c.repos:
         lb = read_json(os.path.join(OUT, "scan", f"{r}.linux-build.json")) or {}

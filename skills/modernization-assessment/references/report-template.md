@@ -176,6 +176,12 @@ full per-repository reports are listed under the table. -->
 
 ## 7. Modernization plan per application
 
+### 7.0 Projects at a glance
+
+{{narrative:project-summaries}}
+
+### Approach
+
 {{narrative:application-plans}}
 
 ### 7.1 Shared libraries and hybrid path

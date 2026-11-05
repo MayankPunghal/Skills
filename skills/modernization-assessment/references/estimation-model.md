@@ -190,3 +190,11 @@ All rates are in `scripts/data/hours.json`. To recalibrate, change a rate, rerun
 ## Phased estimate per repository
 
 `estimate_phases.py` adds a per-repository, bottom-up estimate of a tool-run port in developer hours, by phase (P1 prepare, P2 engine port, P3 Claude clean-up, P4 data access, P5 AWS managed services, P6 verify and cut over), from the quantities `effort_facts.py` collects. This model stays the estate-level view. Rates, inputs and phases: [atf-and-phased-estimate.md](atf-and-phased-estimate.md#phased-estimate-step-61).
+
+### Phased estimate: roll-up, T-shirt sizes and AI cut (3.4.0)
+
+- **Roll-up.** `estimate_phases.py` combines the work items by Monte Carlo (`_montecarlo.py`, triangular items with the likely value a quarter of the way up the range, correlation 0.3), the same method as the parametric model. Headline = **P50 (expected)**, range = **P10-P90**, commit figure = **P80**, buffer 10% on every figure. The estate figure comes from one simulation over all repositories (`estimate-phases.json`: `expected`, `total`, `commit`), not from adding repository ranges. Sums of lows and highs survive only as `bounds`. This fixes ISSUE-A (sum of extremes made the range 2.1x wide).
+- **T-shirt sizes.** Each project's own port is priced by size, not by project count and KLOC: XS 1-2 h, S 2-4, M 4-8, L 8-16, XL 16-32 (`TSHIRT_HOURS`; rules in `TSHIRT_RULES`). Libraries, console and API projects keep their line-count size; WCF / ASMX / service / desktop go one up; Web Forms is at least L (its pages are priced separately).
+- **AI cut.** Claude and AWS Transform shorten ordinary code work by 20-35% (`AI_CUT`: code 0.65-0.80, database 0.70-0.85, Web Forms UI 0.85-1.0; none on work that waits on environments or people). One draw for the whole estate.
+- **Output.** Hours, weeks (40 h) and months (168 h). No dev-days, no per-developer calendar.
+- **Decisions behind it:** PostgreSQL only (no dual-database support; `dual` maps to `postgresql`), no re-architecture, self-hosted services stay (configuration only unless `aws_native` = now). Recalibrate `TSHIRT_HOURS` and `AI_CUT` from the first measured repository.
