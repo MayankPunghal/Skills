@@ -192,6 +192,19 @@ def git_facts(root):
             "authors_365d": len(set(g("log", "--since=365.days", "--format=%ae").splitlines())), "first_commit": g("log", "--reverse", "--format=%ad", "--date=short").split("\n")[0]}
 
 
+def _odylibrary(texts):
+    """The shared library that lives inside a repository (ODYLibrary): how big it is, how many modules it holds, how many files use it."""
+    sp = re.compile(r"[\\/]ODYLibrary[\\/]", re.I)
+    src = {p: t for p, t in texts.items() if sp.search(p)}
+    mods = set()
+    for p in src:
+        parts = re.split(r"[\\/]", sp.split(p, 1)[1])[:-1]
+        if parts:
+            mods.add("/".join(parts[:2]) if parts[0].lower() in ("datalayer", "utils", "constants") else parts[0])
+    return {"files": sum(1 for t in texts.values() if re.search(r"\bOdyLibrary\b|\bODYLibrary\b", t)),
+            "source_files": len(src), "source_loc": sum(t.count("\n") for t in src.values()), "modules": len(mods)}
+
+
 def _llblgen(texts, llb_files, llb_types):
     """What replacing LLBLGen costs, from the code: entity operations (fetch / save / delete), the complex ones (prefetch paths, relations),
     procedure wrappers and adapter creations, entity collections and detached updates."""
@@ -229,7 +242,8 @@ def code_usage(root):
     return {"ambient_context": {"wrapper_classes": wrappers, "uses": uses, "files": files},
             "config_reads": {"reads": sum(cfg.values()), "files": len(cfg)},
             "orm_llblgen": _llblgen(texts, llb_files, llb_types),
-            "odylibrary": {"files": sum(1 for t in texts.values() if re.search(r"\bOdyLibrary\b|\bODYLibrary\b", t))}}
+            "odylibrary": _odylibrary(texts),
+            "load_balancer": {"files": sum(1 for t in texts.values() if re.search(r"\bLoadBalancer\b|\bLoadBalancerDashboardConfig\b", t))}}
 
 
 def network_roles(scan):

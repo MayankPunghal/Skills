@@ -88,6 +88,8 @@ RATE_PROFILES = {"claude-first": CLAUDE_FIRST, "engineer-paced": ENGINEER_PACED}
 # AI-assisted (the engine or Claude does the porting, the engineer runs it, reviews and fixes what the build rejects).
 TSHIRT_HOURS = {"XS": (1, 2), "S": (1.5, 3), "M": (3, 6), "L": (6, 12), "XL": (12, 24)}  # port by Claude / the engine in minutes to hours; the hours are review and fixing
 TSHIRT_ORDER = ["XS", "S", "M", "L", "XL"]
+FIX_HOURS = {"XS": (0.5, 1), "S": (1, 2), "M": (2, 4), "L": (4, 8), "XL": (8, 16)}  # fixing what QA reports, per project, by size
+REWRITE_HOURS = {"XS": (3, 6), "S": (6, 14), "M": (14, 30), "L": (30, 70), "XL": (70, 140)}  # a rewrite (WCF / WPF / WinForms / Windows service), AI-assisted; size from lines of code
 TSHIRT_RULES = ("Size starts from hand-written + markup lines (under 1,000 XS, under 5,000 S, under 20,000 M, under 60,000 L, more XL). "
                 "A class library, console app or API project stays at that size. A WCF / ASMX / Windows service / desktop project goes up one size. "
                 "A Web Forms project is at least L. A project already on SDK style and .NET Core or later is XS.")
@@ -283,6 +285,10 @@ def build(f, inp):
     envs = inp["environments"]["value"]
     dev_only = bool((inp.get("dev_team_only") or {}).get("value", True))  # only the .NET / development team's effort: no DevOps, DB team or QA work
     retired = set(inp.get("retire_projects", {}).get("value", []))
+    if (inp.get("replaced_by_managed_service") or {}).get("value"):  # e.g. LoadBalancer -> AWS ALB (DevOps): nothing in this repository is ported
+        retired |= {p["path"] for p in f["projects"]}
+    if (inp.get("replaced_by_managed_service") or {}).get("value"):
+        return []  # nothing in this repository is ported or priced
     ui_retired = inp.get("admin_ui", {}).get("value") == "retire"
     static = [p for p in f["projects"] if p["path"] not in retired and p.get("content_only")]  # no compiled code: published as files
     retired |= {p["path"] for p in static}
@@ -302,9 +308,10 @@ def build(f, inp):
     pages = sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for w in web.values())
     if dev_only:  # QA runs the tests; the dev team debugs and fixes what QA reports
         line(I, "B", "B2", "Fix the issues QA finds (debug and correct), per API request type and page",
-             [(len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", (0.1, 0.2)),
-              (0 if ui_retired else pages, "admin pages", (0.05, 0.1))],
-             "QA tests and reports; development effort is the fix, one cycle per request type and page", "INFERRED")
+             [(sum(1 for p in keep if (p.get("type") or "").lower() != "test" and size_project(p, f, web)[0] == z), f"{z} project(s): fix allowance after QA's first full pass", FIX_HOURS[z]) for z in TSHIRT_ORDER] + [
+              (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", (0.3, 0.6)),
+              (0 if ui_retired else pages, "pages", (0.2, 0.4))],
+             "QA tests and reports; development effort is the fix: a per-project allowance plus rounds for each request type and page (raised 2026-11-05: fixes take longer than the first estimate)", "INFERRED")
     else:
         line(I, "B", "B2", "Before/after comparison tests: save what the old app returns for each API request type, plus a quick check that each page opens",
              [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
@@ -327,6 +334,15 @@ def build(f, inp):
             ut[sz] += 1
         line(I, "T", "T1", "Unit tests: a test project per project, for all code that can be tested (sized XS to XL like the port)",
              [(n, f"{s} project(s)", TSHIRT_HOURS[s]) for s, n in ut.items()], UT_NOTE, "INFERRED")
+    rw = {s: 0 for s in TSHIRT_ORDER}
+    for p in keep:  # WCF, ASMX, WPF, WinForms, Windows services have no .NET 10 counterpart: rewritten, not ported
+        t = (p.get("type") or "").lower()
+        if any(k in t for k in ("wcf", "wpf", "winforms", "desktop", "windows-service", "windowsservice")) and "test" not in t:
+            rw[sizes[p["path"]][0]] += 1
+    if any(rw.values()):
+        line(I, "B", "B16", "Rewrite the projects that have no .NET 10 version (WCF, WPF, WinForms, Windows services) on the modern equivalents (sized XS to XL)",
+             [(n, f"{s} project(s)", REWRITE_HOURS[s]) for s, n in rw.items()],
+             "full rewrite, not a port: " + ", ".join(f"{n} {s}" for s, n in rw.items() if n), "INFERRED")
     cu = f.get("code_usage") or {}
     llb = cu.get("orm_llblgen") or {}
     if llb.get("entity_types") and (inp.get("orm_replacement") or {}).get("value", True):  # decision 2026-11-03: LLBLGen removed, data layer rewritten with models and ADO.NET
@@ -341,9 +357,14 @@ def build(f, inp):
               (1, "characterisation tests on SQL Server first, then PostgreSQL", (24, 48))],
              f"{llb['files']} files use LLBLGen types; the generated layer ships as prebuilt DLLs. Basis: Odysol-LLBLGen-Replacement-Impact.docx (2026-11-02), rates raised for the redesign work", "INFERRED")
     if cu.get("odylibrary", {}).get("files") and (inp.get("odylibrary_removed") or {}).get("value", False):  # decision 2026-11-03: OdyLibrary removed from ws; shared code moves to OdyBizEntities
-        line(I, "B", "B14", "Move the code ws takes from OdyLibrary into the shared libraries in OdyBizEntities (common and utils) and re-point ws",
-             [(1, "extraction and design", (12, 24)), (cu["odylibrary"]["files"], "files that use OdyLibrary", (0.01, 0.03))],
-             "decision 2026-11-03: OdyLibrary usage removed from ws; separate shared libraries added to OdyBizEntities", "INFERRED")
+        od = cu["odylibrary"]
+        line(I, "B", "B14", "Break OdyLibrary into separate class libraries, move shared utilities into OdyBizEntities, merge with the libraries already split out, and re-point the callers",
+             [(1, "split design: module map, dependency order, target libraries", (24, 48)),
+              (od.get("modules", 0), "modules cut out into their own class library (project, namespaces, packages, build)", (3, 8)),
+              (od.get("source_loc", 0) / 1000, "thousand lines moved and converted", (1.0, 2.0)),
+              (1 if od.get("source_files") else 0, "merge with the libraries already split out (Aerospike, Redis, Memcached, Elasticsearch, Loggly): compare, keep one copy", (24, 48)),
+              (od["files"], "files re-pointed to the new libraries", (0.03, 0.08))],
+             "decision 2026-11-03: OdyLibrary usage removed from ws; separate shared libraries added to OdyBizEntities (Utils, Utils.Common, Utils.Common.Core, Utils.Standard)", "INFERRED")
     wf = [w for k, w in web.items() if w["totals"]["pages"] > 1 and not ui_retired]
     if wf:  # Web Forms tightly coupled to System.Web: ViewState, postbacks, UpdatePanels, page lifecycle, session and the server-control model
         els = sum(w["totals"]["pages"] + w["totals"]["user_controls"] + w["totals"]["masters"] for w in wf)
@@ -371,7 +392,8 @@ def build(f, inp):
     line(I, "B", "B6", "Service clients: SOAP references regenerated / moved to Web API, client-side load balancer replaced",
          [(len(refs), "SOAP / WCF references", "soap_reference"), (called - on_webapi, "SOAP-only operations called", "soap_op"),
           (on_webapi, "operations already on Web API (verify)", "webapi_op"),
-          (1 if any(re.search(r"(?i)load\.?balanc", b) for b in bins) else 0, "client-side load balancer", "load_balancer"),
+          ((f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0), "files that call the in-code load balancer: call the ALB endpoint instead", (0.25, 0.5)),
+          (1 if (f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0) else 0, "replace the in-code load-balancer classes and settings with the ALB endpoint setting", (8, 16)),
           (occ(f, "API-WEBREQUEST"), "WebRequest / WebClient", "webrequest")],
          "INFERRED; dotnet-svcutil (System.ServiceModel.Http) or the existing WS Web API",
          "INFERRED" if not inp.get("soap_fallback", {}).get("answered") else "VERIFIED", inp.get("soap_fallback", {}).get("note", ""))
@@ -408,9 +430,10 @@ def build(f, inp):
         line(I, "B", "B10", "Admin Web Forms UI to Razor Pages / Blazor (" + inp.get("admin_ui", {}).get("value", "port") + ")",
              _page_parts(adm, f),
              "INFERRED; each page, user control and master page is sized S / M / L / XL (PAGE_TSHIRT_HOURS) as review + fix after the engine converts it", "INFERRED")
-    line(I, "B", "B11", "Containerise: Linux image per deployable, health endpoint, stdout logging, task definition inputs",
-         [(len(deployables), "deployables", "containerise"), (len(deployables) if any(x["rule"] == "LOG-NO-HEALTHCHECK" for x in f["findings"]) else 0, "health endpoints", "health")],
-         "3-6 h per deployable plus health check (earlier calibrated draft)")
+    if not dev_only:  # container images, task definitions and health checks are DevOps work
+        line(I, "B", "B11", "Containerise: Linux image per deployable, health endpoint, stdout logging, task definition inputs",
+             [(len(deployables), "deployables", "containerise"), (len(deployables) if any(x["rule"] == "LOG-NO-HEALTHCHECK" for x in f["findings"]) else 0, "health endpoints", "health")],
+             "3-6 h per deployable plus health check (earlier calibrated draft)")
     if not dev_only:
       line(I, "B", "B13", "Static content: publish to Amazon S3 behind CloudFront (build step, cache headers, error pages, redirects); nothing is ported",
            [(len(static), "content-only projects", (1.5, 4))], "a project with no compiled code (discover_estate.py content_only); estimation.json other_r_hours", "INFERRED")
@@ -488,6 +511,12 @@ def finish(I, f, inp):
             line(I, "S", f"S{n}", f"{svc['label']} -> {opt['aws']} ({opt['change']})", [(1, "option", tuple(opt["hours"]))],
                  f"aws_native.py rates x AI factor ({opt['factor']}); wrapper: {svc['client_code']}", "VERIFIED", opt["work"])
             I[-1]["drivers"] = ["; ".join(x for x in ev if x) + f": manual-equivalent {opt['manual_hours'][0]:g}-{opt['manual_hours'][1]:g} h"]
+    if aws and not inp.get("aws_native", {}).get("value"):  # the services stay self-hosted: configuration changes only
+        svs = [x for x in aws["services"] if x.get("consumer_sites") or x.get("config_entries")]
+        if svs:
+            line(I, "S", "S1", "Self-hosted services stay as they are: change the connection settings (hosts, ports, TLS, passwords from the secret store) for each service the code uses",
+                 [(len(svs), "services this repository uses (" + ", ".join(x["label"] for x in svs[:6]) + ")", (0.5, 1.5))],
+                 "decision 2026-11-02 / 2026-11-05: services stay self-hosted to save hosting cost; configuration changes only", "INFERRED")
     # extra work items found in review that no quantity covers: estimate-inputs.json "extra_items" [{id, stage, label, low, high, basis}]
     extra = (inp.get("extra_items") or {}).get("value", [])
     for x in extra:
@@ -715,6 +744,7 @@ def inputs_for(repo, f, cfg, d):
         "unit_tests": {"value": True, "status": "INFERRED", "note": "Unit tests in every project where possible (client call 2026-11-03). Priced as a separate item (stage T) with its own timeline, not in the main total."},
         "orm_replacement": {"value": True, "status": "INFERRED", "note": "LLBLGen removed and replaced by models and ADO.NET (client call 2026-11-03); priced when the code uses LLBLGen."},
         "odylibrary_removed": {"value": False, "status": "UNKNOWN", "note": "True when OdyLibrary usage is removed from this repository and its code moves to shared libraries in OdyBizEntities (decided for ws, 2026-11-03)."},
+        "replaced_by_managed_service": {"value": False, "status": "UNKNOWN", "note": "True when this repository is replaced by a managed service set up by DevOps (LoadBalancer -> AWS ALB, decided 2026-11-02). Nothing in it is ported; callers are priced in the repositories that use it."},
         "dev_team_only": {"value": True, "status": "INFERRED", "note": "Only the .NET / development team's effort. Work owned by DevOps (environment points, go-live, static hosting), the DB team (procedures, schema) and QA (running tests) is left out; developers still fix what QA reports. false = price those items too."},
         "buffer": {"value": 0.15, "status": "INFERRED", "note": "Standard 15% planning buffer, added to every figure."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},
