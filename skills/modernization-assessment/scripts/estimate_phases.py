@@ -114,7 +114,12 @@ def ui_shell(n):
 
 AI_CUT = {"code": (0.62, 0.72), "red": (0.88, 1.0), "db": (0.65, 0.78)}
 RED_IDS = {"B10", "B15", "A11"}  # real redesign work (Web Forms, System.Web coupling, the replacement data layer): little assistance gain
-FIXED_IDS = {"B12", "A9", "A10"}
+FIXED_IDS = {"B12", "A9", "A10", "B2"}
+# Fixing what QA finds (dev-only scope): a share of the work that was ported (about 8%) and of the work that was rewritten (about 19%),
+# taken on the AI-assisted hours. Rewritten code (Web Forms pages, the new data layer, the OdyLibrary split) breaks far more often than ported code.
+QA_PORTED_IDS = {"B1", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B16", "B17", "B18", "A1", "A2", "A3", "A4", "A5", "A5b", "A8"}
+QA_REWRITTEN_IDS = {"B10", "B15", "A11", "B14"}
+QA_SHARE = {"ported": (0.06, 0.10), "rewritten": (0.16, 0.22)}
 UT_NOTE = "Unit tests are priced apart from the port: a test project per project, written for everything that can be tested (Web Forms page code-behind excluded), reviewed and made to pass."
 LIKELY_POSITION = 0.25  # the likely hours sit a quarter of the way up each range: effort is right-skewed but the tools make the low end the usual case
 ROLLUP = {"iterations": 4000, "seed": 1, "correlation": 0.3, "factor_position": 0.5}
@@ -306,13 +311,7 @@ def build(f, inp):
           (len(f["packages"]) if keep else 0, "NuGet packages", "package"), (len(bins) if keep else 0, "binary (non-NuGet) references", "binary_ref")],
          "reference plan B1 16-32 h (one web solution, agent-scaffolded)")
     pages = sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for w in web.values())
-    if dev_only:  # QA runs the tests; the dev team debugs and fixes what QA reports
-        line(I, "B", "B2", "Fix the issues QA finds (debug and correct), per API request type and page",
-             [(sum(1 for p in keep if (p.get("type") or "").lower() != "test" and size_project(p, f, web)[0] == z), f"{z} project(s): fix allowance after QA's first full pass", FIX_HOURS[z]) for z in TSHIRT_ORDER] + [
-              (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", (0.3, 0.6)),
-              (0 if ui_retired else pages, "pages", (0.2, 0.4))],
-             "QA tests and reports; development effort is the fix: a per-project allowance plus rounds for each request type and page (raised 2026-11-05: fixes take longer than the first estimate)", "INFERRED")
-    else:
+    if not dev_only:
         line(I, "B", "B2", "Before/after comparison tests: save what the old app returns for each API request type, plus a quick check that each page opens",
              [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
               (0 if ui_retired else pages, "admin pages", "page_smoke")],
@@ -375,6 +374,17 @@ def build(f, inp):
               (sum(w["totals"].get("update_panels", 0) for w in wf), "UpdatePanels", (0.5, 1.0)),
               (sum(w["totals"].get("postback_handlers", 0) for w in wf), "postback handlers", (0.1, 0.2))],
              "System.Web has no .NET 10 counterpart; the coupling is removed page by page", "INFERRED")
+    aw = {x["id"]: x for x in ((f.get("_aws_native") or {}).get("services") or [])}
+    mg = aw.get("mongodb", {}).get("consumer_sites", 0)
+    af = aw.get("appfabric-cache", {}).get("consumer_sites", 0) + aw.get("ncache", {}).get("consumer_sites", 0)
+    if mg or af:  # decision 2026-11-02 (log 4): MongoDB code is removed; AppFabric and NCache are not used (D21): leftovers removed
+        line(I, "B", "B17", "Remove the MongoDB code from the build (kept as dead code only if nothing depends on it) and the leftover AppFabric / NCache settings",
+             [(mg, "MongoDB call sites checked and cut", (0.05, 0.1)), (1 if mg else 0, "MongoDB packages and settings removed", (1, 3)),
+              (1 if af else 0, "leftover AppFabric / NCache settings and references removed", (1, 3))],
+             "decision log 4 (MongoDB) and D21 (AppFabric, NCache)", "INFERRED")
+    if re.search(r"Select\.Pdf", json.dumps([f.get("packages"), f.get("binary_references")])):  # no Linux build of Select.Pdf in use today
+        line(I, "B", "B18", "Replace the PDF engine (Select.Pdf has no Linux build): vendor Linux build or headless Chromium, and re-check the PDFs it makes",
+             [(1, "PDF engine swap and a check of each PDF it produces", (6, 14))], "D19; per repository that uses Select.Pdf", "INFERRED")
     handlers = sum(w["totals"]["handlers"] for w in web.values())
     line(I, "B", "B4", "Web request entry points moved to ASP.NET Core (handlers, ASMX / WCF services, Response.End, Windows login)",
          [(handlers, "HTTP handlers", "handler"), (sum(w["totals"]["asmx"] + w["totals"]["svc"] for w in web.values()), "ASMX / .svc services", "asmx_svc"),
@@ -513,7 +523,7 @@ def finish(I, f, inp):
                  f"aws_native.py rates x AI factor ({opt['factor']}); wrapper: {svc['client_code']}", "VERIFIED", opt["work"])
             I[-1]["drivers"] = ["; ".join(x for x in ev if x) + f": manual-equivalent {opt['manual_hours'][0]:g}-{opt['manual_hours'][1]:g} h"]
     if aws and not inp.get("aws_native", {}).get("value"):  # the services stay self-hosted: configuration changes only
-        svs = [x for x in aws["services"] if x.get("consumer_sites") or x.get("config_entries")]
+        svs = [x for x in aws["services"] if (x.get("consumer_sites") or x.get("config_entries")) and x["id"] not in ("mongodb", "appfabric-cache", "ncache")]
         if svs:
             line(I, "S", "S1", "Self-hosted services stay as they are: change the connection settings (hosts, ports, TLS, passwords from the secret store) for each service the code uses",
                  [(len(svs), "services this repository uses (" + ", ".join(x["label"] for x in svs[:6]) + ")", (0.5, 1.5))],
@@ -547,6 +557,21 @@ def finish(I, f, inp):
                   "low": lo, "high": hi, "drivers": [f"{m['id']}: effort_key {k}, {o} occurrence(s)"],
                   "basis": "manual finding: estimation.json finding_hours x ai_assistance (an extra item naming it replaces this)",
                   "status": "INFERRED", "note": "", "tool": None})
+    if bool((inp.get("dev_team_only") or {}).get("value", True)):
+        def post(x):
+            c = AI_CUT.get(kind_of(x), (1.0, 1.0))
+            return x["low"] * c[0], x["high"] * c[1]
+        for bucket, ids in (("ported", QA_PORTED_IDS), ("rewritten", QA_REWRITTEN_IDS)):
+            part = [post(x) for x in I if x["id"] in ids]
+            lo_h, hi_h = sum(a for a, _ in part), sum(b for _, b in part)
+            if hi_h <= 0:
+                continue
+            sh = QA_SHARE[bucket]
+            I.append({"stage": "B", "id": "B2", "label": f"Fix the issues QA finds in {bucket} code (QA tests and reports; the dev team debugs and corrects)",
+                      "low": round(lo_h * sh[0], 1), "high": round(hi_h * sh[1], 1),
+                      "drivers": [f"{round(lo_h)}-{round(hi_h)} h of {bucket} work x {sh[0]:.0%}-{sh[1]:.0%}"],
+                      "basis": "share of the work: ported code about 8%, rewritten code about 19% (a pilot QA cycle replaces this with a measured bug rate)",
+                      "status": "INFERRED", "note": "", "tool": None})
     for x in I:
         x["tool"] = owner(x["id"], x["stage"], inp)
     return I
