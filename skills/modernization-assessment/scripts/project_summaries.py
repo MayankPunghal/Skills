@@ -53,8 +53,8 @@ def evidence(f, p, size):
         "pages": len(web.get("pages") or []), "handlers": tot.get("handlers", 0), "asmx": tot.get("asmx", 0), "svc": tot.get("svc", 0),
         "request_types": (f.get("contracts") or {}).get("request_types", [])[:6] if p.get("deployable") and (tot.get("handlers") or tot.get("asmx") or tot.get("svc")) else [],
         "uses": [name_of(x) for x in p.get("project_references") or []], "used_by": [name_of(x) for x in p.get("referenced_by") or []],
-        "databases": sorted({c.get("engine", "sqlserver") for c in conns}), "services_called": [r["name"] for r in refs],
-        "network_roles": sorted({n.get("role") or n.get("kind") or "" for n in net} - {""}),
+        "databases": sorted({c.get("engine") or "sqlserver" for c in conns}), "services_called": [r.get("name") or "unnamed" for r in refs],
+        "network_roles": sorted({str(n.get("role") or n.get("kind") or "") for n in net} - {""}),
         "top_findings": [k for k, _ in sorted(finds.items(), key=lambda kv: -kv[1])[:2]],
     }
 

@@ -93,6 +93,23 @@ TSHIRT_RULES = ("Size starts from hand-written + markup lines (under 1,000 XS, u
                 "A Web Forms project is at least L. A project already on SDK style and .NET Core or later is XS.")
 # AI assistance on top of the rates: Claude and AWS Transform shorten the timeline by 20-35% (systemic: one draw for the whole estate).
 # Web Forms UI work (a real redesign) gets less of it; work that waits on environments or people (parity runs, canary, re-points) none.
+# Web Forms pages, user controls and master pages are sized one by one (T-shirt by markup + code-behind lines). The porting engine
+# (AWS Transform / DevTx) converts the markup; the hours are review and fix per element after that conversion. A small element is
+# mostly a glance. Calibrated on the Odysseus UI (1,356 elements: 890 S, 387 M, 66 L, 13 XL).
+PAGE_TSHIRT_HOURS = {"S": (0.08, 0.2), "M": (0.5, 1.2), "L": (1.5, 3.5), "XL": (4.0, 10.0)}
+PAGE_TSHIRT_LINES = (300, 1000, 3000)  # under 300 lines S, under 1,000 M, under 3,000 L, more XL
+
+
+def page_size(x):
+    n = (x.get("markup_lines") or 0) + (x.get("code_behind_lines") or 0)
+    return "SMLX"[sum(n >= t for t in PAGE_TSHIRT_LINES)].replace("X", "XL")
+
+
+def ui_shell(n):
+    """Layouts, sign-in and session design, static files, shared controls: once per Web Forms app, by how big it is."""
+    return (60, 140) if n >= 500 else (10, 25) if n >= 50 else (2, 6)
+
+
 AI_CUT = {"code": (0.65, 0.80), "red": (0.85, 1.0), "db": (0.70, 0.85)}
 FIXED_IDS = {"B2", "B12", "A9", "A10"}
 RED_IDS = {"B10"}
@@ -249,6 +266,16 @@ def line(items, stage, iid, label, parts, basis, status="VERIFIED", note="", too
                   "basis": basis, "status": status, "note": note, "tool": tool})
 
 
+def _page_parts(adm, f):
+    els = [x for k, w in adm for key in ("pages", "user_controls", "masters") for x in (w.get(key) or []) if isinstance(x, dict)
+           and not os.path.basename(x.get("file", "")).lower().startswith("test")]
+    cnt = {sz: sum(1 for x in els if page_size(x) == sz) for sz in PAGE_TSHIRT_HOURS}
+    parts = [(n, f"{sz} page/control(s)", PAGE_TSHIRT_HOURS[sz]) for sz, n in cnt.items()]
+    parts.append((1 if els else 0, f"shell for {len(els)} elements (layouts, sign-in, shared controls)", ui_shell(len(els))))
+    parts.append((1 if any("AjaxControlToolkit" == b["assembly"] for b in f["binary_references"]) else 0, "third-party control library", "control_toolkit"))
+    return parts
+
+
 def build(f, inp):
     """Work items for one repository under one set of assumptions."""
     use_profile(inp)
@@ -333,11 +360,8 @@ def build(f, inp):
         line(I, "B", "B10", "Admin Web Forms UI: retired (decision in estimate-inputs.json)", [], "client decision", "VERIFIED")
     else:
         line(I, "B", "B10", "Admin Web Forms UI to Razor Pages / Blazor (" + inp.get("admin_ui", {}).get("value", "port") + ")",
-             [(sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for k, w in adm), "pages", "page"),
-              (sum(w["totals"]["user_controls"] for k, w in adm), "user controls", "user_control"),
-              (sum(w["totals"]["masters"] for k, w in adm), "master pages", "master"),
-              (1 if any("AjaxControlToolkit" == b["assembly"] for b in f["binary_references"]) else 0, "third-party control library", "control_toolkit")],
-             "INFERRED; no public per-page Web Forms port data; the reference plan priced 14 pages through the engine + agent specs", "INFERRED")
+             _page_parts(adm, f),
+             "INFERRED; each page, user control and master page is sized S / M / L / XL (PAGE_TSHIRT_HOURS) as review + fix after the engine converts it", "INFERRED")
     line(I, "B", "B11", "Containerise: Linux image per deployable, health endpoint, stdout logging, task definition inputs",
          [(len(deployables), "deployables", "containerise"), (len(deployables) if any(x["rule"] == "LOG-NO-HEALTHCHECK" for x in f["findings"]) else 0, "health endpoints", "health")],
          "3-6 h per deployable plus health check (earlier calibrated draft)")
