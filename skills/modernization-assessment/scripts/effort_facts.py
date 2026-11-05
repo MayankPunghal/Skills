@@ -193,16 +193,29 @@ def git_facts(root):
 
 
 def _odylibrary(texts):
-    """The shared library that lives inside a repository (ODYLibrary): how big it is, how many modules it holds, how many files use it."""
+    """The shared library that lives inside a repository (ODYLibrary): how big it is, how much of it is already split out into its own
+    library, how much is utilities, how many modules still have no library, and how many files use it."""
     sp = re.compile(r"[\\/]ODYLibrary[\\/]", re.I)
     src = {p: t for p, t in texts.items() if sp.search(p)}
-    mods = set()
-    for p in src:
-        parts = re.split(r"[\\/]", sp.split(p, 1)[1])[:-1]
-        if parts:
-            mods.add("/".join(parts[:2]) if parts[0].lower() in ("datalayer", "utils", "constants") else parts[0])
+    dup_dirs = ("datalayer/aerospike", "datalayer/elasticsearch", "datalayer/memcache", "datalayer/redis", "datalayer/cachemanager", "datalayer/caching")
+    dup = utl = 0
+    mods, new = set(), set()
+    for p, t in src.items():
+        parts = [x.lower() for x in re.split(r"[\\/]", sp.split(p, 1)[1])[:-1]]
+        if not parts:
+            continue
+        mod = "/".join(parts[:2]) if parts[0] in ("datalayer", "utils", "constants") else parts[0]
+        mods.add(mod)
+        n = t.count("\n")
+        if any("/".join(parts).startswith(d) for d in dup_dirs):
+            dup += n
+        elif parts[0] == "utils":
+            utl += n
+        else:
+            new.add(mod)
     return {"files": sum(1 for t in texts.values() if re.search(r"\bOdyLibrary\b|\bODYLibrary\b", t)),
-            "source_files": len(src), "source_loc": sum(t.count("\n") for t in src.values()), "modules": len(mods)}
+            "source_files": len(src), "source_loc": sum(t.count("\n") for t in src.values()), "modules": len(mods),
+            "already_split_loc": dup, "utils_loc": utl, "new_modules": len(new)}
 
 
 def _llblgen(texts, llb_files, llb_types):
@@ -243,7 +256,8 @@ def code_usage(root):
             "config_reads": {"reads": sum(cfg.values()), "files": len(cfg)},
             "orm_llblgen": _llblgen(texts, llb_files, llb_types),
             "odylibrary": _odylibrary(texts),
-            "load_balancer": {"files": sum(1 for t in texts.values() if re.search(r"\bLoadBalancer\b|\bLoadBalancerDashboardConfig\b", t))}}
+            "load_balancer": {"files": sum(1 for t in texts.values() if re.search(r"\bLoadBalancer\b|\bLoadBalancerDashboardConfig\b", t)),
+                              "classes": sum(1 for p in texts if re.search(r"[\\/]LoadBalancer[\\/]", p))}}
 
 
 def network_roles(scan):

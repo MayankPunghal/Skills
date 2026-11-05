@@ -359,11 +359,11 @@ def build(f, inp):
     if cu.get("odylibrary", {}).get("files") and (inp.get("odylibrary_removed") or {}).get("value", False):  # decision 2026-11-03: OdyLibrary removed from ws; shared code moves to OdyBizEntities
         od = cu["odylibrary"]
         line(I, "B", "B14", "Break OdyLibrary into separate class libraries, move shared utilities into OdyBizEntities, merge with the libraries already split out, and re-point the callers",
-             [(1, "split design: module map, dependency order, target libraries", (24, 48)),
-              (od.get("modules", 0), "modules cut out into their own class library (project, namespaces, packages, build)", (3, 8)),
-              (od.get("source_loc", 0) / 1000, "thousand lines moved and converted", (1.0, 2.0)),
-              (1 if od.get("source_files") else 0, "merge with the libraries already split out (Aerospike, Redis, Memcached, Elasticsearch, Loggly): compare, keep one copy", (24, 48)),
-              (od["files"], "files re-pointed to the new libraries", (0.03, 0.08))],
+             [(1, "split design: module map, dependency order, target libraries", (16, 32)),
+              (od.get("new_modules", 0), "modules with no library yet, cut out into their own class library (project, namespaces, packages, build)", (4, 8)),
+              (od.get("utils_loc", 0) / 1000, "thousand lines of utilities merged into the OdyBizEntities Utils projects", (0.5, 1.0)),
+              (od.get("already_split_loc", 0) / 1000, "thousand lines already split out (Aerospike, Redis, Memcached, Elasticsearch): compare, keep one copy, no conversion", (0.8, 1.6)),
+              (od["files"], "files re-pointed to the new libraries (namespace and reference changes, mostly by tool)", (0.01, 0.03))],
              "decision 2026-11-03: OdyLibrary usage removed from ws; separate shared libraries added to OdyBizEntities (Utils, Utils.Common, Utils.Common.Core, Utils.Standard)", "INFERRED")
     wf = [w for k, w in web.items() if w["totals"]["pages"] > 1 and not ui_retired]
     if wf:  # Web Forms tightly coupled to System.Web: ViewState, postbacks, UpdatePanels, page lifecycle, session and the server-control model
@@ -392,8 +392,9 @@ def build(f, inp):
     line(I, "B", "B6", "Service clients: SOAP references regenerated / moved to Web API, client-side load balancer replaced",
          [(len(refs), "SOAP / WCF references", "soap_reference"), (called - on_webapi, "SOAP-only operations called", "soap_op"),
           (on_webapi, "operations already on Web API (verify)", "webapi_op"),
-          ((f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0), "files that call the in-code load balancer: call the ALB endpoint instead", (0.25, 0.5)),
-          (1 if (f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0) else 0, "replace the in-code load-balancer classes and settings with the ALB endpoint setting", (8, 16)),
+          (1 if (f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0) else 0, "callers keep their fallback: switch the load-balancer setting off and put the ALB address in the settings", (2, 4)),
+          (1 if (f.get("code_usage") or {}).get("load_balancer", {}).get("files", 0) >= 20 else 0, "code that picks the pool (split pools) sends each pool to its own ALB address", (8, 16)),
+          (1 if (f.get("code_usage") or {}).get("load_balancer", {}).get("classes", 0) else 0, "in-repository load-balancer classes removed or reduced to a settings lookup", (8, 16)),
           (occ(f, "API-WEBREQUEST"), "WebRequest / WebClient", "webrequest")],
          "INFERRED; dotnet-svcutil (System.ServiceModel.Http) or the existing WS Web API",
          "INFERRED" if not inp.get("soap_fallback", {}).get("answered") else "VERIFIED", inp.get("soap_fallback", {}).get("note", ""))
