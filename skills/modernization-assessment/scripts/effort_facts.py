@@ -192,6 +192,20 @@ def git_facts(root):
             "authors_365d": len(set(g("log", "--since=365.days", "--format=%ae").splitlines())), "first_commit": g("log", "--reverse", "--format=%ad", "--date=short").split("\n")[0]}
 
 
+def _llblgen(texts, llb_files, llb_types):
+    """What replacing LLBLGen costs, from the code: entity operations (fetch / save / delete), the complex ones (prefetch paths, relations),
+    procedure wrappers and adapter creations, entity collections and detached updates."""
+    allt = list(texts.values())
+    cnt = lambda rx: sum(len(re.findall(rx, t)) for t in allt)
+    ops = cnt(r"\b(?:FetchEntity|FetchEntityCollection|FetchNewEntity|SaveEntity|SaveEntityCollection|DeleteEntity|DeleteEntityCollection|DeleteEntitiesDirectly)\s*\(")
+    complex_ = cnt(r"\bPrefetchPath\w*\b") + cnt(r"\.Relations\.Add\b|\bRelationCollection\b")
+    return {"files": len(llb_files), "entity_types": len(llb_types), "uses": sum(llb_types.values()), "entity_ops": ops,
+            "complex_ops": min(complex_, ops), "entity_files": sum(1 for t in allt if re.search(r"\b(?:FetchEntity|SaveEntity|DeleteEntity)\w*\s*\(", t)),
+            "proc_files": sum(1 for t in allt if re.search(r"\bCall(?:Retrieval|Action)StoredProcedure\b|\bgetAdapter\b", t)),
+            "proc_wrappers": len({m for t in allt for m in re.findall(r"\b(?:Retrieval|Action)Procedures\.(\w+)", t)}),
+            "entity_collections": cnt(r"\bEntityCollection<"), "detached_updates": cnt(r"\bIsNew\s*=\s*false\b")}
+
+
 def code_usage(root):
     """Counts the estimate needs straight from the code: uses of ambient request context (CallContext / the class that
     wraps it, through its static Current) and configuration reads (ConfigurationManager / WebConfigurationManager)."""
@@ -209,8 +223,13 @@ def code_usage(root):
         n = len(re.findall(r"\b(?:Web)?ConfigurationManager\.(?:AppSettings|ConnectionStrings|GetSection)\b", t))
         if n:
             cfg[os.path.relpath(p, root).replace("\\", "/")] = n
+    llb_rx = re.compile(r"SD\.LLBLGen|\.EntityClasses\b|\.HelperClasses\b|\.DaoClasses\b|ORMSupportClasses")
+    llb_files = [t for t in texts.values() if llb_rx.search(t)]
+    llb_types = Counter(m for t in llb_files for m in re.findall(r"\b[A-Z][A-Za-z0-9]+Entity\b", t))
     return {"ambient_context": {"wrapper_classes": wrappers, "uses": uses, "files": files},
-            "config_reads": {"reads": sum(cfg.values()), "files": len(cfg)}}
+            "config_reads": {"reads": sum(cfg.values()), "files": len(cfg)},
+            "orm_llblgen": _llblgen(texts, llb_files, llb_types),
+            "odylibrary": {"files": sum(1 for t in texts.values() if re.search(r"\bOdyLibrary\b|\bODYLibrary\b", t))}}
 
 
 def network_roles(scan):

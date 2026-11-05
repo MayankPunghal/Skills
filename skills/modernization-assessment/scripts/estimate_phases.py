@@ -7,7 +7,7 @@ for .NET, or the AWS DevTx Version Upgrade Toolkit) does the .NET 10 port; Claud
 carries out every remediation pattern the engine leaves and the AWS managed-service swaps, as reviewed batches; the DB
 porting agent (or Claude with the DB porting skills) moves the data-access code from SQL Server to PostgreSQL (one database, no dual support).
 The hours are engineer time to run the tools, approve plans, review pull requests, fix what the gates reject, decide
-designs and sign off. Planning grade: +-25%. Buffer 10% by default. The total is a Monte Carlo roll-up (likely = P50, range = P25-P75), never the sum of every low to the sum of every high.
+designs and sign off. Planning grade: +-25%. Buffer 15% by default. The total is a Monte Carlo roll-up (likely = P50, range = P25-P75), never the sum of every low to the sum of every high.
 
 Every line = quantity from the code (assessment/effort/<repo>/facts.json) x a rate range per unit (+ a fixed part). Two rate sets: claude-first (default: the engine or Claude writes every line) and engineer-paced (the reference plan; shown as a scenario); estimate-inputs.json "rate_profile" picks one.
 Rates live in RATES below, each with the basis it was set from. Per-repository assumptions live in
@@ -96,7 +96,7 @@ TSHIRT_RULES = ("Size starts from hand-written + markup lines (under 1,000 XS, u
 # Web Forms pages, user controls and master pages are sized one by one (T-shirt by markup + code-behind lines). The porting engine
 # (AWS Transform / DevTx) converts the markup; the hours are review and fix per element after that conversion. A small element is
 # mostly a glance. Calibrated on the Odysseus UI (1,356 elements: 890 S, 387 M, 66 L, 13 XL).
-PAGE_TSHIRT_HOURS = {"S": (0.08, 0.2), "M": (0.5, 1.2), "L": (1.5, 3.5), "XL": (4.0, 10.0)}
+PAGE_TSHIRT_HOURS = {"S": (0.08, 0.2), "M": (0.6, 1.4), "L": (2.0, 4.0), "XL": (5.0, 12.0)}  # 3.4.3: raised, Web Forms tightly coupled to System.Web is the hardest conversion
 PAGE_TSHIRT_LINES = (300, 1000, 3000)  # under 300 lines S, under 1,000 M, under 3,000 L, more XL
 
 
@@ -111,8 +111,9 @@ def ui_shell(n):
 
 
 AI_CUT = {"code": (0.62, 0.72), "red": (0.88, 1.0), "db": (0.65, 0.78)}
+RED_IDS = {"B10", "B15", "A11"}  # real redesign work (Web Forms, System.Web coupling, the replacement data layer): little assistance gain
 FIXED_IDS = {"B12", "A9", "A10"}
-RED_IDS = {"B10"}
+UT_NOTE = "Unit tests are priced apart from the port: a test project per project, written for everything that can be tested (Web Forms page code-behind excluded), reviewed and made to pass."
 LIKELY_POSITION = 0.25  # the likely hours sit a quarter of the way up each range: effort is right-skewed but the tools make the low end the usual case
 ROLLUP = {"iterations": 4000, "seed": 1, "correlation": 0.3, "factor_position": 0.5}
 HOURS_PER_WEEK, HOURS_PER_MONTH = 40, 168  # 5 days of 8 h; 21 days of 8 h
@@ -315,6 +316,44 @@ def build(f, inp):
     line(I, "B", "B3", "Port each project to .NET 10 with the tool and check the result (sized XS to XL per project)",
          [(n, f"{s} project(s)", TSHIRT_HOURS[s]) for s, n in by_size.items()],
          "T-shirt size per project (TSHIRT_HOURS), AI-assisted: " + TSHIRT_RULES)
+    if (inp.get("unit_tests") or {}).get("value", True):  # decision 2026-11-03: unit tests in every project where possible; own item, own timeline (stage T)
+        ut = {s: 0 for s in TSHIRT_ORDER}
+        for p in keep:
+            if (p.get("type") or "").lower() in ("test", "database"):
+                continue
+            sz = sizes[p["path"]][0]
+            if "webforms" in (p.get("type") or "").lower():
+                sz = TSHIRT_ORDER[max(TSHIRT_ORDER.index(sz) - 1, 0)]  # the pages themselves are not unit tested
+            ut[sz] += 1
+        line(I, "T", "T1", "Unit tests: a test project per project, for all code that can be tested (sized XS to XL like the port)",
+             [(n, f"{s} project(s)", TSHIRT_HOURS[s]) for s, n in ut.items()], UT_NOTE, "INFERRED")
+    cu = f.get("code_usage") or {}
+    llb = cu.get("orm_llblgen") or {}
+    if llb.get("entity_types") and (inp.get("orm_replacement") or {}).get("value", True):  # decision 2026-11-03: LLBLGen removed, data layer rewritten with models and ADO.NET
+        simple = max(llb.get("entity_ops", 0) - llb.get("complex_ops", 0), 0)
+        line(I, "A", "A11", "Replace LLBLGen with our own data layer: foundation, model per entity, entity and procedure calls rewritten, tests on both databases",
+             [(1, "data-access foundation (connection per database, adapter, parameters, DataTable fill, timeouts, logging)", (16, 32)),
+              (llb.get("proc_files", 0), "files that call procedures through the adapter", (0.05, 0.1)),
+              (llb.get("proc_wrappers", 0), "procedure wrappers regenerated", (0.1, 0.2)),
+              (llb["entity_types"], "entity types (model, keys, types)", (0.1, 0.2)),
+              (simple, "simple entity operations", (0.08, 0.15)), (llb.get("complex_ops", 0), "complex entity operations (prefetch, relations)", (0.5, 1.0)),
+              (llb.get("entity_collections", 0), "entity collections replaced", (0.02, 0.04)), (llb.get("detached_updates", 0), "detached updates handled", (0.5, 1.0)),
+              (1, "characterisation tests on SQL Server first, then PostgreSQL", (24, 48))],
+             f"{llb['files']} files use LLBLGen types; the generated layer ships as prebuilt DLLs. Basis: Odysol-LLBLGen-Replacement-Impact.docx (2026-11-02), rates raised for the redesign work", "INFERRED")
+    if cu.get("odylibrary", {}).get("files") and (inp.get("odylibrary_removed") or {}).get("value", False):  # decision 2026-11-03: OdyLibrary removed from ws; shared code moves to OdyBizEntities
+        line(I, "B", "B14", "Move the code ws takes from OdyLibrary into the shared libraries in OdyBizEntities (common and utils) and re-point ws",
+             [(1, "extraction and design", (12, 24)), (cu["odylibrary"]["files"], "files that use OdyLibrary", (0.01, 0.03))],
+             "decision 2026-11-03: OdyLibrary usage removed from ws; separate shared libraries added to OdyBizEntities", "INFERRED")
+    wf = [w for k, w in web.items() if w["totals"]["pages"] > 1 and not ui_retired]
+    if wf:  # Web Forms tightly coupled to System.Web: ViewState, postbacks, UpdatePanels, page lifecycle, session and the server-control model
+        els = sum(w["totals"]["pages"] + w["totals"]["user_controls"] + w["totals"]["masters"] for w in wf)
+        line(I, "B", "B15", "Untangle Web Forms from System.Web: ViewState, postbacks, UpdatePanels, page lifecycle, session and server controls, before and while the pages are rebuilt",
+             [(1, "page-model design (base page, auth, session, navigation, shared controls)", (40, 80) if els >= 500 else (8, 16)),
+              (els, "pages, controls and masters with System.Web coupling to untangle", (0.05, 0.12)),
+              (sum(w["totals"].get("viewstate_refs", 0) for w in wf), "ViewState uses", (0.03, 0.06)),
+              (sum(w["totals"].get("update_panels", 0) for w in wf), "UpdatePanels", (0.5, 1.0)),
+              (sum(w["totals"].get("postback_handlers", 0) for w in wf), "postback handlers", (0.1, 0.2))],
+             "System.Web has no .NET 10 counterpart; the coupling is removed page by page", "INFERRED")
     handlers = sum(w["totals"]["handlers"] for w in web.values())
     line(I, "B", "B4", "Web request entry points moved to ASP.NET Core (handlers, ASMX / WCF services, Response.End, Windows login)",
          [(handlers, "HTTP handlers", "handler"), (sum(w["totals"]["asmx"] + w["totals"]["svc"] for w in web.values()), "ASMX / .svc services", "asmx_svc"),
@@ -589,12 +628,22 @@ def rollup(groups, buf):
     return est, per
 
 
+def unit_test_block(repo, T, buf):
+    """Unit tests: a separate item with its own roll-up and timeline (not in the main total)."""
+    if not T:
+        return None
+    est, _ = rollup({repo: T}, buf)
+    return {"expected": round(est["p50"]), "total": [round(est["p25"]), round(est["p75"])], "commit": round(est["p80"]),
+            "time": weeks_months(est["p50"]), "items": [{"id": x["id"], "label": x["label"], "drivers": x["drivers"], "likely": x["exp"]} for x in T]}
+
+
 def weeks_months(h):
     return {"hours": round(h), "weeks": round(h / HOURS_PER_WEEK, 1), "months": round(h / HOURS_PER_MONTH, 1)}
 
 
 def totals(I, inp):
-    buf = inp.get("buffer", {}).get("value", 0.10)
+    I = [x for x in I if x["stage"] != "T"]  # unit tests have their own total
+    buf = inp.get("buffer", {}).get("value", 0.15)
     est, _ = rollup({"x": I}, buf)
     return sum(x["low"] for x in I), sum(x["high"] for x in I), buf, est["p25"], est["p75"]
 
@@ -663,8 +712,11 @@ def inputs_for(repo, f, cfg, d):
         "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
         "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis, finding}]; added to the main estimate. Manual findings are priced from their effort_key unless an extra item names them in \"finding\" (finding id or rule id)."},
         "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources, networking, environment connection points and go-live (DevOps), running the tests (QA)", "status": "INFERRED", "note": ""},
+        "unit_tests": {"value": True, "status": "INFERRED", "note": "Unit tests in every project where possible (client call 2026-11-03). Priced as a separate item (stage T) with its own timeline, not in the main total."},
+        "orm_replacement": {"value": True, "status": "INFERRED", "note": "LLBLGen removed and replaced by models and ADO.NET (client call 2026-11-03); priced when the code uses LLBLGen."},
+        "odylibrary_removed": {"value": False, "status": "UNKNOWN", "note": "True when OdyLibrary usage is removed from this repository and its code moves to shared libraries in OdyBizEntities (decided for ws, 2026-11-03)."},
         "dev_team_only": {"value": True, "status": "INFERRED", "note": "Only the .NET / development team's effort. Work owned by DevOps (environment points, go-live, static hosting), the DB team (procedures, schema) and QA (running tests) is left out; developers still fix what QA reports. false = price those items too."},
-        "buffer": {"value": 0.10, "status": "INFERRED", "note": "Planning buffer for work nobody has listed yet, added to every figure. The range already covers the uncertainty of the listed work."},
+        "buffer": {"value": 0.15, "status": "INFERRED", "note": "Standard 15% planning buffer, added to every figure."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},
         "team": {"value": [1, 2], "status": "INFERRED", "note": "Calendar shown for 1 and 2 developers."},
         "port_engine": {"value": engine if engine in ENGINES else "devtx", "status": "VERIFIED" if engine in ENGINES else "UNKNOWN",
@@ -698,7 +750,7 @@ def inputs_for(repo, f, cfg, d):
         sc["Engineer-paced rates"] = {"question": "If engineers review every line and hand-fix instead of Claude making every change (reference plan rates)",
                                       "set": {"rate_profile": "engineer-paced"}}
         changed = True
-    if inp.get("buffer", {}).get("value") == 0.15 and inp["buffer"].get("status") == "INFERRED":  # 3.4.0: the buffer is 10% (the range already covers the listed work's uncertainty)
+    if inp.get("buffer", {}).get("value") == 0.10 and inp["buffer"].get("status") == "INFERRED":  # 3.4.3: back to the standard 15%
         inp["buffer"] = defaults["buffer"]
         changed = True
     if inp.get("db_tool", {}).get("value") not in DB_TOOLS:  # a tool name this version does not know
@@ -724,6 +776,8 @@ def estimate_repo(repo, cfg, a):
     f["_aws_native"] = read_json(os.path.join(d, "aws-native.json"))
     a.out = d
     I = build(f, inp)
+    T = [x for x in I if x["stage"] == "T"]
+    I = [x for x in I if x["stage"] != "T"]
     sub_lo, sub_hi, buf, tot_lo, tot_hi = totals(I, inp)
     est, per = rollup({f["repo"]: I}, buf)
     est = per[f["repo"]]
@@ -744,7 +798,8 @@ def estimate_repo(repo, cfg, a):
     stages = {s: (round(sum(x["exp"] for x in I if x["stage"] == s), 1),) * 2 for s in ("A", "B", "S")}  # likely hours per stage (one figure)
     res = {"repo": f["repo"], "items": I, "stages": stages, "subtotal": [round(sub_lo), round(sub_hi)], "buffer": buf,
            "total": [round(est["p25"]), round(est["p75"])], "expected": round(est["p50"]), "commit": round(est["p80"]),
-           "bounds": [round(b) for b in est["bounds"]], "time": weeks_months(est["p50"]),
+           "bounds": [round(b) for b in est["bounds"]], "time": weeks_months(est["p50"]), "unit_tests": unit_test_block(f["repo"], T, buf),
+           "_ut_items": T,
            "time_range": [weeks_months(est["p25"]), weeks_months(est["p75"])], "sizes": f.get("_sizes", {}),
            "inputs": inp, "rate_profile": rate_prof, "rates": RATES, "finding_rates": FINDING_RATES, "scenarios": scen}
     os.makedirs(a.out, exist_ok=True)
@@ -774,6 +829,11 @@ def estimate_repo(repo, cfg, a):
           f"In weeks and months (40-hour weeks, 21-day months): expected {res['time']['weeks']:g} weeks / {res['time']['months']:g} months; "
           f"range {res['time_range'][0]['weeks']:g}-{res['time_range'][1]['weeks']:g} weeks / {res['time_range'][0]['months']:g}-{res['time_range'][1]['months']:g} months. "
           "These are hours of work, not a calendar: how long it takes depends on how many people are on it.", ""]
+    ut = res.get("unit_tests")
+    if ut:
+        L += ["## Unit tests (separate item, separate timeline)", "", UT_NOTE, "",
+              f"**Expected: about {ut['expected']:,} hours** ({ut['time']['weeks']:g} weeks, {ut['time']['months']:g} months of work); most likely {ut['total'][0]:,}-{ut['total'][1]:,} hours; "
+              f"safe figure {ut['commit']:,} hours. Not included in the total above.", ""]
     if res["sizes"]:
         L += ["## Project sizes (T-shirt)", "", TSHIRT_RULES, "", "| Project | Size | Why |", "|---|---|---|"]
         L += [f"| {k} | {v['size']} | {v['why']} |" for k, v in res["sizes"].items()]
@@ -830,12 +890,13 @@ def main():
     if not repos:
         raise SystemExit("no effort facts: run effort_facts.py first")
     allp = read_json(os.path.join(OUT, "effort", "estimate-phases.json"), {"repos": {}}) or {"repos": {}}
-    groups = {}
+    groups, groups_t = {}, {}
     for r in repos:
         res = estimate_repo(r, cfg, a)
         if res:
-            allp["repos"][r] = {k: res[k] for k in ("phases", "stages", "subtotal", "buffer", "total", "expected", "commit", "bounds", "time", "time_range", "sizes", "scenarios")}
+            allp["repos"][r] = {k: res[k] for k in ("phases", "stages", "subtotal", "buffer", "total", "expected", "commit", "bounds", "time", "time_range", "sizes", "scenarios", "unit_tests")}
             groups[r] = res["items"]
+            groups_t[r] = res["_ut_items"]
             allp["repos"][r]["engine"] = ENGINES[port_engine(res["inputs"])]
             allp["repos"][r]["db_tool"] = DB_TOOLS[db_tool(res["inputs"])]
             allp["repos"][r]["database_port"] = bool(res["inputs"].get("database_port", {}).get("value", True))
@@ -843,10 +904,15 @@ def main():
             allp["repos"][r]["open"] = [k for k, v in res["inputs"].items() if isinstance(v, dict) and v.get("status") == "UNKNOWN"]
     # estate roll-up over every repository in one simulation (items of different repositories partly move together), not a sum of ranges
     first = next(iter(allp["repos"].values()))
-    est, _ = rollup({r: v["items"] for r, v in ((r, {"items": groups[r]}) for r in groups)}, first.get("buffer", 0.10))
+    est, _ = rollup({r: v["items"] for r, v in ((r, {"items": groups[r]}) for r in groups)}, first.get("buffer", 0.15))
     allp["total"] = [round(est["p25"]), round(est["p75"])]
     allp["expected"], allp["commit"], allp["bounds"] = round(est["p50"]), round(est["p80"]), [round(b) for b in est["bounds"]]
     allp["time"], allp["time_range"] = weeks_months(est["p50"]), [weeks_months(est["p25"]), weeks_months(est["p75"])]
+    gt = {r: v for r, v in groups_t.items() if v}
+    if gt:  # unit tests: a separate item with its own roll-up and timeline
+        te, _ = rollup(gt, first.get("buffer", 0.15))
+        allp["unit_tests"] = {"expected": round(te["p50"]), "total": [round(te["p25"]), round(te["p75"])], "commit": round(te["p80"]),
+                              "time": weeks_months(te["p50"]), "time_range": [weeks_months(te["p25"]), weeks_months(te["p75"])]}
     allp["sum_of_repository_ranges"] = [sum(v["total"][0] for v in allp["repos"].values()), sum(v["total"][1] for v in allp["repos"].values())]
     write_json(os.path.join(OUT, "effort", "estimate-phases.json"), allp)
     print(f"estate: expected {allp['expected']:,} h (range {allp['total'][0]:,}-{allp['total'][1]:,}, safe {allp['commit']:,}; "
