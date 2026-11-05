@@ -7,7 +7,7 @@ for .NET, or the AWS DevTx Version Upgrade Toolkit) does the .NET 10 port; Claud
 carries out every remediation pattern the engine leaves and the AWS managed-service swaps, as reviewed batches; the DB
 porting agent (or Claude with the DB porting skills) moves the data-access code from SQL Server to PostgreSQL (one database, no dual support).
 The hours are engineer time to run the tools, approve plans, review pull requests, fix what the gates reject, decide
-designs and sign off. Planning grade: +-25%. Buffer 10% by default. The total is a Monte Carlo roll-up (likely = P50, range = P10-P90), never the sum of every low to the sum of every high.
+designs and sign off. Planning grade: +-25%. Buffer 10% by default. The total is a Monte Carlo roll-up (likely = P50, range = P25-P75), never the sum of every low to the sum of every high.
 
 Every line = quantity from the code (assessment/effort/<repo>/facts.json) x a rate range per unit (+ a fixed part). Two rate sets: claude-first (default: the engine or Claude writes every line) and engineer-paced (the reference plan; shown as a scenario); estimate-inputs.json "rate_profile" picks one.
 Rates live in RATES below, each with the basis it was set from. Per-repository assumptions live in
@@ -86,7 +86,7 @@ RATE_PROFILES = {"claude-first": CLAUDE_FIRST, "engineer-paced": ENGINEER_PACED}
 # ---- T-shirt sizing of each project's own port (replaces the per-project / per-KLOC lines of the engine run)
 # Class libraries, console apps and API apps rarely hit a real problem on .NET 10; Web Forms is where the time goes. Hours are
 # AI-assisted (the engine or Claude does the porting, the engineer runs it, reviews and fixes what the build rejects).
-TSHIRT_HOURS = {"XS": (1, 2), "S": (2, 4), "M": (4, 8), "L": (8, 16), "XL": (16, 32)}
+TSHIRT_HOURS = {"XS": (1, 2), "S": (1.5, 3), "M": (3, 6), "L": (6, 12), "XL": (12, 24)}  # port by Claude / the engine in minutes to hours; the hours are review and fixing
 TSHIRT_ORDER = ["XS", "S", "M", "L", "XL"]
 TSHIRT_RULES = ("Size starts from hand-written + markup lines (under 1,000 XS, under 5,000 S, under 20,000 M, under 60,000 L, more XL). "
                 "A class library, console app or API project stays at that size. A WCF / ASMX / Windows service / desktop project goes up one size. "
@@ -110,8 +110,8 @@ def ui_shell(n):
     return (60, 140) if n >= 500 else (10, 25) if n >= 50 else (2, 6)
 
 
-AI_CUT = {"code": (0.65, 0.80), "red": (0.85, 1.0), "db": (0.70, 0.85)}
-FIXED_IDS = {"B2", "B12", "A9", "A10"}
+AI_CUT = {"code": (0.62, 0.72), "red": (0.88, 1.0), "db": (0.65, 0.78)}
+FIXED_IDS = {"B12", "A9", "A10"}
 RED_IDS = {"B10"}
 LIKELY_POSITION = 0.25  # the likely hours sit a quarter of the way up each range: effort is right-skewed but the tools make the low end the usual case
 ROLLUP = {"iterations": 4000, "seed": 1, "correlation": 0.3, "factor_position": 0.5}
@@ -164,7 +164,7 @@ def db_tool(inp):
 FIXED_OWNER = {"B2": "Claude", "B13": "Claude + DevOps (static hosting)", "B12": "Engineers + DevOps", "A8": "Engineers (design)", "A9": "DevOps (configuration)",
                "A10": "Engineers (PostgreSQL test environment)"}
 PHASES = [  # (id, title, who, items): the readable view; the detail table keeps every line item
-    ("P1", "Prepare: save what the old app returns for sample requests, so the new app can be compared with it", "claude", ["B2"]),
+    ("P1", "Fix the issues QA finds (debug and correct)", "claude", ["B2"]),
     ("P1s", "Static content: publish to S3 + CloudFront (nothing to port)", "claude", ["B13"]),
     ("P2", "Port to .NET 10 with the engine (sized XS to XL per project)", "engine", None),
     ("P3", "Clean-up of what the engine does not cover", "claude", None),
@@ -280,6 +280,7 @@ def build(f, inp):
     """Work items for one repository under one set of assumptions."""
     use_profile(inp)
     envs = inp["environments"]["value"]
+    dev_only = bool((inp.get("dev_team_only") or {}).get("value", True))  # only the .NET / development team's effort: no DevOps, DB team or QA work
     retired = set(inp.get("retire_projects", {}).get("value", []))
     ui_retired = inp.get("admin_ui", {}).get("value") == "retire"
     static = [p for p in f["projects"] if p["path"] not in retired and p.get("content_only")]  # no compiled code: published as files
@@ -298,10 +299,16 @@ def build(f, inp):
           (len(f["packages"]) if keep else 0, "NuGet packages", "package"), (len(bins) if keep else 0, "binary (non-NuGet) references", "binary_ref")],
          "reference plan B1 16-32 h (one web solution, agent-scaffolded)")
     pages = sum(len([x for x in w["pages"] if not os.path.basename(x["file"]).lower().startswith("test")]) for w in web.values())
-    line(I, "B", "B2", "Before/after comparison tests: save what the old app returns for each API request type, plus a quick check that each page opens",
-         [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
-          (0 if ui_retired else pages, "admin pages", "page_smoke")],
-         "reference plan B2 24-40 h for 14 templates; automated tests counted in facts.json", "INFERRED")
+    if dev_only:  # QA runs the tests; the dev team debugs and fixes what QA reports
+        line(I, "B", "B2", "Fix the issues QA finds (debug and correct), per API request type and page",
+             [(len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", (0.1, 0.2)),
+              (0 if ui_retired else pages, "admin pages", (0.05, 0.1))],
+             "QA tests and reports; development effort is the fix, one cycle per request type and page", "INFERRED")
+    else:
+        line(I, "B", "B2", "Before/after comparison tests: save what the old app returns for each API request type, plus a quick check that each page opens",
+             [(1 if keep else 0, "harness", "parity_base"), (len(f["contracts"]["request_types"]) + len(f["contracts"]["controllers"]), "request types / controllers", "request_type"),
+              (0 if ui_retired else pages, "admin pages", "page_smoke")],
+             "reference plan B2 24-40 h for 14 templates; automated tests counted in facts.json", "INFERRED")
     sizes = {p["path"]: size_project(p, f, web) for p in keep}
     f["_sizes"] = {k: {"size": v[0], "why": "; ".join(v[1])} for k, v in sizes.items()}
     by_size = {s: sum(1 for v in sizes.values() if v[0] == s) for s in TSHIRT_ORDER}
@@ -365,11 +372,13 @@ def build(f, inp):
     line(I, "B", "B11", "Containerise: Linux image per deployable, health endpoint, stdout logging, task definition inputs",
          [(len(deployables), "deployables", "containerise"), (len(deployables) if any(x["rule"] == "LOG-NO-HEALTHCHECK" for x in f["findings"]) else 0, "health endpoints", "health")],
          "3-6 h per deployable plus health check (earlier calibrated draft)")
-    line(I, "B", "B13", "Static content: publish to Amazon S3 behind CloudFront (build step, cache headers, error pages, redirects); nothing is ported",
-         [(len(static), "content-only projects", (1.5, 4))], "a project with no compiled code (discover_estate.py content_only); estimation.json other_r_hours", "INFERRED")
-    line(I, "B", "B12", "First live traffic and go-live support",
-         [(len(deployables) * envs, f"deployable x environment ({len(deployables)} x {envs})", "canary_env_deployable")],
-         "reference plan B8 24-40 h for 3 environments", inp["environments"].get("status", "UNKNOWN"))
+    if not dev_only:
+      line(I, "B", "B13", "Static content: publish to Amazon S3 behind CloudFront (build step, cache headers, error pages, redirects); nothing is ported",
+           [(len(static), "content-only projects", (1.5, 4))], "a project with no compiled code (discover_estate.py content_only); estimation.json other_r_hours", "INFERRED")
+    if not dev_only:  # first live traffic and the environment points belong to DevOps
+        line(I, "B", "B12", "First live traffic and go-live support",
+             [(len(deployables) * envs, f"deployable x environment ({len(deployables)} x {envs})", "canary_env_deployable")],
+             "reference plan B8 24-40 h for 3 environments", inp["environments"].get("status", "UNKNOWN"))
 
     # ---------------- Stage A: SQL Server -> PostgreSQL, application side
     st = f["sql"]["statements"]
@@ -418,11 +427,12 @@ def build(f, inp):
         sum(1 for s in st if "cross-database" in (s["constructs"] or {}) and "dynamic database name" not in (s["constructs"] or {}))
     line(I, "A", "A8", "Cross-database references", [(1 if xdb else 0, "design", "cross_db_base"), (xdb, "statements / procedures", "cross_db")],
          "reference plan A8 24-40 h (estate-wide)", "VERIFIED" if not xdb else "INFERRED", "the target database grouping decides schema vs separate connection")
-    line(I, "A", "A9", "Point each environment at its PostgreSQL database",
-         [(inp.get("sql_connections", {}).get("value", 1) * envs, "connection x environment", "repoint")], "reference plan A9 12-24 h for 6 waves",
-         inp["environments"].get("status", "UNKNOWN"))
-    line(I, "A", "A10", "Check that each database call returns the same results on PostgreSQL (non-production)",
-         [(spx["distinct"], "procedures", "db_parity_proc")], "the reference plan gates parity; the DB porting agent runs no live database test", "INFERRED")
+    if not dev_only:  # connection points are DevOps configuration; testing on PostgreSQL is QA's, with the DB team's test database
+        line(I, "A", "A9", "Point each environment at its PostgreSQL database",
+             [(inp.get("sql_connections", {}).get("value", 1) * envs, "connection x environment", "repoint")], "reference plan A9 12-24 h for 6 waves",
+             inp["environments"].get("status", "UNKNOWN"))
+        line(I, "A", "A10", "Check that each database call returns the same results on PostgreSQL (non-production)",
+             [(spx["distinct"], "procedures", "db_parity_proc")], "the reference plan gates parity; the DB porting agent runs no live database test", "INFERRED")
 
     return finish(I, f, inp)
 
@@ -556,7 +566,7 @@ def kind_of(x):
 
 
 def rollup(groups, buf):
-    """Monte Carlo roll-up (_montecarlo.py): the range is P10-P90, likely P50, safe-to-commit P80, with the AI-assistance cut drawn once for
+    """Monte Carlo roll-up (_montecarlo.py): the range is P25-P75 (middle half), likely P50, safe-to-commit P80, with the AI-assistance cut drawn once for
     the whole estate. Adding every item's low and every item's high (kept only as 'bounds') makes the range about twice as wide as
     it is. groups: {repo: [items]}. Each item gets "exp": its likely hours, scaled so a repository's items add to its P50."""
     items = [{"pkg": r, "lo": x["low"], "hi": x["high"], "kind": kind_of(x), "pos": LIKELY_POSITION} for r, I in groups.items() for x in I]
@@ -567,13 +577,13 @@ def rollup(groups, buf):
     fm["fixed"] = 1.0
     per = {}
     for r, I in groups.items():
-        s_ = sc(MC.summary(sim[r])) if r in sim else {n: 0 for n in ("p10", "p50", "p80", "p90", "mean")}
+        s_ = sc(MC.summary(sim[r])) if r in sim else {n: 0 for n in ("p10", "p25", "p50", "p75", "p80", "p90", "mean")}
         raw = [(x, (x["low"] + x["high"] + x["low"] + LIKELY_POSITION * (x["high"] - x["low"])) / 3 * fm[kind_of(x)]) for x in I]
         tot = sum(e for _, e in raw) or 1
         for x, e in raw:
             x["exp"] = round(e / tot * s_["p50"], 2)
         per[r] = {**s_, "bounds": [round(sum(x["low"] for x in I) * k, 1), round(sum(x["high"] for x in I) * k, 1)]}
-    est = sc(MC.summary(MC.total(sim, list(groups)))) if sim else {n: 0 for n in ("p10", "p50", "p80", "p90", "mean")}
+    est = sc(MC.summary(MC.total(sim, list(groups)))) if sim else {n: 0 for n in ("p10", "p25", "p50", "p75", "p80", "p90", "mean")}
     allI = [x for I in groups.values() for x in I]
     est["bounds"] = [round(sum(x["low"] for x in allI) * k, 1), round(sum(x["high"] for x in allI) * k, 1)]
     return est, per
@@ -586,7 +596,7 @@ def weeks_months(h):
 def totals(I, inp):
     buf = inp.get("buffer", {}).get("value", 0.10)
     est, _ = rollup({"x": I}, buf)
-    return sum(x["low"] for x in I), sum(x["high"] for x in I), buf, est["p10"], est["p90"]
+    return sum(x["low"] for x in I), sum(x["high"] for x in I), buf, est["p25"], est["p75"]
 
 
 def occ_rules(f, pattern):
@@ -652,7 +662,8 @@ def inputs_for(repo, f, cfg, d):
                            "status": "INFERRED", "note": "DLLs that become a current nuget.org package (the scan's DLL table); clients of server-hosted services are priced in stage S."},
         "sql_connections": {"value": max(1, len(sqlcs)), "status": "VERIFIED" if sqlcs else "ASSUMED", "note": "Distinct SQL connection strings in config (names, plus SQL Server hosts named only in config transforms or settings)."},
         "extra_items": {"value": [], "status": "INFERRED", "note": "Work found in review that no quantity covers: [{id, stage (A/B/S), label, low, high, basis, finding}]; added to the main estimate. Manual findings are priced from their effort_key unless an extra item names them in \"finding\" (finding id or rule id)."},
-        "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources and networking (DevOps)", "status": "INFERRED", "note": ""},
+        "excluded": {"value": "Database-side object conversion (DB team), data migration, AWS resources, networking, environment connection points and go-live (DevOps), running the tests (QA)", "status": "INFERRED", "note": ""},
+        "dev_team_only": {"value": True, "status": "INFERRED", "note": "Only the .NET / development team's effort. Work owned by DevOps (environment points, go-live, static hosting), the DB team (procedures, schema) and QA (running tests) is left out; developers still fix what QA reports. false = price those items too."},
         "buffer": {"value": 0.10, "status": "INFERRED", "note": "Planning buffer for work nobody has listed yet, added to every figure. The range already covers the uncertainty of the listed work."},
         "hours_per_day": {"value": 6, "status": "INFERRED", "note": "Focused hours a day."},
         "team": {"value": [1, 2], "status": "INFERRED", "note": "Calendar shown for 1 and 2 developers."},
@@ -732,9 +743,9 @@ def estimate_repo(repo, cfg, a):
     rate_prof = use_profile(inp)  # the scenarios may have switched the rate set: back to this estimate's own
     stages = {s: (round(sum(x["exp"] for x in I if x["stage"] == s), 1),) * 2 for s in ("A", "B", "S")}  # likely hours per stage (one figure)
     res = {"repo": f["repo"], "items": I, "stages": stages, "subtotal": [round(sub_lo), round(sub_hi)], "buffer": buf,
-           "total": [round(est["p10"]), round(est["p90"])], "expected": round(est["p50"]), "commit": round(est["p80"]),
+           "total": [round(est["p25"]), round(est["p75"])], "expected": round(est["p50"]), "commit": round(est["p80"]),
            "bounds": [round(b) for b in est["bounds"]], "time": weeks_months(est["p50"]),
-           "time_range": [weeks_months(est["p10"]), weeks_months(est["p90"])], "sizes": f.get("_sizes", {}),
+           "time_range": [weeks_months(est["p25"]), weeks_months(est["p75"])], "sizes": f.get("_sizes", {}),
            "inputs": inp, "rate_profile": rate_prof, "rates": RATES, "finding_rates": FINDING_RATES, "scenarios": scen}
     os.makedirs(a.out, exist_ok=True)
 
@@ -753,13 +764,13 @@ def estimate_repo(repo, cfg, a):
          "Planning grade, +-25%. Quantities come from facts.json, rates from estimate_phases.py, assumptions from estimate-inputs.json.", "",
          f"**Not in this estimate:** {inp.get('excluded', {}).get('value') or '-'}", "",
          f"**Expected: about {res['expected']:,} hours** ({res['time']['weeks']:g} weeks, {res['time']['months']:g} months of work). "
-         f"Most likely range {res['total'][0]:,}-{res['total'][1]:,} hours (8 times in 10 the real figure falls inside it); to be safe plan for {res['commit']:,} hours. "
+         f"Most likely range {res["total"][0]:,}-{res["total"][1]:,} hours (half of the time the real figure lands inside it; the other half it is lower or higher); to be safe plan for {res['commit']:,} hours. "
          f"Includes a {buf:.0%} buffer for work nobody has listed yet.", "",
          "## Plan", "", "| Phase | Who | What | Likely hours |", "|---|---|---|---|"]
     for p in ph:
         L.append(f"| {p['id']} {p['title']} | {p['who']} | {'; '.join(p['what'])} | {p['expected']:.0f} |")
     L += [f"| **Expected total** (buffer {buf:.0%} included) | | | **{res['expected']:,}** |",
-          f"| Range (P10-P90) | | | {res['total'][0]:,}-{res['total'][1]:,} |", f"| Safe to commit (P80) | | | {res['commit']:,} |", "",
+          f"| Most likely range (P25-P75, the middle half of outcomes) | | | {res['total'][0]:,}-{res['total'][1]:,} |", f"| Safe to commit (P80) | | | {res['commit']:,} |", "",
           f"In weeks and months (40-hour weeks, 21-day months): expected {res['time']['weeks']:g} weeks / {res['time']['months']:g} months; "
           f"range {res['time_range'][0]['weeks']:g}-{res['time_range'][1]['weeks']:g} weeks / {res['time_range'][0]['months']:g}-{res['time_range'][1]['months']:g} months. "
           "These are hours of work, not a calendar: how long it takes depends on how many people are on it.", ""]
@@ -786,7 +797,7 @@ def estimate_repo(repo, cfg, a):
     L += ["", "## How the total is worked out", "",
           f"1. Every work item has a low and a high (tool-run, AI-assisted rates). 2. Claude and AWS Transform cut the timeline by "
           f"{round((1 - AI_CUT['code'][1]) * 100)}-{round((1 - AI_CUT['code'][0]) * 100)}% on ordinary code work (less on Web Forms UI, none on work that waits on environments or people). "
-          f"3. The items are combined by Monte Carlo (4,000 trials, items partly move together): the likely figure is the middle trial (P50), the range the 10th to 90th percentile. "
+          f"3. The items are combined by Monte Carlo (4,000 trials, items partly move together): the likely figure is the middle trial (P50), the range the 25th to 75th percentile (the middle half of outcomes). "
           f"Adding every low and every high would give {res['bounds'][0]:,}-{res['bounds'][1]:,} h, a range that is almost never real; it is kept only as the outer bound.", ""]
     if scen:
         L += ["", "## What the open questions change", "", "| If | Client question | Total | Change |", "|---|---|---|---|"]
@@ -833,9 +844,9 @@ def main():
     # estate roll-up over every repository in one simulation (items of different repositories partly move together), not a sum of ranges
     first = next(iter(allp["repos"].values()))
     est, _ = rollup({r: v["items"] for r, v in ((r, {"items": groups[r]}) for r in groups)}, first.get("buffer", 0.10))
-    allp["total"] = [round(est["p10"]), round(est["p90"])]
+    allp["total"] = [round(est["p25"]), round(est["p75"])]
     allp["expected"], allp["commit"], allp["bounds"] = round(est["p50"]), round(est["p80"]), [round(b) for b in est["bounds"]]
-    allp["time"], allp["time_range"] = weeks_months(est["p50"]), [weeks_months(est["p10"]), weeks_months(est["p90"])]
+    allp["time"], allp["time_range"] = weeks_months(est["p50"]), [weeks_months(est["p25"]), weeks_months(est["p75"])]
     allp["sum_of_repository_ranges"] = [sum(v["total"][0] for v in allp["repos"].values()), sum(v["total"][1] for v in allp["repos"].values())]
     write_json(os.path.join(OUT, "effort", "estimate-phases.json"), allp)
     print(f"estate: expected {allp['expected']:,} h (range {allp['total'][0]:,}-{allp['total'][1]:,}, safe {allp['commit']:,}; "

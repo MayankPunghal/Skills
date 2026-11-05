@@ -51,3 +51,4 @@ The readers include managers and delivery leads who do not know the tools' vocab
 - **One headline number.** Hours = expected, then the range, then a safe figure. Never two totals side by side (a "sum of the ranges" and a "rolled up" figure), never per-developer tables: hours, weeks (40 h) and months (168 h) only.
 - **The estimate is AI-assisted.** Class libraries, console apps and API projects are the easy part; Web Forms is where the time goes. Say so, and do not price manual work.
 - **Standing decisions are not re-argued:** PostgreSQL only (no dual database), no re-architecture (no microservices, no merging apps), services we host stay self-hosted (configuration changes only), Angular-only UIs need almost no change.
+- **Client-facing plan documents do not name the tools that make the changes** (assistants, porting engines). They state development effort, the work items and the result.

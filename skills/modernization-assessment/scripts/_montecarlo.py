@@ -72,7 +72,7 @@ def simulate(items, factors, cfg):
 
 def summary(samples):
     s = sorted(samples)
-    return {"p10": pct(s, 0.10), "p50": pct(s, 0.50), "p80": pct(s, 0.80), "p90": pct(s, 0.90), "mean": sum(s) / len(s) if s else 0.0}
+    return {"p10": pct(s, 0.10), "p25": pct(s, 0.25), "p50": pct(s, 0.50), "p75": pct(s, 0.75), "p80": pct(s, 0.80), "p90": pct(s, 0.90), "mean": sum(s) / len(s) if s else 0.0}
 
 
 def total(sim, pkgs):
